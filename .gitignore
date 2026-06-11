@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDE / Meta Files
+.antigravity
+AGENTS.md
+CLAUDE.md
+KNOWLEDGE.md
+SKILLS.md
