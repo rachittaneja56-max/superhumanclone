@@ -80,7 +80,7 @@ export const aiConsentRules = pgTable(
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     domain: text('domain').notNull(),
-    status: text('status').default('allowed').notNull(), // 'allowed' | 'blocked'
+    status: text('status').default('allowed').notNull(), 
     created_at: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
     updated_at: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull()
   },
