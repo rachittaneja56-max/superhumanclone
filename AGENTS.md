@@ -8,7 +8,7 @@
 - **Product:** Tempo — AI-powered email and calendar client
 - **Stack:** Next.js 15 App Router · tRPC v11 · Drizzle ORM · Neon (pgvector) ·
   Upstash Redis + QStash · Ably · Railway · shadcn/ui · Tailwind · Vercel AI SDK
-- **AI Dev:** Gemini 1.5 Flash (`@ai-sdk/google`) via `server/ai/provider.ts`
+- **AI Dev:** Gemini 2.5 Flash (`@ai-sdk/google`) via `server/ai/provider.ts`
 - **AI Prod:** OpenAI GPT-4o-mini + GPT-4o (`@ai-sdk/openai`) via same file
 - **Deployment:** Railway (Next.js app + worker service)
 - **Skills installed:** corsairdev/corsair · vercel-labs/agent-skills (shadcn,

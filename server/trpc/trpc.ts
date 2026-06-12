@@ -21,13 +21,14 @@ export const router = t.router;
 export const publicProcedure = t.procedure;
 export const createCallerFactory = t.createCallerFactory;
 
-export const enforceAuth = t.middleware(({ ctx, next }) => {
-  if (!ctx.session || !ctx.userId) {
+export const enforceAuth = t.middleware(async ({ ctx, next }) => {
+  if (!ctx.userId) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authenticated' });
   }
+
   return next({
     ctx: {
-      session: ctx.session,
+      ...ctx,
       userId: ctx.userId,
     },
   });
