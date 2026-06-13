@@ -3,6 +3,7 @@ import { db } from '@/server/db'
 import { userSettings } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
+import { acceptPrivacyPolicy } from './actions'
 
 export default async function PrivacyPage() {
   const session = await auth()
@@ -44,7 +45,7 @@ export default async function PrivacyPage() {
         </div>
 
         <div suppressHydrationWarning className="mt-6 pt-6 border-t border-border">
-          <form action="/api/onboarding/accept" method="POST">
+          <form action={acceptPrivacyPolicy}>
             <button type="submit" className="flex w-full items-center justify-center h-10 rounded-lg bg-accent text-accent-foreground font-medium text-sm hover:opacity-90 transition-opacity">
               I Understand & Agree →
             </button>

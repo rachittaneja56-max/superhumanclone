@@ -28,7 +28,7 @@ export function ThreadList({ initialData }: ThreadListProps) {
       const prevData = utils.email.getThreads.getData({ limit: 50, isArchived: false });
       utils.email.getThreads.setData(
         { limit: 50, isArchived: false },
-        (old) => old ? old.filter((e) => e.id !== emailId) : []
+        (old: any[] | undefined) => old ? old.filter((e: any) => e.id !== emailId) : []
       );
 
       return { prevData };
@@ -84,7 +84,7 @@ export function ThreadList({ initialData }: ThreadListProps) {
 
   return (
     <div className="flex flex-col w-full">
-      {emails.map((email) => {
+      {emails.map((email: any) => {
         const isSelected = selectedEmailId === email.id;
         const fromNameInitial = email.from_name ? email.from_name.charAt(0).toUpperCase() : email.from_address.charAt(0).toUpperCase();
 
