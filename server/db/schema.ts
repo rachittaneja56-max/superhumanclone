@@ -38,6 +38,7 @@ export const priorityEnum = pgEnum('priority', [
 export const auditActionEnum = pgEnum('audit_action', [
   'email_sent',
   'email_received',
+  'email_archived',
   'hitl_created',
   'hitl_resolved',
   'settings_changed',
@@ -52,15 +53,17 @@ export const hitlStatusEnum = pgEnum('hitl_status', [
 ]);
 
 
+import type { AdapterAccountType } from 'next-auth/adapters';
+
 export const users = pgTable('users', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-  email: text('email').unique().notNull(),
   name: text('name'),
-  emailVerified: timestamp('emailVerified', { mode: 'date' }),
+  email: text('email').notNull().unique(),
+  emailVerified: timestamp('email_verified', { mode: 'date' }),
   image: text('image'),
-  corsair_token_encrypted: text('corsair_token_encrypted'),
-  created_at: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
-  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull()
+  // Tempo custom columns — added AFTER Auth.js required columns
+  // Note: Corsair OAuth tokens are managed by @corsair-dev/app — never stored locally
+  createdAt: timestamp('created_at').defaultNow(),
 });
 
 export const userSettings = pgTable('user_settings', {
@@ -70,6 +73,11 @@ export const userSettings = pgTable('user_settings', {
     .unique()
     .notNull(),
   onboardingCompleted: boolean('onboarding_completed').default(false).notNull(),
+  gmailConnected: boolean('gmail_connected').default(false).notNull(),
+  calendarConnected: boolean('calendar_connected').default(false).notNull(),
+  aiEnabled: boolean('ai_enabled').default(true).notNull(),
+  draftSuggestionsEnabled: boolean('draft_suggestions_enabled').default(true).notNull(),
+  autoTagEnabled: boolean('auto_tag_enabled').default(true).notNull(),
   theme: text('theme').default('light').notNull(),
   created_at: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull()
@@ -79,7 +87,7 @@ export const aiConsentRules = pgTable(
   'ai_consent_rules',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     domain: text('domain').notNull(),
@@ -97,7 +105,7 @@ export const emails = pgTable(
   'emails',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     corsair_message_id: text('corsair_message_id').unique().notNull(),
@@ -134,7 +142,7 @@ export const autoReplyDrafts = pgTable(
   'auto_reply_drafts',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     emailId: uuid('email_id')
@@ -156,7 +164,7 @@ export const calendarEvents = pgTable(
   'calendar_events',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     corsair_event_id: text('corsair_event_id').unique().notNull(),
@@ -180,7 +188,7 @@ export const hitlActions = pgTable(
   'hitl_actions',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     emailId: uuid('email_id').references(() => emails.id, { onDelete: 'set null' }),
@@ -201,7 +209,7 @@ export const agentSessions = pgTable(
   'agent_sessions',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     status: text('status').default('active').notNull(), 
@@ -216,7 +224,7 @@ export const contactIntelligence = pgTable(
   'contact_intelligence',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     email: text('email').notNull(),
@@ -237,7 +245,7 @@ export const auditLogs = pgTable(
   'audit_logs',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    userId: uuid('user_id')
+    userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
     action: auditActionEnum('action').notNull(),
@@ -343,6 +351,48 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
     references: [users.id]
   })
 }));
+
+export const accounts = pgTable(
+  'accounts',
+  {
+    userId: text('user_id').notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    type: text('type').$type<AdapterAccountType>().notNull(),
+    provider: text('provider').notNull(),
+    providerAccountId: text('provider_account_id').notNull(),
+    refresh_token: text('refresh_token'),
+    access_token: text('access_token'),
+    expires_at: integer('expires_at'),
+    token_type: text('token_type'),
+    scope: text('scope'),
+    id_token: text('id_token'),
+    session_state: text('session_state'),
+  },
+  (account) => ({
+    compositePk: primaryKey({
+      columns: [account.provider, account.providerAccountId],
+    }),
+  })
+);
+
+export const sessions = pgTable('sessions', {
+  sessionToken: text('session_token').primaryKey(),
+  userId: text('user_id').notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expires: timestamp('expires', { mode: 'date' }).notNull(),
+});
+
+export const verificationTokens = pgTable(
+  'verification_tokens',
+  {
+    identifier: text('identifier').notNull(),
+    token: text('token').notNull(),
+    expires: timestamp('expires', { mode: 'date' }).notNull(),
+  },
+  (vt) => ({
+    compositePk: primaryKey({ columns: [vt.identifier, vt.token] }),
+  })
+);
 
 export const authAccounts = pgTable(
   "account",

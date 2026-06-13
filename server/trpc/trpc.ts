@@ -60,3 +60,20 @@ export const createRateLimitMiddleware = (key: string, limit: number, windowSeco
     return next({ ctx });
   });
 };
+
+export const createPublicRateLimitMiddleware = (key: string, limit: number, windowSeconds: number) => {
+  return t.middleware(async ({ ctx, next }) => {
+    const redisKey = `ratelimit:public:${key}:${ctx.ip}`;
+    const count = await ctx.redis.incr(redisKey);
+    
+    if (count === 1) {
+      await ctx.redis.expire(redisKey, windowSeconds);
+    }
+    
+    if (count > limit) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again later.' });
+    }
+    
+    return next({ ctx });
+  });
+};

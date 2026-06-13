@@ -1,37 +1,59 @@
-import { Suspense } from "react";
-import { SignInButton } from "./sign-in-button";
-import type { Metadata } from "next";
+import { SignInButton } from '@/components/auth/SignInButton'
 
-export const metadata: Metadata = {
-  title: "Login | Tempo",
-  description: "Your inbox, your rules.",
-};
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>
+}) {
+  const { error } = await searchParams
 
-export default function LoginPage() {
+  let errorMessage = ''
+  if (error) {
+    if (error === 'OAuthSignin' || error === 'OAuthCallback' || error === 'Callback') {
+      errorMessage = 'Sign-in failed. Please try again.'
+    } else if (error === 'OAuthAccountNotLinked') {
+      errorMessage = 'Email already linked to another account.'
+    } else if (error === 'RateLimit') {
+      errorMessage = 'Too many attempts. Please wait 15 minutes.'
+    } else {
+      errorMessage = 'Something went wrong. Please try again.'
+    }
+  }
+
   return (
-    <main className="min-h-screen w-full flex flex-col items-center justify-center bg-background relative overflow-hidden p-4">
-      <div className="absolute inset-0 bg-dot-grid opacity-20 pointer-events-none" />
-      
-      <div className="relative z-10 max-w-sm w-full">
-        <div className="bg-card border border-border rounded-xl p-10 shadow-sm flex flex-col items-center text-center gap-6">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-semibold font-display tracking-tight text-foreground">
-              tempo<span className="text-accent">.</span>
-            </h1>
-            <p className="text-muted-foreground text-sm">Your inbox, your rules.</p>
-          </div>
+    <div className="flex min-h-screen w-full items-center justify-center relative bg-background overflow-hidden">
+      {/* Background Dot Grid */}
+      <div className="absolute inset-0 bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:24px_24px] opacity-15" />
 
-          <div className="w-full h-px bg-border" />
-
-          <Suspense fallback={<div className="h-[44px] w-full" />}>
-            <SignInButton />
-          </Suspense>
+      <div className="relative z-10 w-full max-w-sm mx-auto bg-surface border border-border rounded-[16px] p-[40px] px-[36px] shadow-sm">
+        {/* Section 1 - Brand */}
+        <div className="flex flex-col items-center text-center">
+          <h1 className="font-display font-semibold text-2xl tracking-tight text-foreground">
+            tempo<span className="text-accent">.</span>
+          </h1>
+          <p className="text-sm text-foreground-muted mt-1">
+            Your inbox, your rules.
+          </p>
         </div>
 
-        <p className="text-muted-foreground text-xs text-center mt-6 max-w-xs mx-auto">
-          By continuing, you agree to Tempo&apos;s privacy-first approach.
+        {/* Section 2 - Error */}
+        {errorMessage && (
+          <div className="mt-4 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-center text-sm text-destructive">
+            {errorMessage}
+          </div>
+        )}
+
+        {/* Separator */}
+        <div className="h-[1px] w-full bg-border my-6" />
+
+        {/* Section 3 - SignInButton */}
+        <SignInButton />
+
+        {/* Section 4 - Footer */}
+        <p className="text-xs text-foreground-subtle text-center mt-6">
+          Privacy-first by design. Your emails never leave your control.
         </p>
       </div>
-    </main>
-  );
+    </div>
+  )
 }

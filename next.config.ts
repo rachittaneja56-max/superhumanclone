@@ -1,56 +1,39 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/(.*)",
+        source: '/(.*)',
         headers: [
           {
-            key: "Content-Security-Policy",
-            value: "frame-ancestors 'none';",
+            key: 'X-Frame-Options',
+            value: 'DENY',
           },
           {
-            key: "Strict-Transport-Security",
-            value: "max-age=63072000; includeSubDomains; preload",
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
           },
           {
-            key: "X-Frame-Options",
-            value: "DENY",
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
           },
           {
-            key: "X-Content-Type-Options",
-            value: "nosniff",
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
           },
           {
-            key: "Referrer-Policy",
-            value: "strict-origin-when-cross-origin",
+            key: 'Cross-Origin-Opener-Policy',
+            value: 'same-origin',
           },
           {
-            key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
-          },
-          {
-            key: "Cross-Origin-Opener-Policy",
-            value: "same-origin",
-          },
-          {
-            key: "Cross-Origin-Resource-Policy",
-            value: "same-origin",
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains; preload',
           },
         ],
       },
-      {
-        source: "/inbox/:threadId",
-        headers: [
-          {
-            key: "Content-Security-Policy",
-            value: "frame-src blob:; frame-ancestors 'none';",
-          },
-        ],
-      },
-    ];
+    ]
   },
-};
+}
 
-export default nextConfig;
+export default nextConfig

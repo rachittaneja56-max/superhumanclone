@@ -8,7 +8,7 @@ import { contactsRouter } from './routers/contacts';
 import { settingsRouter } from './routers/settings';
 import { realtimeRouter } from './routers/realtime';
 import { auditRouter } from './routers/audit';
-
+import { waitlistRouter } from './routers/waitlist';
 export const appRouter = router({
   email: emailRouter,
   calendar: calendarRouter,
@@ -18,6 +18,7 @@ export const appRouter = router({
   settings: settingsRouter,
   realtime: realtimeRouter,
   audit: auditRouter,
+  waitlist: waitlistRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -5,6 +5,14 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 const { auth } = NextAuth(authConfig);
 
+import { neon } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-http';
+import { userSettings } from '@/server/db/schema';
+import { eq } from 'drizzle-orm';
+
+const sql = neon(process.env.DATABASE_URL!);
+const edgeDb = drizzle({ client: sql });
+
 const csrfMiddleware = createCsrfMiddleware({
   cookie: {
     secure: process.env.NODE_ENV === 'production',
@@ -37,11 +45,35 @@ export default auth(async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
+  // Handle onboarding gate for authenticated users
+  if (session && session.user?.id) {
+    // Exclude the connect page and callback from the gate to avoid redirect loops
+    const isConnectPage = req.nextUrl.pathname.startsWith('/onboarding/connect');
+    const isCallback = req.nextUrl.pathname.startsWith('/api/corsair/callback');
+    
+    if (isProtectedRoute && !isConnectPage && !isCallback) {
+      try {
+        const settings = await edgeDb
+          .select({ onboardingCompleted: userSettings.onboardingCompleted, gmailConnected: userSettings.gmailConnected })
+          .from(userSettings)
+          .where(eq(userSettings.userId, session.user.id))
+          .limit(1)
+          .then(res => res[0]);
+
+        if (settings) {
+          if (!settings.onboardingCompleted && req.nextUrl.pathname !== '/onboarding') {
+            return NextResponse.redirect(new URL('/onboarding', req.url));
+          }
+          if (settings.onboardingCompleted && !settings.gmailConnected) {
+            return NextResponse.redirect(new URL('/onboarding/connect', req.url));
+          }
+        }
+      } catch (error) {
+        console.error('Middleware DB error:', error);
+      }
+    }
+  }
+
   return response;
 }) as any;
 
-export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|api/webhooks|api/auth).*)',
-  ],
-};

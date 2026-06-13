@@ -1,130 +1,208 @@
- import 'server-only';
+import 'server-only';
+import { createClient, type PluginId } from '@corsair-dev/app';
 
-import { db } from '@/server/db';
-import { users } from '@/server/db/schema';
-import { eq } from 'drizzle-orm';
-import { decrypt } from '@/lib/crypto';
-import { TRPCError } from '@trpc/server';
+// Single Corsair client for the whole app
+// CORSAIR_DEV_KEY from app.corsair.dev/api-keys
+const corsairApp = createClient({
+  apiKey: process.env.CORSAIR_DEV_KEY!,
+});
 
-const CORSAIR_API_BASE = 'https://api.corsair.dev/v1';
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '';
+// The single Corsair instance for Tempo
+// CORSAIR_INSTANCE_ID is set after running setupInstance() once
+export const corsairInstance = corsairApp.instance(
+  process.env.CORSAIR_INSTANCE_ID!
+);
 
-export class CorsairError extends Error {
-  constructor(public status: number, message: string, public retryAfter?: number) {
-    super(message);
-    this.name = 'CorsairError';
+// Get a tenant-scoped client for a specific Tempo user
+// userId from Auth.js session — this IS the tenant ID
+export function getCorsairTenant(userId: string) {
+  return corsairInstance.tenant(userId);
+}
+
+// Ensure a Corsair tenant exists for this user
+// Call this on first sign-in — idempotent
+export async function ensureCorsairTenant(userId: string) {
+  try {
+    return await corsairInstance.tenant(userId).get();
+  } catch {
+    return await corsairInstance.tenants.create(userId);
   }
 }
 
-class CorsairClient {
-  private async getToken(userId: string): Promise<string> {
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: { corsair_token_encrypted: true }
-    });
-
-    if (!user || !user.corsair_token_encrypted) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Corsair not connected' });
-    }
-
-    try {
-      return decrypt(user.corsair_token_encrypted, ENCRYPTION_KEY);
-    } catch (e) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to decrypt integration token' });
-    }
-  }
-
-  private async fetchApi(userId: string, path: string, options: RequestInit = {}): Promise<any> {
-    const token = await this.getToken(userId);
-    
-    const res = await fetch(`${CORSAIR_API_BASE}${path}`, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
-
-    if (!res.ok) {
-      let message = res.statusText;
-      try {
-        const errorBody = await res.json();
-        message = errorBody.message || message;
-      } catch (e) {}
-
-      if (res.status === 429) {
-        const retryAfter = res.headers.get('retry-after');
-        throw new CorsairError(429, 'Rate limit exceeded', retryAfter ? parseInt(retryAfter, 10) : undefined);
-      }
-
-      throw new CorsairError(res.status, message);
-    }
-
-    // Some endpoints like DELETE might not return JSON
-    if (res.status === 204) return null;
-    return res.json();
-  }
-
-  // --- Gmail ---
-
-  async getEmails(userId: string, params: { maxResults?: number, pageToken?: string, q?: string } = {}) {
-    const query = new URLSearchParams();
-    if (params.maxResults) query.append('maxResults', params.maxResults.toString());
-    if (params.pageToken) query.append('pageToken', params.pageToken);
-    if (params.q) query.append('q', params.q);
-
-    const qs = query.toString();
-    return this.fetchApi(userId, `/integrations/gmail/messages${qs ? `?${qs}` : ''}`);
-  }
-
-  async getThread(userId: string, threadId: string) {
-    return this.fetchApi(userId, `/integrations/gmail/threads/${threadId}`);
-  }
-
-  async sendEmail(userId: string, data: { to: string, subject: string, body: string, threadId?: string }) {
-    return this.fetchApi(userId, '/integrations/gmail/messages/send', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-  }
-
-  async markRead(userId: string, messageId: string) {
-    return this.fetchApi(userId, `/integrations/gmail/messages/${messageId}/modify`, {
-      method: 'POST',
-      body: JSON.stringify({ removeLabelIds: ['UNREAD'] })
-    });
-  }
-
-  async archiveMessage(userId: string, messageId: string) {
-    return this.fetchApi(userId, `/integrations/gmail/messages/${messageId}/modify`, {
-      method: 'POST',
-      body: JSON.stringify({ removeLabelIds: ['INBOX'] })
-    });
-  }
-
-  async deleteMessage(userId: string, messageId: string) {
-    return this.fetchApi(userId, `/integrations/gmail/messages/${messageId}`, {
-      method: 'DELETE'
-    });
-  }
-
-  // --- Calendar ---
-
-  async getCalendarEvents(userId: string, params: { timeMin: string, timeMax: string }) {
-    const query = new URLSearchParams({
-      timeMin: params.timeMin,
-      timeMax: params.timeMax,
-    });
-    return this.fetchApi(userId, `/integrations/calendar/events?${query.toString()}`);
-  }
-
-  async createCalendarEvent(userId: string, data: { title: string, startTime: string, endTime: string, attendees?: string[], description?: string }) {
-    return this.fetchApi(userId, '/integrations/calendar/events', {
-      method: 'POST',
-      body: JSON.stringify(data)
-    });
-  }
+// Generate a connect link for the user to connect Gmail + Calendar
+// Returns a URL — redirect the user to it
+export async function createConnectLink(
+  userId: string,
+  options?: { ttlMs?: number }
+) {
+  const tenant = getCorsairTenant(userId);
+  return tenant.connectLink.create({
+    plugins: ['gmail', 'googlecalendar'] as PluginId[],
+    ttlMs: options?.ttlMs ?? 7 * 24 * 60 * 60 * 1000, // 7 days default
+  });
 }
 
-export const corsairClient = new CorsairClient();
+// ── Gmail Operations ──────────────────────────────────────────────
+
+export async function getEmails(
+  userId: string,
+  params?: {
+    limit?: number;
+    offset?: number;
+  }
+) {
+  const t = getCorsairTenant(userId);
+  const result = await t.run('gmail.db.messages.search', {
+    limit: params?.limit ?? 50,
+    offset: params?.offset ?? 0,
+  });
+  if (!result.success) {
+    return { needsConnect: true, signInLink: result.signInLink, data: null };
+  }
+  return { needsConnect: false, data: result.data };
+}
+
+export async function getThread(userId: string, threadId: string) {
+  const t = getCorsairTenant(userId);
+  const result = await t.run('gmail.db.threads.search', {
+    data: { id: { equals: threadId } },
+    limit: 1,
+  });
+  if (!result.success) {
+    return { needsConnect: true, signInLink: result.signInLink, data: null };
+  }
+  return { needsConnect: false, data: result.data };
+}
+
+/**
+ * Builds a base64url-encoded RFC 2822 email string as required by Gmail API.
+ * Path: gmail.api.messages.send requires `raw`, NOT plain text.
+ */
+function buildRfc2822Email(payload: {
+  to: string[];
+  subject: string;
+  body: string;
+  from?: string;
+  threadId?: string;
+}): string {
+  const to = payload.to.join(', ');
+  const subject = payload.subject;
+  const body = payload.body;
+
+  const mime = [
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    '',
+    body,
+  ].join('\r\n');
+
+  // base64url: standard base64, replace + with -, / with _, remove trailing =
+  const base64 = Buffer.from(mime).toString('base64');
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+export async function sendEmail(
+  userId: string,
+  payload: {
+    to: string[];
+    subject: string;
+    body: string;
+    threadId?: string;
+  }
+) {
+  const t = getCorsairTenant(userId);
+  const raw = buildRfc2822Email(payload);
+
+  const result = await t.run('gmail.api.messages.send', {
+    raw,
+    ...(payload.threadId && { threadId: payload.threadId }),
+  });
+
+  if (!result.success) {
+    return { needsConnect: true, signInLink: result.signInLink, data: null };
+  }
+  return { needsConnect: false, data: result.data };
+}
+
+export async function archiveEmail(userId: string, messageId: string) {
+  const t = getCorsairTenant(userId);
+  const result = await t.run('gmail.api.messages.modify', {
+    id: messageId,
+    removeLabelIds: ['INBOX'],
+  });
+  if (!result.success) {
+    throw new Error('Failed to archive email: ' + result.signInLink);
+  }
+  return result.data;
+}
+
+export async function markEmailRead(userId: string, messageId: string) {
+  const t = getCorsairTenant(userId);
+  const result = await t.run('gmail.api.messages.modify', {
+    id: messageId,
+    removeLabelIds: ['UNREAD'],
+  });
+  if (!result.success) {
+    throw new Error('Failed to mark email as read: ' + result.signInLink);
+  }
+  return result.data;
+}
+
+// Refresh Gmail cache by pulling latest from Gmail API
+export async function syncGmailInbox(userId: string) {
+  const t = getCorsairTenant(userId);
+  const result = await t.run('gmail.api.messages.list', {
+    maxResults: 100,
+  });
+  if (!result.success) {
+    return { needsConnect: true, signInLink: result.signInLink };
+  }
+  return { needsConnect: false, synced: true };
+}
+
+// ── Calendar Operations ───────────────────────────────────────────
+
+export async function getCalendarEvents(
+  userId: string,
+  params?: {
+    timeMin?: string;
+    timeMax?: string;
+  }
+) {
+  const t = getCorsairTenant(userId);
+  const result = await t.run('googlecalendar.db.events.search', {
+    limit: 50,
+  });
+  if (!result.success) {
+    return { needsConnect: true, signInLink: result.signInLink, data: null };
+  }
+  return { needsConnect: false, data: result.data };
+}
+
+export async function createCalendarEvent(
+  userId: string,
+  event: {
+    title: string;
+    startTime: string;
+    endTime: string;
+    attendees: string[];
+    description?: string;
+  }
+) {
+  const t = getCorsairTenant(userId);
+  const result = await t.run('googlecalendar.api.events.create', {
+    event: {
+      summary: event.title,
+      start: { dateTime: event.startTime },
+      end: { dateTime: event.endTime },
+      attendees: event.attendees.map((email) => ({ email })),
+      ...(event.description && { description: event.description }),
+    },
+  });
+  if (!result.success) {
+    return { needsConnect: true, signInLink: result.signInLink, data: null };
+  }
+  return { needsConnect: false, data: result.data };
+}

@@ -1,8 +1,12 @@
 import { randomBytes, createCipheriv, createDecipheriv, timingSafeEqual } from 'crypto';
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || '';
-if (ENCRYPTION_KEY.length !== 64) {
-  throw new Error('FATAL: ENCRYPTION_KEY must be exactly 64 characters long (32 bytes hex encoded).');
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? '';
+
+function requireKey(key: string): string {
+  if (key.length !== 64) {
+    throw new Error('FATAL: ENCRYPTION_KEY must be exactly 64 characters long (32 bytes hex encoded).');
+  }
+  return key;
 }
 
 /**

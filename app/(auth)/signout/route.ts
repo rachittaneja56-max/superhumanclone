@@ -1,5 +1,5 @@
-import { signOut } from "@/server/auth";
+import { signOut } from '@/auth'
 
 export async function GET() {
-  await signOut({ redirectTo: "/" });
+  await signOut({ redirectTo: '/' })
 }

@@ -1,50 +1,53 @@
-import { db } from '@/server/db';
-import { redis } from '@/server/redis';
-import { auth } from '@/server/auth';
-import { TRPCError } from '@trpc/server';
-import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
-import { authSessions } from '@/server/db/schema';
-import { and, eq, gt } from 'drizzle-orm';
+import 'server-only'
+import { auth } from '@/auth'
+import { db } from '@/server/db'
+import { redis } from '@/server/redis'
+import { TRPCError } from '@trpc/server'
+import { sessions } from '@/server/db/schema'
+import { eq, gt, and } from 'drizzle-orm'
 
-export const createContext = async (opts?: FetchCreateContextFnOptions) => {
-  const req = opts?.req;
-  const session = await auth();
+export async function createTRPCContext({ req }: { req: Request }) {
+  const session = await auth()
 
-  if (req && req.method !== 'GET') {
-    const csrfHeader = req.headers.get('x-trpc-csrf');
+  // CSRF check for all non-GET requests
+  if (req.method !== 'GET') {
+    const csrfHeader = req.headers.get('x-trpc-csrf')
     if (csrfHeader !== 'tempo-client') {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'CSRF check failed' });
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Missing CSRF header',
+      })
     }
   }
 
-  const userId = session?.user?.id || null;
+  let userId: string | null = null
 
-  if (userId) {
-    const cacheKey = `session:valid:${userId}`;
-    const cached = await redis.get(cacheKey);
+  if (session?.user?.id) {
+    // Check Redis cache first
+    const cacheKey = `session:valid:${session.user.id}`
+    const cached = await redis.get(cacheKey)
 
-    if (!cached) {
-      const sessionExists = await db.query.authSessions.findFirst({
+    if (cached) {
+      userId = session.user.id
+    } else {
+      // Verify session still exists in DB
+      const validSession = await db.query.sessions.findFirst({
         where: and(
-          eq(authSessions.userId, userId),
-          gt(authSessions.expires, new Date())
+          eq(sessions.userId, session.user.id),
+          gt(sessions.expires, new Date())
         ),
-      });
+        columns: { sessionToken: true },
+      })
 
-      if (!sessionExists) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Session expired' });
+      if (validSession) {
+        userId = session.user.id
+        await redis.set(cacheKey, '1', { ex: 60 })
       }
-
-      await redis.set(cacheKey, '1', { ex: 60 });
     }
   }
 
-  return {
-    db,
-    redis,
-    session,
-    userId,
-  };
-};
+  const ip = req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? '127.0.0.1'
+  return { db, redis, session, userId, ip }
+}
 
-export type Context = Awaited<ReturnType<typeof createContext>>;
+export type Context = Awaited<ReturnType<typeof createTRPCContext>>
