@@ -1,6 +1,6 @@
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
 import { z } from 'zod';
-import { emails, auditLogs, calendarEvents } from '@/server/db/schema';
+import { emails, auditLogs, calendarEvents, autoReplyDrafts } from '@/server/db/schema';
 import { eq, and, desc, gt, between, inArray, asc } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
@@ -399,5 +399,29 @@ export const emailRouter = router({
     .mutation(async ({ ctx, input }) => {
       await ctx.redis.del(`undo:send:${ctx.userId}:${input.undoToken}`);
       return { cancelled: true };
+    }),
+
+  getAutoReplies: protectedProcedure
+    .input(z.object({
+      emailId: z.string().uuid()
+    }))
+    .query(async ({ ctx, input }) => {
+      // JOIN to verify ownership
+      const drafts = await ctx.db
+        .select({
+          id: autoReplyDrafts.id,
+          reply_text: autoReplyDrafts.reply_text,
+          status: autoReplyDrafts.status,
+          created_at: autoReplyDrafts.created_at,
+        })
+        .from(autoReplyDrafts)
+        .innerJoin(emails, eq(autoReplyDrafts.emailId, emails.id))
+        .where(
+          and(
+            eq(autoReplyDrafts.emailId, input.emailId),
+            eq(emails.userId, ctx.userId!)
+          )
+        );
+      return drafts;
     })
 });

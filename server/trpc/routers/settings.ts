@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
 import { db } from '../../db';
-import { aiConsentRules } from '../../db/schema';
+import { aiConsentRules, userSettings } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import { redis } from '../../redis';
 
@@ -49,6 +49,15 @@ export const settingsRouter = router({
         }
       } while (cursor !== 0);
 
+      return { success: true };
+    }),
+
+  toggleDraftSuggestions: protectedProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.update(userSettings)
+        .set({ draftSuggestionsEnabled: input.enabled })
+        .where(eq(userSettings.userId, ctx.userId!));
       return { success: true };
     }),
 });
