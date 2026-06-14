@@ -147,15 +147,21 @@ ${eventList}`;
 
 export async function rewriteDraft(
   draft: string,
-  instruction: 'formal' | 'shorter' | 'longer' | 'friendly'
+  instruction: 'improve_tone' | 'make_shorter' | 'make_formal' | 'convert_to_bullets' | 'translate',
+  translateTo?: string
 ): Promise<string> {
   const model = getModel('fast');
   const input = `<email_content>${draft}</email_content>`;
 
+  let promptInstruction = instruction.replace(/_/g, ' ');
+  if (instruction === 'translate' && translateTo) {
+    promptInstruction = `translate to ${translateTo}`;
+  }
+
   const { text } = await generateText({
     model,
     system: prompts.rewriteDraft,
-    prompt: `Rewrite this draft to be ${instruction}.\n\n${input}`,
+    prompt: `Rewrite this draft to satisfy this instruction: ${promptInstruction}.\n\n${input}`,
     maxOutputTokens: 1000,
   });
 

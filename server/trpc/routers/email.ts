@@ -1,15 +1,18 @@
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
 import { z } from 'zod';
 import { emails, auditLogs, calendarEvents } from '@/server/db/schema';
-import { eq, and, desc, gt, between } from 'drizzle-orm';
+import { eq, and, desc, gt, between, inArray, asc } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
   getEmails,
-  sendEmail,
+  sendEmail as corsairSendEmail,
   archiveEmail,
   deleteEmail as corsairDeleteEmail,
+  syncGmailInbox,
+  getThread as corsairGetThread,
+  markEmailRead,
 } from '@/server/corsair/client';
-import { generateDigest } from '@/server/ai/provider';
+import { generateDigest, rewriteDraft } from '@/server/ai/provider';
 import { Client } from '@upstash/qstash';
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' });
@@ -23,14 +26,97 @@ export const emailRouter = router({
       tag: z.string().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const result = await getEmails(ctx.userId!, { limit: input.limit })
-      if (result.needsConnect) {
-        throw new TRPCError({
-          code: 'PRECONDITION_FAILED',
-          message: 'Gmail not connected',
-        })
+      const results = await ctx.db.query.emails.findMany({
+        where: and(
+          eq(emails.userId, ctx.userId!),
+          eq(emails.is_archived, input.isArchived),
+          eq(emails.is_deleted, false)
+        ),
+        orderBy: [desc(emails.created_at)],
+        limit: input.limit
+      });
+
+      if (results.length === 0) {
+        const syncResult = await syncGmailInbox(ctx.userId!);
+        if (syncResult.needsConnect) {
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Gmail not connected' });
+        }
+        
+        return await ctx.db.query.emails.findMany({
+          where: and(
+            eq(emails.userId, ctx.userId!),
+            eq(emails.is_archived, input.isArchived),
+            eq(emails.is_deleted, false)
+          ),
+          orderBy: [desc(emails.created_at)],
+          limit: input.limit
+        });
       }
-      return (result.data as any[]) || [];
+
+      return results;
+    }),
+
+  getThread: protectedProcedure
+    .input(z.object({
+      threadId: z.string().min(1).max(200)
+    }))
+    .query(async ({ ctx, input }) => {
+      const threadEmails = await ctx.db.query.emails.findMany({
+        where: and(
+          eq(emails.thread_id, input.threadId),
+          eq(emails.userId, ctx.userId!)
+        ),
+        orderBy: [asc(emails.created_at)]
+      });
+
+      let hydrated = false;
+      for (const email of threadEmails) {
+        if (!email.body_text) {
+          const result = await corsairGetThread(ctx.userId!, input.threadId);
+          if (result.data && Array.isArray(result.data)) {
+            for (const msg of result.data) {
+              await ctx.db.update(emails)
+                .set({ body_text: msg.bodyText || msg.body_text, body_html: msg.bodyHtml || msg.body_html })
+                .where(and(eq(emails.corsair_message_id, msg.id), eq(emails.userId, ctx.userId!)));
+            }
+          }
+          hydrated = true;
+          break;
+        }
+      }
+
+      if (hydrated) {
+        return ctx.db.query.emails.findMany({
+          where: and(
+            eq(emails.thread_id, input.threadId),
+            eq(emails.userId, ctx.userId!)
+          ),
+          orderBy: [asc(emails.created_at)]
+        });
+      }
+
+      return threadEmails;
+    }),
+
+  markRead: protectedProcedure
+    .input(z.object({
+      emailIds: z.array(z.string().uuid()).max(50)
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.update(emails)
+        .set({ is_read: true })
+        .where(and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)));
+
+      const toUpdate = await ctx.db.query.emails.findMany({
+        where: and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)),
+        columns: { corsair_message_id: true }
+      });
+      
+      toUpdate.forEach(e => {
+        markEmailRead(ctx.userId!, e.corsair_message_id).catch(console.error);
+      });
+
+      return { success: true };
     }),
 
   archiveEmail: protectedProcedure
@@ -244,5 +330,74 @@ export const emailRouter = router({
       await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: 3600 });
 
       return result;
+    }),
+
+  rewriteDraft: protectedProcedure
+    .use(createRateLimitMiddleware('rewriteDraft', 20, 60))
+    .input(z.object({
+      draft: z.string().min(1).max(5000),
+      instruction: z.enum(['improve_tone','make_shorter','make_formal','convert_to_bullets','translate']),
+      translateTo: z.string().max(50).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const rewritten = await rewriteDraft(input.draft, input.instruction, input.translateTo);
+      return { rewritten };
+    }),
+
+  sendEmail: protectedProcedure
+    .use(createRateLimitMiddleware('sendEmail', 20, 3600))
+    .input(z.object({
+      to: z.array(z.string().email()),
+      cc: z.array(z.string().email()).optional(),
+      subject: z.string().min(1),
+      body: z.string(),
+      threadId: z.string().optional()
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const undoToken = crypto.randomUUID();
+      await ctx.redis.set(`undo:send:${ctx.userId}:${undoToken}`, JSON.stringify(input), { ex: 10 });
+      return { undoToken, expiresAt: Date.now() + 10000 };
+    }),
+
+  sendConfirmed: protectedProcedure
+    .use(createRateLimitMiddleware('sendConfirmed', 20, 3600))
+    .input(z.object({
+      undoToken: z.string().uuid()
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const redisKey = `undo:send:${ctx.userId}:${input.undoToken}`;
+      const payloadStr = await ctx.redis.get<string>(redisKey);
+      
+      if (!payloadStr) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Send window expired or invalid token' });
+      }
+
+      const payload = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
+
+      await corsairSendEmail(ctx.userId!, {
+        to: payload.to,
+        subject: payload.subject,
+        body: payload.body,
+        threadId: payload.threadId,
+      });
+
+      await ctx.redis.del(redisKey);
+
+      ctx.db.insert(auditLogs).values({
+        userId: ctx.userId!,
+        action: 'email_sent',
+        details: { to: payload.to, subject: payload.subject }
+      }).catch(console.error);
+
+      return { success: true };
+    }),
+
+  cancelSend: protectedProcedure
+    .input(z.object({
+      undoToken: z.string().uuid()
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await ctx.redis.del(`undo:send:${ctx.userId}:${input.undoToken}`);
+      return { cancelled: true };
     })
 });
