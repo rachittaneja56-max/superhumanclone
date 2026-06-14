@@ -6,8 +6,9 @@ import { useUIStore } from "@/store/ui-store";
 import { Button } from "@/components/ui/button";
 import { ShieldAlert, Check, X, Mail } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
-export function HITLCard() {
+export function HITLCard({ className }: { className?: string }) {
   const { activeHITLAction, setActiveHITLAction } = useUIStore();
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,7 +59,7 @@ export function HITLCard() {
   const strokeDasharray = `${progressPercentage} 100`;
 
   return (
-    <div className="fixed bottom-6 right-6 w-96 bg-surface shadow-2xl rounded-lg border border-border border-l-4 border-l-amber-500 z-50 animate-in slide-in-from-bottom-5 font-sans overflow-hidden">
+    <div className={cn("w-96 bg-surface shadow-2xl rounded-lg border border-border border-l-4 border-l-amber-500 z-50 animate-in slide-in-from-bottom-5 font-sans overflow-hidden", className || "fixed bottom-6 right-6")}>
       <div className="p-4 border-b border-border bg-amber-500/5 flex items-center justify-between">
         <div className="flex items-center space-x-2 text-amber-600">
           <ShieldAlert className="w-5 h-5" />

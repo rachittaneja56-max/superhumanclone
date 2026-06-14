@@ -4,6 +4,7 @@ import { Mail, Calendar, Bot, Search, Settings, LogOut } from 'lucide-react';
 import { headers } from 'next/headers';
 
 import { auth } from '@/server/auth';
+import { AppProviders } from '@/components/layout/AppProviders';
 
 export default async function AppLayout({
   children,
@@ -63,9 +64,11 @@ export default async function AppLayout({
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <div className="flex-1 overflow-y-auto w-full h-full">
-          {children}
-        </div>
+        <AppProviders userId={session?.user?.id}>
+          <div className="flex-1 overflow-y-auto w-full h-full">
+            {children}
+          </div>
+        </AppProviders>
       </main>
     </div>
   );
