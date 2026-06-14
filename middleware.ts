@@ -49,8 +49,15 @@ export default auth(async function middleware(req) {
   const { pathname } = req.nextUrl
   const session = (req as any).auth
 
-  const csrfResponse = await csrfProtect(req)
-  if (csrfResponse.status === 403) return csrfResponse
+  let csrfResponse;
+  if (!req.headers.has('next-action')) {
+    csrfResponse = await csrfProtect(req)
+    if (csrfResponse.status === 403) return csrfResponse
+  } else {
+    // Next.js Server Actions have built-in CSRF protection based on Origin/Host headers
+    // Still run csrfProtect to set the token cookie, but ignore 403s
+    csrfResponse = await csrfProtect(req)
+  }
 
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
   const csp = `

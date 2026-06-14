@@ -1,6 +1,20 @@
 import 'server-only'
 import { createClient, type PluginId } from '@corsair-dev/app'
 
+// Validate required env vars on module load
+if (!process.env.CORSAIR_DEV_KEY) {
+  throw new Error(
+    'MISSING: CORSAIR_DEV_KEY not set in environment variables. ' +
+    'Get it from app.corsair.dev/api-keys'
+  )
+}
+if (!process.env.CORSAIR_INSTANCE_ID) {
+  throw new Error(
+    'MISSING: CORSAIR_INSTANCE_ID not set. ' +
+    'Run: npx tsx server/corsair/setup.ts to create an instance first.'
+  )
+}
+
 // Single Corsair client for the whole app
 // CORSAIR_DEV_KEY from app.corsair.dev/api-keys
 const corsairApp = createClient({
@@ -16,7 +30,10 @@ export const corsairInstance = corsairApp.instance(
 // Get a tenant-scoped client for a specific Tempo user
 // userId from Auth.js session — this IS the tenant ID
 export function getCorsairTenant(userId: string) {
-  return corsairInstance.tenant(userId)
+  console.log('[Corsair] Getting tenant for userId:', userId.slice(0, 8) + '...')
+  const tenant = corsairInstance.tenant(userId)
+  console.log('[Corsair] Tenant object type:', typeof tenant)
+  return tenant
 }
 
 // Ensure a Corsair tenant exists for this user
@@ -38,10 +55,12 @@ export async function createConnectLink(
   options?: { plugins?: string[]; ttlMs?: number }
 ) {
   const tenant = getCorsairTenant(userId)
-  return tenant.connectLink.create({
+  const result = await tenant.connectLink.create({
     plugins: (options?.plugins ?? ['gmail', 'googlecalendar']) as PluginId[],
     ttlMs: options?.ttlMs ?? 7 * 24 * 60 * 60 * 1000, // 7 days default
   })
+  console.log('[Corsair] Connect link created:', typeof result, Object.keys(result ?? {}))
+  return result
 }
 
 // ── Gmail Operations ──────────────────────────────────────────────

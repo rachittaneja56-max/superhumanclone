@@ -8,15 +8,16 @@ import { eq } from 'drizzle-orm'
 export default async function ConnectPage({
   searchParams
 }: {
-  searchParams: { connected?: string; error?: string }
+  searchParams: Promise<{ connected?: string; error?: string }>
 }) {
+  const resolvedSearchParams = await searchParams;
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
   const userId = session.user.id
 
   // If Corsair redirected back with ?connected=true
-  if (searchParams.connected === 'true') {
+  if (resolvedSearchParams.connected === 'true') {
     // Mark user as connected in our DB
     await db.update(userSettings)
       .set({ gmailConnected: true, calendarConnected: true })
@@ -26,7 +27,12 @@ export default async function ConnectPage({
   }
 
   // Ensure Corsair tenant exists for this user
-  await ensureCorsairTenant(userId)
+  try {
+    await ensureCorsairTenant(userId)
+    console.log('Corsair tenant ensured for userId:', userId)
+  } catch (err: any) {
+    console.error('ensureCorsairTenant FAILED:', err?.message)
+  }
 
   // Get current connection status
   const settings = await db.query.userSettings.findFirst({
@@ -38,7 +44,17 @@ export default async function ConnectPage({
   if (settings?.gmailConnected) redirect('/inbox')
 
   // Generate a connect link from Corsair
-  const { url: connectUrl } = await createConnectLink(userId)
+  let connectUrl: string
+  let connectError: string | null = null
+  try {
+    const result = await createConnectLink(userId)
+    console.log('createConnectLink result:', JSON.stringify(result, null, 2))
+    connectUrl = result.url ?? result ?? ''
+  } catch (err: any) {
+    console.error('createConnectLink FAILED:', err?.message, err?.stack)
+    connectError = err?.message ?? 'Unknown error'
+    connectUrl = ''
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
@@ -51,7 +67,7 @@ export default async function ConnectPage({
           Your credentials are stored encrypted and never leave your control.
         </p>
 
-        {searchParams.error && (
+        {resolvedSearchParams.error && (
           <div className="mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
             Connection failed. Please try again.
           </div>
@@ -65,7 +81,7 @@ export default async function ConnectPage({
         </a>
 
         <p className="text-xs text-foreground-subtle text-center mt-4">
-          You'll be redirected to a secure Corsair page to authorize access.
+          You&apos;ll be redirected to a secure Corsair page to authorize access.
         </p>
 
         {settings?.gmailConnected && (
