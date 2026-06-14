@@ -4,6 +4,11 @@ import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
 import * as prompts from './prompts';
+import { createCorsairMCPClient, sendEmail, createCalendarEvent } from '../corsair/client';
+import { db } from '../db';
+import { emails } from '../db/schema';
+import { eq, and, isNotNull, sql } from 'drizzle-orm';
+import { streamText, tool } from 'ai';
 
 console.log('[AI] Provider:', process.env.NODE_ENV === 'development' ? 'Gemini' : 'OpenAI');
 
@@ -207,6 +212,111 @@ export async function generateContactSummary(snippets: string[]): Promise<string
   return text;
 }
 
-export async function streamAgentResponse(): Promise<null> {
-  return null;
+async function vectorSearchInternal(userId: string, query: string) {
+  const queryEmbedding = await generateEmbedding(query);
+  const embeddingStr = JSON.stringify(queryEmbedding);
+
+  return db.query.emails.findMany({
+    where: and(
+      eq(emails.userId, userId),
+      eq(emails.is_archived, false),
+      eq(emails.is_deleted, false),
+      isNotNull(emails.embedding)
+    ),
+    extras: {
+      similarity: sql<number>`1 - (${emails.embedding} <=> ${embeddingStr})`.as('similarity'),
+    },
+    orderBy: sql`${emails.embedding} <=> ${embeddingStr} ASC`,
+    limit: 10,
+  });
+}
+
+export async function streamAgentResponse(
+  userId: string,
+  sessionId: string,
+  messages: { role: 'user' | 'assistant'; content: string }[],
+  hitlInterceptor: (action: any) => Promise<boolean>
+) {
+  // Create Corsair MCP client for this tenant
+  const mcpClient = await createCorsairMCPClient(userId);
+
+  // CRITICAL from docs: await tools() before streamText
+  const corsairTools = await mcpClient.tools();
+
+  // Build our custom tools that wrap HITL
+  const tempoTools: any = {
+    searchEmails: tool({
+      description: 'Search emails semantically using local search',
+      parameters: z.object({ query: z.string() }),
+      execute: async ({ query }: { query: string }) => {
+        // Use our pgvector search — NOT Corsair for search
+        // Filters out ai_triage_skipped emails (Privacy Gate respected)
+        const results = await vectorSearchInternal(userId, query);
+        return results
+          .filter(e => !e.ai_triage_skipped)
+          .map(e => ({
+            id: e.id,
+            subject: e.subject,
+            from: e.from_name || e.from_address,
+            // Wrap in XML tags — prompt injection defense
+            snippet: '<email_content>' + e.snippet + '</email_content>',
+          }));
+      },
+    } as any),
+    sendEmail: tool({
+      description: 'Send an email. ALWAYS requires user approval first.',
+      parameters: z.object({
+        to: z.array(z.string().email()),
+        subject: z.string(),
+        body: z.string(),
+      }),
+      execute: async (params: { to: string[], subject: string, body: string }) => {
+        // HITL intercept — agent parks here until approved/rejected
+        const approved = await hitlInterceptor({
+          actionType: 'send_email',
+          payload: { to: params.to, subject: params.subject },
+          // body NOT in payload sent to client — privacy
+          humanReadable: `Send to ${params.to.join(', ')}: "${params.subject}"`,
+        });
+        if (!approved) return { status: 'cancelled by user' };
+        const result = await sendEmail(userId, params);
+        if (result.needsConnect) return { error: 'Gmail not connected' };
+        return { status: 'sent' };
+      },
+    } as any),
+    createCalendarEvent: tool({
+      description: 'Create a calendar event. Requires user approval.',
+      parameters: z.object({
+        title: z.string(),
+        startTime: z.string(),
+        endTime: z.string(),
+        attendees: z.array(z.string().email()),
+      }),
+      execute: async (params: { title: string, startTime: string, endTime: string, attendees: string[] }) => {
+        const approved = await hitlInterceptor({
+          actionType: 'create_event',
+          payload: params,
+          humanReadable: `Create "${params.title}" on ${params.startTime}`,
+        });
+        if (!approved) return { status: 'cancelled by user' };
+        const result = await createCalendarEvent(userId, params);
+        if (result.needsConnect) return { error: 'Calendar not connected' };
+        return { status: 'created' };
+      },
+    } as any),
+  };
+
+
+  const result = streamText({
+    model: getModel('smart'),
+    system: prompts.agentSystem,
+    messages: messages as any, // Cast messages for type matching
+    // Combine our HITL tools with Corsair's MCP tools
+    tools: { ...tempoTools, ...(corsairTools as any) },
+  });
+
+  // ALWAYS close MCP client after use (from Corsair docs warning)
+  Promise.resolve(result.text).catch(() => {}).finally(() => mcpClient.close?.());
+
+  return result;
 }

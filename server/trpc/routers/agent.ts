@@ -7,6 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { redis } from '../../redis';
 
 const resolveHitlLimit = createRateLimitMiddleware('hitl_resolve', 60, 60);
+const chatMessageLimit = createRateLimitMiddleware('agent_chat', 50, 3600);
 
 export const agentRouter = router({
   getPendingHITL: protectedProcedure
@@ -64,5 +65,32 @@ export const agentRouter = router({
       }).catch(console.error);
 
       return { resolved: true, decision: input.decision };
+    }),
+
+  chatMessage: protectedProcedure
+    .use(chatMessageLimit)
+    .input(z.object({
+      message: z.string().min(1).max(5000),
+      sessionId: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const workerUrl = process.env.RAILWAY_WORKER_URL || 'http://localhost:8080';
+      const upstream = await fetch(workerUrl + '/agent/chat', {
+        method: 'POST',
+        headers: {
+          'X-Worker-Secret': process.env.WORKER_SECRET || '',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: ctx.userId,
+          sessionId: input.sessionId,
+          message: input.message,
+        }),
+      });
+
+      // Using the exact pattern requested by the user, though usually TRPC v11 uses async generator for streams.
+      return new Response(upstream.body, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     }),
 });
