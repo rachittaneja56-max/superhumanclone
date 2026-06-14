@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { useUIStore, type HITLActionState } from "@/store/ui-store";
+import { useUIStore } from "@/store/ui-store";
 import { Button } from "@/components/ui/button";
 import { ShieldAlert, Check, X, Mail } from "lucide-react";
 import { toast } from "sonner";
@@ -97,43 +97,36 @@ export function HITLCard({ className }: { className?: string }) {
           {activeHITLAction.humanReadable}
         </p>
 
-        {activeHITLAction.payload && (() => {
-          const toField = (activeHITLAction.payload as any).to;
-          const subjectField = (activeHITLAction.payload as any).subject;
-          const toList = Array.isArray(toField) ? (toField as string[]) : null;
-          const subject = typeof subjectField === 'string' ? subjectField : null;
+        {activeHITLAction.payload && (
+          <div className="p-3 bg-muted/20 border border-border rounded-md space-y-2">
+            {activeHITLAction.payload.to && (
+              <div className="flex items-start space-x-2 text-xs">
+                <span className="font-semibold text-muted-foreground w-12 shrink-0">To:</span>
+                <span className="text-foreground truncate">{activeHITLAction.payload.to.join(", ")}</span>
+              </div>
+            )}
+            {activeHITLAction.payload.subject && (
+              <div className="flex items-start space-x-2 text-xs">
+                <span className="font-semibold text-muted-foreground w-12 shrink-0">Subject:</span>
+                <span className="text-foreground line-clamp-2">{activeHITLAction.payload.subject}</span>
+              </div>
+            )}
+            {!activeHITLAction.payload.to && !activeHITLAction.payload.subject && (
+              <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+                <Mail className="w-3.5 h-3.5" />
+                <span>Payload details hidden for privacy.</span>
+              </div>
+            )}
+          </div>
+        )}
 
-          return (
-            <div className="p-3 bg-muted/20 border border-border rounded-md space-y-2">
-              {toList && (
-                <div className="flex items-start space-x-2 text-xs">
-                  <span className="font-semibold text-muted-foreground w-12 shrink-0">To:</span>
-                  <span className="text-foreground truncate">{toList.join(", ")}</span>
-                </div>
-              )}
-              {subject && (
-                <div className="flex items-start space-x-2 text-xs">
-                  <span className="font-semibold text-muted-foreground w-12 shrink-0">Subject:</span>
-                  <span className="text-foreground line-clamp-2">{subject}</span>
-                </div>
-              )}
-              {!toList && !subject && (
-                <div className="flex items-center space-x-2 text-xs text-muted-foreground">
-                  <Mail className="w-3.5 h-3.5" />
-                  <span>Payload details hidden for privacy.</span>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        <div className="flex justify-end space-x-2 pt-2">
+        <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2">
           <Button
             variant="destructive"
             size="sm"
             onClick={() => handleDecision("rejected")}
             disabled={isSubmitting}
-            className="w-24"
+            className="w-full sm:w-24 order-2 sm:order-1"
           >
             <X className="w-4 h-4 mr-1" />
             Reject
@@ -142,7 +135,7 @@ export function HITLCard({ className }: { className?: string }) {
             size="sm"
             onClick={() => handleDecision("approved")}
             disabled={isSubmitting}
-            className="w-24 bg-amber-500 hover:bg-amber-600 text-white"
+            className="w-full sm:w-24 bg-amber-500 hover:bg-amber-600 text-white order-1 sm:order-2"
           >
             <Check className="w-4 h-4 mr-1" />
             Approve

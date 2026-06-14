@@ -1,5 +1,5 @@
 import 'server-only';
-import { generateObject, generateText, embed, streamText, tool } from 'ai';
+import { generateObject, generateText, embed } from 'ai';
 import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
@@ -8,6 +8,7 @@ import { createCorsairMCPClient, sendEmail, createCalendarEvent } from '../corsa
 import { db } from '../db';
 import { emails } from '../db/schema';
 import { eq, and, isNotNull, sql } from 'drizzle-orm';
+import { streamText, tool } from 'ai';
 
 console.log('[AI] Provider:', process.env.NODE_ENV === 'development' ? 'Gemini' : 'OpenAI');
 
@@ -232,8 +233,9 @@ async function vectorSearchInternal(userId: string, query: string) {
 
 export async function streamAgentResponse(
   userId: string,
+  sessionId: string,
   messages: { role: 'user' | 'assistant'; content: string }[],
-  hitlInterceptor: (action: { actionType: string; payload: Record<string, unknown>; humanReadable: string }) => Promise<boolean>
+  hitlInterceptor: (action: any) => Promise<boolean>
 ) {
   // Create Corsair MCP client for this tenant
   const mcpClient = await createCorsairMCPClient(userId);

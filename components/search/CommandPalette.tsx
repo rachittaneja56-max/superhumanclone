@@ -48,7 +48,7 @@ export function CommandPalette() {
   };
 
   return (
-    <CommandDialog open={commandPaletteOpen} onOpenChange={closePalette}>
+    <CommandDialog open={commandPaletteOpen} onOpenChange={closePalette} className="w-[95vw] sm:max-w-xl mx-auto sm:w-full top-1/4">
       <CommandInput 
         placeholder="Type a command or search..." 
         value={query} 

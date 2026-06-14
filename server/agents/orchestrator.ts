@@ -48,12 +48,11 @@ export async function runAgentTurn(
   
   const messages = [...recentHistory, { role: 'user' as const, content: userMessage }];
 
-  // 3. Build curried hitlInterceptor with proper typing
-  const hitlInterceptorForSession = (action: { actionType: string; payload: Record<string, unknown>; humanReadable: string }) =>
-    hitlInterceptor(userId, sessionId, action);
+  // 3. Build curried hitlInterceptor
+  const hitlInterceptorForSession = (action: any) => hitlInterceptor(userId, sessionId, action);
 
   // 4. Call streamAgentResponse
-  const result = await streamAgentResponse(userId, messages, hitlInterceptorForSession);
+  const result = await streamAgentResponse(userId, sessionId, messages, hitlInterceptorForSession);
   
   // 5. Stream chunks
   let fullResponse = '';

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { useUIStore, type HITLActionState } from "@/store/ui-store";
+import { useUIStore } from "@/store/ui-store";
 import { HITLCard } from "./HITLCard";
 import { Button } from "@/components/ui/button";
 import { Loader2, ArrowUp, Bot } from "lucide-react";
@@ -33,16 +33,7 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     if (getPendingHITL.data) {
-      const row = getPendingHITL.data;
-      // Transform DB row shape → UIStore HITLActionState
-      const hitlState: HITLActionState = {
-        actionId: row.id,
-        actionType: row.action_type,
-        humanReadable: `Pending: ${row.action_type}`,
-        expiresAt: row.expires_at.toISOString(),
-        payload: (row.payload as Record<string, unknown>) ?? undefined,
-      };
-      setActiveHITLAction(hitlState);
+      setActiveHITLAction(getPendingHITL.data);
     }
   }, [getPendingHITL.data, setActiveHITLAction]);
 

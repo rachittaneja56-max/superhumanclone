@@ -156,14 +156,16 @@ function EmailMessage({ email }: { email: any }) {
       </div>
       
       {email.body_html ? (
-        <iframe
-          ref={iframeRef}
-          srcDoc={email.body_html}
-          sandbox="allow-same-origin"
-          title={`Email from ${email.from_name || email.from_address}`}
-          className="w-full border-0 bg-white rounded-md"
-          style={{ height: "auto", minHeight: "100px", overflow: "hidden" }}
-        />
+        <div className="overflow-x-auto w-full">
+          <iframe
+            ref={iframeRef}
+            srcDoc={email.body_html}
+            sandbox="allow-same-origin"
+            title={`Email from ${email.from_name || email.from_address}`}
+            className="w-full border-0 bg-white rounded-md"
+            style={{ height: "auto", minHeight: "100px", overflow: "hidden" }}
+          />
+        </div>
       ) : (
         <pre className="whitespace-pre-wrap font-sans text-sm text-[var(--text)]">
           {email.snippet || "No content available."}

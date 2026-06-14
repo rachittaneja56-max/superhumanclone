@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { LucideIcon } from 'lucide-react';
 
 interface NavItemProps {
   item: {

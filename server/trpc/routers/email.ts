@@ -4,6 +4,7 @@ import { emails, auditLogs, calendarEvents, autoReplyDrafts } from '@/server/db/
 import { eq, and, desc, gt, between, inArray, asc } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
+  getEmails,
   sendEmail as corsairSendEmail,
   archiveEmail,
   deleteEmail as corsairDeleteEmail,

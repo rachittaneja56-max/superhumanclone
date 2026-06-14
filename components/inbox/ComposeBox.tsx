@@ -135,14 +135,14 @@ export function ComposeBox({ threadId }: { threadId?: string }) {
           placeholder="To" 
           value={to} 
           onChange={(e) => setTo(e.target.value)}
-          className="flex-1 p-2 rounded border bg-transparent text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+          className="flex-1 p-3 min-h-[44px] rounded border bg-transparent text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
           style={{ borderColor: "var(--border)", color: "var(--text)" }}
         />
         <input 
           placeholder="Subject" 
           value={subject} 
           onChange={(e) => setSubject(e.target.value)}
-          className="flex-1 p-2 rounded border bg-transparent text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+          className="flex-1 p-3 min-h-[44px] rounded border bg-transparent text-sm focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
           style={{ borderColor: "var(--border)", color: "var(--text)" }}
         />
       </div>

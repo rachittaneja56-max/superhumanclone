@@ -7,7 +7,7 @@ export default function InboxLoading() {
       <div className="flex-1 overflow-y-auto">
         <div className="flex flex-col w-full">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-4 p-4 border-b border-border">
+            <div key={i} className="flex items-center gap-4 px-4 h-[72px] border-b border-border">
               <div className="w-10 h-10 rounded-full bg-surface-raised flex-shrink-0 animate-pulse" />
               <div className="flex-1 min-w-0 flex flex-col gap-2">
                 <div className="flex items-center justify-between">

@@ -22,8 +22,9 @@ export default async function AppLayout({
   ];
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background font-sans">
-      <aside className="w-[240px] flex-shrink-0 flex flex-col bg-surface border-r border-border h-full">
+    <div className="flex flex-col md:flex-row h-screen w-full overflow-hidden bg-background font-sans">
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-[240px] flex-shrink-0 flex-col bg-surface border-r border-border h-full">
         <div className="h-16 flex items-center justify-between px-6 border-b border-transparent">
           <Link href="/inbox" className="flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm">
             <span className="font-display font-semibold text-xl tracking-tight">
@@ -70,6 +71,19 @@ export default async function AppLayout({
           </div>
         </AppProviders>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden flex items-center justify-around w-full h-16 bg-surface border-t border-border flex-shrink-0 pb-safe">
+        {navItems.slice(0, 4).map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link key={item.name} href={item.href} className="flex flex-col items-center justify-center w-full h-full text-muted-foreground hover:text-foreground">
+              <Icon className="w-5 h-5 mb-1" />
+              <span className="text-[10px] font-medium">{item.name}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }
