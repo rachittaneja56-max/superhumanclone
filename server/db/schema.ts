@@ -90,13 +90,15 @@ export const aiConsentRules = pgTable(
     userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
-    domain: text('domain').notNull(),
-    status: text('status').default('allowed').notNull(), 
+    ruleType: text('rule_type').$type<'domain_group' | 'custom_domain'>().notNull(),
+    pattern: text('pattern').notNull(),
+    isBlocked: boolean('is_blocked').default(true).notNull(),
+    groupName: text('group_name'),
     created_at: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
     updated_at: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull()
   },
   (table) => [
-    uniqueIndex('user_domain_idx').on(table.userId, table.domain),
+    uniqueIndex('user_domain_idx').on(table.userId, table.pattern),
     index('consent_user_idx').on(table.userId)
   ]
 );
@@ -121,7 +123,7 @@ export const emails = pgTable(
     is_archived: boolean('is_archived').default(false).notNull(),
     is_deleted: boolean('is_deleted').default(false).notNull(),
     deleted_at: timestamp('deleted_at', { withTimezone: true, mode: 'date' }),
-    ai_triage_skipped: boolean('ai_triage_skipped').default(false).notNull(),
+    ai_triage_skipped: boolean('ai_triage_skipped').default(true).notNull(),
     priority: priorityEnum('priority').default('medium').notNull(),
     tag: tagEnum('tag').default('other').notNull(),
     tldr: text('tldr'),

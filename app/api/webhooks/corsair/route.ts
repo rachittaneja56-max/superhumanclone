@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { redis } from '@/server/redis';
 import { db } from '@/server/db';
-import { aiConsentRules, emails } from '@/server/db/schema';
-import { eq, and } from 'drizzle-orm';
-import { isDomainBlocked } from '@/lib/domain-matcher';
+import { emails } from '@/server/db/schema';
+import { Client as QStash } from '@upstash/qstash';
 
 export const runtime = 'edge';
 
@@ -83,79 +82,49 @@ export async function POST(req: Request) {
     // 7. Extract sender
     const sender = event.data?.from?.email ?? event.data?.attendee?.email;
     if (!sender) {
-      // If no sender (e.g. sync event), just pass to worker
-      await publishToWorker(event);
-      return NextResponse.json({ status: 'dispatched' });
+      // If no sender (e.g. sync event), ignore for triage
+      return NextResponse.json({ status: 'ignored' });
     }
 
-    // 8. Extract domain
-    const parts = sender.split('@');
-    const domain = parts.length === 2 ? parts[1] : '';
+    if (event.type === 'email.received' && event.data?.messageId) {
+      const emailData = event.data;
+      
+      const [inserted] = await db.insert(emails).values({
+        userId,
+        corsair_message_id: emailData.messageId,
+        from_address: sender,
+        to_address: emailData.to?.[0]?.email || '',
+        subject: emailData.subject ?? '',
+        snippet: emailData.snippet ?? '',
+        body_text: emailData.body?.text ?? null,
+        ai_triage_skipped: true // defaults to true, explicitly setting for clarity
+      }).returning({ id: emails.id });
 
-    // 9. Consent check
-    const cacheKey = 'consent:' + userId + ':' + domain;
-    let cachedRules = await redis.get<string[]>(cacheKey);
+      const qstash = new QStash({ token: process.env.QSTASH_TOKEN! });
 
-    if (cachedRules === null) {
-      const rules = await db.query.aiConsentRules.findMany({
-        where: eq(aiConsentRules.userId, userId),
-        columns: { domain: true }
+      await qstash.publishJSON({
+        url: `${process.env.RAILWAY_WORKER_URL}/workers/triage`,
+        body: {
+          userId: event.userId,
+          emailId: inserted.id,
+          corsairMessageId: emailData.messageId,
+          fromAddress: sender,
+          subject: emailData.subject ?? '',
+          snippet: emailData.snippet ?? '',
+          bodyText: emailData.body?.text ?? null,
+        },
+        headers: { 'X-Worker-Secret': process.env.WORKER_SECRET! },
+        retries: 3,
+      }).catch(err => {
+        // Never let QStash failure block webhook response
+        console.error('QStash enqueue failed:', err.message);
       });
-      cachedRules = rules.map(r => r.domain);
-      await redis.set(cacheKey, JSON.stringify(cachedRules), { ex: 3600 });
     }
 
-    const isBlocked = isDomainBlocked(sender, cachedRules);
-
-    console.log(`[Webhook] Event: ${event.type}, ID: ${eventId}, User: ${userId}, Blocked: ${isBlocked}`);
-
-    // 10. If blocked
-    if (isBlocked) {
-      if (event.type === 'email.received' && event.data?.messageId) {
-        await db.insert(emails).values({
-          userId,
-          corsair_message_id: event.data.messageId,
-          from_address: sender,
-          to_address: event.data.to?.[0]?.email || '',
-          ai_triage_skipped: true
-        });
-
-        // Publish to Ably REST API
-        await fetch(`https://rest.ably.io/channels/private:user-${userId}/messages`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Basic ${Buffer.from(process.env.ABLY_API_KEY || '').toString('base64')}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ name: 'webhook:email', data: { status: 'blocked' } })
-        });
-      }
-      return NextResponse.json({ status: 'blocked_and_saved' });
-    }
-
-    // 11. If allowed
-    await publishToWorker(event);
     return NextResponse.json({ status: 'dispatched' });
 
   } catch (error) {
     console.error('[Webhook] Processing error:', error);
     return new NextResponse('Internal Server Error', { status: 500 });
   }
-}
-
-async function publishToWorker(payload: any) {
-  const qstashUrl = process.env.QSTASH_URL;
-  const qstashToken = process.env.QSTASH_TOKEN;
-  const workerUrl = process.env.RAILWAY_WORKER_URL || 'https://api.tempo.com';
-
-  if (!qstashUrl || !qstashToken) return;
-
-  await fetch(`${qstashUrl}/v2/publish/${workerUrl}/workers/triage`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${qstashToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
 }

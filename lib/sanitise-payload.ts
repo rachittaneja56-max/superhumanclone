@@ -1,28 +1,28 @@
-/**
- * Recursively strips keys whose name contains forbidden words from an object.
- * Does not mutate the input object and does not recurse into arrays.
- * @param obj The payload to sanitise.
- * @returns A new sanitised payload object.
- */
-export function sanitisePayload(obj: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  const forbiddenKeywords = ['body', 'content', 'text', 'html', 'snippet', 'subject'];
-
-  for (const [key, value] of Object.entries(obj)) {
-    const lowerKey = key.toLowerCase();
-    
-    const isForbidden = forbiddenKeywords.some(keyword => lowerKey.includes(keyword));
-    
-    if (isForbidden) {
-      continue;
-    }
-
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      result[key] = sanitisePayload(value as Record<string, unknown>);
-    } else {
-      result[key] = value;
-    }
+export function sanitisePayload(payload: any): any {
+  if (payload === null || payload === undefined) {
+    return payload;
   }
 
-  return result;
+  if (Array.isArray(payload)) {
+    return payload.map(item => sanitisePayload(item));
+  }
+
+  if (typeof payload === 'object') {
+    const sanitised: Record<string, any> = {};
+    const sensitiveKeys = ['body', 'content', 'text', 'html', 'snippet', 'subject'];
+
+    for (const [key, value] of Object.entries(payload)) {
+      const lowerKey = key.toLowerCase();
+      const isSensitive = sensitiveKeys.some(sensitive => lowerKey.includes(sensitive));
+
+      if (isSensitive) {
+        sanitised[key] = '[REDACTED]';
+      } else {
+        sanitised[key] = sanitisePayload(value);
+      }
+    }
+    return sanitised;
+  }
+
+  return payload;
 }

@@ -1,3 +1,8 @@
+export type AiConsentRule = {
+  pattern: string;
+  isBlocked: boolean;
+};
+
 /**
  * Checks if an email address matches a domain pattern securely without RegExp.
  * @param email The full email address.
@@ -28,11 +33,11 @@ export function matchesDomainPattern(email: string, pattern: string): boolean {
 /**
  * Checks if an email matches any of the given blocked rules.
  * @param email The email address to check.
- * @param rules An array of blocked domain patterns.
+ * @param rules An array of blocked domain rules.
  */
-export function isDomainBlocked(email: string, rules: string[]): boolean {
+export function isDomainBlocked(email: string, rules: AiConsentRule[]): boolean {
   for (const rule of rules) {
-    if (matchesDomainPattern(email, rule)) {
+    if (rule.isBlocked && matchesDomainPattern(email, rule.pattern)) {
       return true;
     }
   }
