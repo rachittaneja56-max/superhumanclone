@@ -157,7 +157,6 @@ export async function createCalendarEvent(userId: string, event: {
   description?: string
 }) {
   const t = getCorsairTenant(userId)
-  // Replaced .insert with .create to match the actual API catalog path for googlecalendar
   const result = await t.run('googlecalendar.api.events.create', {
     summary: event.title,
     start: { dateTime: event.startTime },
