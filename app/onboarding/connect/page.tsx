@@ -63,7 +63,7 @@ export default async function ConnectPage({
           Connect your accounts
         </h1>
         <p className="text-sm text-foreground-muted mb-8">
-          Tempo uses Corsair to securely access your Gmail and Calendar.
+          Aethra uses Corsair to securely access your Gmail and Calendar.
           Your credentials are stored encrypted and never leave your control.
         </p>
 

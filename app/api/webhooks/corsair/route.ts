@@ -98,7 +98,11 @@ export async function POST(req: Request) {
         snippet: emailData.snippet ?? '',
         body_text: emailData.body?.text ?? null,
         ai_triage_skipped: true // defaults to true, explicitly setting for clarity
-      }).returning({ id: emails.id });
+      }).onConflictDoNothing().returning({ id: emails.id });
+
+      if (!inserted) {
+        return NextResponse.json({ status: 'duplicate_db' });
+      }
 
       const qstash = new QStash({ token: process.env.QSTASH_TOKEN! });
 

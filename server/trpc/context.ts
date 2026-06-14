@@ -12,7 +12,7 @@ export async function createTRPCContext({ req }: { req: Request }) {
   // CSRF check for all non-GET requests
   if (req.method !== 'GET') {
     const csrfHeader = req.headers.get('x-trpc-csrf')
-    if (csrfHeader !== 'tempo-client') {
+    if (csrfHeader !== 'aethra-client') {
       throw new TRPCError({
         code: 'FORBIDDEN',
         message: 'Missing CSRF header',

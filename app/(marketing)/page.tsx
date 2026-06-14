@@ -3,7 +3,7 @@ import { WaitlistForm } from '@/components/landing/WaitlistForm';
 import { Shield, Bot, Search, Sparkles, Sun, Keyboard } from 'lucide-react';
 
 export const metadata = {
-  title: 'Tempo - Email and calendar, finally on your terms',
+  title: 'Aethra - Email and calendar, finally on your terms',
   description: 'Privacy-first, agent-powered, keyboard-native email client built on Corsair.',
 };
 
@@ -18,7 +18,7 @@ export default function MarketingPage() {
           </h1>
           
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl text-balance">
-            Tempo connects to your Gmail and Calendar via Corsair.
+            Aethra connects to your Gmail and Calendar via Corsair.
             Privacy-first, agent-powered, keyboard-native.
           </p>
           
@@ -72,7 +72,7 @@ export default function MarketingPage() {
             </div>
             <h3 className="font-medium text-base mb-2">Agent Chat</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Tell Tempo to send emails and schedule meetings. It asks before acting.
+              Tell Aethra to send emails and schedule meetings. It asks before acting.
             </p>
           </div>
           

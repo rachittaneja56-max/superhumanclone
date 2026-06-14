@@ -20,7 +20,7 @@ const instrumentSans = Instrument_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Tempo",
+  title: "Aethra",
   description: "AI-powered Gmail + Calendar client built on Corsair",
 };
 

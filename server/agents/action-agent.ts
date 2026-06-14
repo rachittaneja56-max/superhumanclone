@@ -54,7 +54,7 @@ export async function hitlInterceptor(
     // Subscribe to specific channel
     const channel = `hitl:response:${actionId}`;
     
-    // We create a temporary sub-client for Upstash Redis.
+    // We create a aethrarary sub-client for Upstash Redis.
     // Upstash Redis provides HTTP-based pubsub conceptually, but usually SDK provides subscribe.
     // However, if `@upstash/redis` doesn't have a long-lived subscribe (it's HTTP), we might need an alternative.
     // Actually, upstash redis doesn't support subscribe over HTTP directly in all environments without websockets or polling.

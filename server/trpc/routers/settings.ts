@@ -1,3 +1,4 @@
+
 import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
 import { db } from '../../db';
@@ -38,16 +39,8 @@ export const settingsRouter = router({
         );
       }
 
-      // 3. Invalidate Redis consent cache (scan and delete all consent keys for this user)
-      const pattern = `consent:${ctx.userId}:*`;
-      let cursor = 0;
-      do {
-        const [nextCursor, keys] = await redis.scan(cursor, { match: pattern, count: 100 });
-        cursor = nextCursor === '0' ? 0 : Number(nextCursor);
-        if (keys.length > 0) {
-          await redis.del(...keys);
-        }
-      } while (cursor !== 0);
+      // 3. Invalidate Redis consent cache via version increment
+      await redis.incr(`consent_version:${ctx.userId}`);
 
       return { success: true };
     }),

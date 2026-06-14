@@ -164,7 +164,7 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
         <div className="relative flex items-end w-full border border-border bg-surface rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-accent transition-shadow">
           <textarea
             className="w-full max-h-48 min-h-[56px] resize-none bg-transparent px-4 py-4 text-sm focus:outline-none disabled:opacity-50"
-            placeholder={activeHITLAction ? "Awaiting your approval..." : "Ask Tempo AI..."}
+            placeholder={activeHITLAction ? "Awaiting your approval..." : "Ask Aethra AI..."}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             disabled={isStreaming || !!activeHITLAction}

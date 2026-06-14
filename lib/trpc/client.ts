@@ -17,7 +17,7 @@ export function createTRPCClient() {
         transformer: superjson,
         headers() {
           return {
-            'x-trpc-csrf': 'tempo-client',
+            'x-trpc-csrf': 'aethra-client',
           }
         },
       }),

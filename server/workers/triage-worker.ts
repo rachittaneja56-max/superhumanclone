@@ -32,7 +32,8 @@ export async function processTriageJob(payload: unknown) {
 
   // 2. PRIVACY GATE
   const domain = fromAddress.split('@')[1] ?? '';
-  const cacheKey = 'consent:' + userId + ':' + domain;
+  const versionStr = await redis.get<string>(`consent_version:${userId}`) ?? '0';
+  const cacheKey = `consent:${userId}:${domain}:${versionStr}`;
   const cached = await redis.get<string>(cacheKey);
 
   let isBlocked: boolean;

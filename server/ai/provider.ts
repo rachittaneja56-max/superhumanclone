@@ -244,7 +244,7 @@ export async function streamAgentResponse(
   const corsairTools = await mcpClient.tools();
 
   // Build our custom tools that wrap HITL
-  const tempoTools: any = {
+  const aethraTools: any = {
     searchEmails: tool({
       description: 'Search emails semantically using local search',
       parameters: z.object({ query: z.string() }),
@@ -312,7 +312,7 @@ export async function streamAgentResponse(
     system: prompts.agentSystem,
     messages: messages as any, // Cast messages for type matching
     // Combine our HITL tools with Corsair's MCP tools
-    tools: { ...tempoTools, ...(corsairTools as any) },
+    tools: { ...aethraTools, ...(corsairTools as any) },
   });
 
   // ALWAYS close MCP client after use (from Corsair docs warning)

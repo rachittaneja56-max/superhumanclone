@@ -61,7 +61,7 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   emailVerified: timestamp('email_verified', { mode: 'date' }),
   image: text('image'),
-  // Tempo custom columns — added AFTER Auth.js required columns
+  // Aethra custom columns — added AFTER Auth.js required columns
   // Note: Corsair OAuth tokens are managed by @corsair-dev/app — never stored locally
   createdAt: timestamp('created_at').defaultNow(),
 });

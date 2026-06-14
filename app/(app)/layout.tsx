@@ -28,7 +28,7 @@ export default async function AppLayout({
         <div className="h-16 flex items-center justify-between px-6 border-b border-transparent">
           <Link href="/inbox" className="flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm">
             <span className="font-display font-semibold text-xl tracking-tight">
-              tempo<span className="text-accent">.</span>
+              aethra<span className="text-accent">.</span>
             </span>
           </Link>
           <ThemeToggle />

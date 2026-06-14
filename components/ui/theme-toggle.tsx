@@ -8,7 +8,7 @@ export function ThemeToggle() {
   const [theme, setTheme] = React.useState<"light" | "dark" | null>(null);
 
   React.useEffect(() => {
-    const savedTheme = localStorage.getItem("tempo-theme") as "light" | "dark" | null;
+    const savedTheme = localStorage.getItem("aethra-theme") as "light" | "dark" | null;
     const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const initialTheme = savedTheme || (systemDark ? "dark" : "light");
     
@@ -24,7 +24,7 @@ export function ThemeToggle() {
   const toggleTheme = () => {
     const newTheme = theme === "dark" ? "light" : "dark";
     setTheme(newTheme);
-    localStorage.setItem("tempo-theme", newTheme);
+    localStorage.setItem("aethra-theme", newTheme);
     
     if (newTheme === "dark") {
       document.documentElement.classList.add("dark");

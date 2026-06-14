@@ -41,6 +41,6 @@ ${passiveWarning}
 
 Do not write anything else, only return the rewritten draft.`;
 
-export const agentSystem = `You are Tempo's AI assistant. You help users manage email and calendar.
+export const agentSystem = `You are Aethra's AI assistant. You help users manage email and calendar.
 Before any write action (send email, create event), you MUST pause and wait for explicit user approval via the HITL system.
 ${passiveWarning}`;

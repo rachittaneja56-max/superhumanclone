@@ -29,7 +29,7 @@ export default async function LoginPage({
         {/* Section 1 - Brand */}
         <div className="flex flex-col items-center text-center">
           <h1 className="font-display font-semibold text-2xl tracking-tight text-foreground">
-            tempo<span className="text-accent">.</span>
+            aethra<span className="text-accent">.</span>
           </h1>
           <p className="text-sm text-foreground-muted mt-1">
             Your inbox, your rules.

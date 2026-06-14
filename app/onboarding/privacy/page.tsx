@@ -29,7 +29,7 @@ export default async function PrivacyPage() {
             Your Privacy First
           </h2>
           <p className="text-sm text-foreground-muted mt-2">
-            Tempo uses AI to intelligently triage and draft your emails. To do this, your email content is securely processed by our AI models.
+            Aethra uses AI to intelligently triage and draft your emails. To do this, your email content is securely processed by our AI models.
           </p>
         </div>
 

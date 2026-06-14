@@ -20,7 +20,7 @@ export function ShortcutsCheatsheet() {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Keyboard Shortcuts</DialogTitle>
-          <DialogDescription>Navigate Tempo quickly with these shortcuts.</DialogDescription>
+          <DialogDescription>Navigate Aethra quickly with these shortcuts.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 mt-4">
           {shortcuts.map((shortcut, i) => (
