@@ -1,26 +1,35 @@
 import { create } from 'zustand';
 
+/** Shape of an active HITL action card */
+export interface HITLActionState {
+  actionId: string;
+  actionType: string;
+  humanReadable: string;
+  expiresAt: string;
+  payload?: Record<string, unknown>;
+}
+
 interface UIState {
   selectedEmailId: string | null;
   focusLayer: number;
   commandPaletteOpen: boolean;
-  activeHITLAction: any | null;
   cheatsheetOpen: boolean;
+  activeHITLAction: HITLActionState | null;
   setSelectedEmail: (id: string | null) => void;
   openPalette: () => void;
   closePalette: () => void;
   toggleCheatsheet: () => void;
   pushFocusLayer: () => void;
   popFocusLayer: () => void;
-  setActiveHITLAction: (action: any | null) => void;
+  setActiveHITLAction: (action: HITLActionState | null) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
   selectedEmailId: null,
   focusLayer: 0,
   commandPaletteOpen: false,
-  activeHITLAction: null,
   cheatsheetOpen: false,
+  activeHITLAction: null,
   setSelectedEmail: (id) => set({ selectedEmailId: id }),
   openPalette: () => set({ commandPaletteOpen: true, focusLayer: 1 }),
   closePalette: () => set((state) => ({ commandPaletteOpen: false, focusLayer: Math.max(0, state.focusLayer - 1) })),

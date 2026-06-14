@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import * as Ably from "ably";
 import { trpc } from "@/lib/trpc/client";
-import { useUIStore } from "@/store/ui-store";
+import { useUIStore, type HITLActionState } from "@/store/ui-store";
 
 export function useAblyChannel(userId: string | undefined) {
   const utils = trpc.useUtils();
@@ -28,8 +28,8 @@ export function useAblyChannel(userId: string | undefined) {
     const channel = ably.channels.get(channelName);
 
     channel.subscribe("hitl:action", (message) => {
-      // Trigger approval card
-      setActiveHITLAction(message.data);
+      // Cast to typed shape — we control what the server publishes
+      setActiveHITLAction(message.data as HITLActionState);
     });
 
     channel.subscribe("email:triaged", () => {

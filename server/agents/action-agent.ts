@@ -1,128 +1,94 @@
 import 'server-only';
 import { db } from '../db';
 import { hitlActions } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import { sanitisePayload } from '@/lib/sanitise-payload';
-import { redis } from '../redis';
 
+/** Payload published to Ably for HITL — never includes body/content */
+interface HITLActionInput {
+  actionType: string;
+  payload: Record<string, unknown>;
+  humanReadable: string;
+}
+
+/**
+ * HITL interceptor.
+ * 1. Inserts a hitl_actions row (status=pending).
+ * 2. Pushes the action card to the user via Ably REST.
+ * 3. Polls the DB every 2 seconds until approved/rejected/expired (max 5 min).
+ * Returns true if approved, false if rejected or timed out.
+ */
 export async function hitlInterceptor(
   userId: string,
-  sessionId: string | null,
-  action: { actionType: string; payload: any; humanReadable: string }
+  _sessionId: string | null,
+  action: HITLActionInput
 ): Promise<boolean> {
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
   // 1. Insert HITL action into DB
-  const [row] = await db.insert(hitlActions).values({
-    userId,
-    action_type: action.actionType,
-    payload: sanitisePayload(action.payload),
-    status: 'pending',
-    expires_at: expiresAt,
-  }).returning({ id: hitlActions.id });
+  const [row] = await db
+    .insert(hitlActions)
+    .values({
+      userId,
+      action_type: action.actionType,
+      // body stripped before storage — security rule
+      payload: sanitisePayload(action.payload) as Record<string, unknown>,
+      status: 'pending',
+      expires_at: expiresAt,
+    })
+    .returning({ id: hitlActions.id });
 
   const actionId = row.id;
 
-  // 2. Publish to Ably via REST
+  // 2. Publish to Ably via REST (no body content — only metadata)
   if (!process.env.ABLY_API_KEY) {
     throw new Error('ABLY_API_KEY is not set');
   }
 
   const base64Key = Buffer.from(process.env.ABLY_API_KEY).toString('base64');
-  
-  await fetch(`https://rest.ably.io/channels/private:user-${userId}/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Basic ${base64Key}`,
-    },
-    body: JSON.stringify({
-      name: 'hitl:action',
-      data: {
-        actionId,
-        actionType: action.actionType,
-        humanReadable: action.humanReadable,
-        expiresAt: expiresAt.toISOString(),
-        payload: sanitisePayload(action.payload),
-      },
-    }),
-  }).catch((err) => console.error('Failed to publish hitl action to ably:', err));
 
-  // 3. Wait for Redis pub/sub response
-  return new Promise((resolve) => {
-    let timeoutId: NodeJS.Timeout;
-    
-    // Subscribe to specific channel
-    const channel = `hitl:response:${actionId}`;
-    
-    // We create a temporary sub-client for Upstash Redis.
-    // Upstash Redis provides HTTP-based pubsub conceptually, but usually SDK provides subscribe.
-    // However, if `@upstash/redis` doesn't have a long-lived subscribe (it's HTTP), we might need an alternative.
-    // Actually, upstash redis doesn't support subscribe over HTTP directly in all environments without websockets or polling.
-    // Wait, AGENTS.md says "redis.subscribe('hitl:response:' + actionId...)" so I should assume it works or use it.
-    // Upstash provides `redis.subscribe` in some contexts or maybe the instruction specifically asks for it.
-    // Wait, the instruction says:
-    // "Return new Promise((resolve) => { const subscriber = redis.subscribe('hitl:response:' + actionId, (message) => { subscriber.unsubscribe(); resolve(message === 'approved') }); setTimeout(...) })"
-    // Let's implement it exactly as requested.
-    
-    // Note: Upstash redis client doesn't actually have a `subscribe` method that takes a callback directly. 
-    // Usually it's an ioredis client. If `import { redis } from '../redis'` is an ioredis instance, it works. 
-    // I will write it as instructed.
-    
-    // Cast redis to any to bypass type errors if @upstash/redis doesn't expose it correctly, 
-    // but the prompt explicitly uses this syntax.
-    const subscriber = (redis as any).subscribe(channel, (err: any, count: number) => {
-        // Upstash HTTP client doesn't support subscribe natively. 
-        // We'll write the callback-based pseudo-code provided by the user.
+  await fetch(
+    `https://rest.ably.io/channels/private:user-${userId}/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${base64Key}`,
+      },
+      body: JSON.stringify({
+        name: 'hitl:action',
+        data: {
+          actionId,
+          actionType: action.actionType,
+          humanReadable: action.humanReadable,
+          expiresAt: expiresAt.toISOString(),
+          payload: sanitisePayload(action.payload),
+        },
+      }),
+    }
+  ).catch((err) => console.error('Failed to publish hitl action to Ably:', err));
+
+  // 3. Poll DB every 2 seconds until resolved or expired (max 5 min = 150 polls)
+  const POLL_INTERVAL_MS = 2000;
+  const MAX_POLLS = Math.ceil((5 * 60 * 1000) / POLL_INTERVAL_MS);
+
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await new Promise<void>((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+    const current = await db.query.hitlActions.findFirst({
+      where: eq(hitlActions.id, actionId),
+      columns: { status: true, expires_at: true },
     });
 
-    // Actually, following the user's exact snippet:
-    let isResolved = false;
+    if (!current) return false;
 
-    // The user's exact snippet:
-    // const subscriber = redis.subscribe('hitl:response:' + actionId, (message) => {
-    //   subscriber.unsubscribe()
-    //   resolve(message === 'approved')
-    // })
+    if (current.status === 'approved') return true;
+    if (current.status === 'rejected' || current.status === 'expired') return false;
 
-    const subscribeCallback = (message: string) => {
-      if (isResolved) return;
-      isResolved = true;
-      clearTimeout(timeoutId);
-      
-      // Cleanup
-      try {
-         if (subscriber && typeof subscriber.unsubscribe === 'function') {
-             subscriber.unsubscribe();
-         } else if (typeof (redis as any).unsubscribe === 'function') {
-             (redis as any).unsubscribe(channel);
-         }
-      } catch (e) {}
+    // If DB row is still pending but wall-clock expired, bail
+    if (new Date(current.expires_at) < new Date()) return false;
+  }
 
-      resolve(message === 'approved');
-    };
-
-    // Attempt to use it
-    try {
-      if (typeof (redis as any).subscribe === 'function') {
-        (redis as any).subscribe(channel, subscribeCallback);
-      }
-    } catch (e) {
-      console.error("Redis subscribe failed", e);
-    }
-
-    timeoutId = setTimeout(() => {
-      if (isResolved) return;
-      isResolved = true;
-      
-      try {
-         if (subscriber && typeof subscriber.unsubscribe === 'function') {
-             subscriber.unsubscribe();
-         } else if (typeof (redis as any).unsubscribe === 'function') {
-             (redis as any).unsubscribe(channel);
-         }
-      } catch (e) {}
-
-      resolve(false);
-    }, 5 * 60 * 1000);
-  });
+  // Timed out
+  return false;
 }
