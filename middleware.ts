@@ -50,7 +50,7 @@ export default clerkMiddleware(async (auth, req) => {
     style-src 'self' 'unsafe-inline';
     img-src 'self' data: blob: https: clerk.com *.clerk.com;
     font-src 'self' https://fonts.gstatic.com;
-    connect-src 'self' wss://*.ably.io https://*.ably.io https://*.railway.app clerk.com *.clerk.com *.clerk.accounts.dev;
+    connect-src 'self' wss://*.ably.io https://*.ably.io https://*.railway.app clerk.com *.clerk.com *.clerk.accounts.dev https://clerk-telemetry.com;
     frame-src blob:;
     object-src 'none';
     base-uri 'self';
