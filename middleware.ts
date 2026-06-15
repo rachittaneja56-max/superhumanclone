@@ -46,10 +46,11 @@ export default clerkMiddleware(async (auth, req) => {
   const csp = `
     default-src 'self';
     script-src 'self' 'unsafe-inline' 'unsafe-eval' https:;
+    worker-src 'self' blob:;
     style-src 'self' 'unsafe-inline';
     img-src 'self' data: blob: https: clerk.com *.clerk.com;
     font-src 'self' https://fonts.gstatic.com;
-    connect-src 'self' wss://*.ably.io https://*.ably.io https://*.railway.app clerk.com *.clerk.com;
+    connect-src 'self' wss://*.ably.io https://*.ably.io https://*.railway.app clerk.com *.clerk.com *.clerk.accounts.dev;
     frame-src blob:;
     object-src 'none';
     base-uri 'self';
