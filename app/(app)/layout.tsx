@@ -71,7 +71,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <span className="text-xs font-medium text-foreground-subtle">Theme</span>
               <ThemeToggle />
             </div>
-            <SignOutButton>
+            <SignOutButton signOutOptions={{ redirectUrl: '/logout' }}>
               <button
                 className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-red-500/90 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
                 title="Sign out">
