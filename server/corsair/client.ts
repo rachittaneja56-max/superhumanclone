@@ -253,6 +253,7 @@ function isAuthError(err: any): boolean {
     msg.includes('unauthorized') ||
     msg.includes('unauthenticated') ||
     msg.includes('not connected') ||
-    msg.includes('no account found')
+    msg.includes('no account found') ||
+    msg.includes('account not found')
   )
 }
