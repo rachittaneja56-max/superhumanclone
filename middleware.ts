@@ -121,6 +121,12 @@ export default auth(async function middleware(req) {
   const response = NextResponse.next({
     request: { headers: requestHeaders },
   })
+  
+  const csrfCookie = csrfResponse?.headers.get('set-cookie')
+  if (csrfCookie) {
+    response.headers.append('set-cookie', csrfCookie)
+  }
+
   if (process.env.NODE_ENV === 'production') {
     response.headers.set('Content-Security-Policy', csp)
   }
