@@ -9,7 +9,7 @@ import { AppClientShell } from '@/components/app-client-shell'
 import { NavItem } from '@/components/NavItem'
 import { SignOutButton } from '@clerk/nextjs'
 import { db } from '@/server/db'
-import { userSettings } from '@/server/db/schema'
+import { userSettings, users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 
 // Nav items — defined server-side (static, no state needed)
@@ -26,6 +26,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await currentUser()
   if (!userId || !user) redirect('/login')
 
+  const email = user.primaryEmailAddress?.emailAddress ?? ''
+  const name = user.fullName ?? 'User'
+
+  // Sync user to DB for local development where webhooks might not fire
+  await db.insert(users).values({
+    id: userId,
+    email: email,
+    name: name,
+    image: user.imageUrl,
+  }).onConflictDoNothing()
+
   const settings = await db.query.userSettings.findFirst({
     where: eq(userSettings.userId, userId)
   })
@@ -39,8 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
 
-  const email = user.primaryEmailAddress?.emailAddress ?? ''
-  const name = user.fullName ?? 'User'
+
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

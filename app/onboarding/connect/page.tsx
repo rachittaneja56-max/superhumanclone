@@ -1,9 +1,9 @@
-import { auth } from '@clerk/nextjs/server'
+import { auth, currentUser } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getGmailAuthUrl, getCalendarAuthUrl, isUserConnected } from '@/server/corsair/client'
 import { db } from '@/server/db'
-import { userSettings } from '@/server/db/schema'
+import { userSettings, users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 
 export default async function ConnectPage({
@@ -12,15 +12,25 @@ export default async function ConnectPage({
   searchParams: Promise<{ connected?: string; error?: string }>
 }) {
   const resolvedSearchParams = await searchParams;
-  const { userId } = await auth()
-  if (!userId) redirect('/login')
+  const user = await currentUser()
+  const userId = user?.id
+  if (!userId || !user) redirect('/login')
+
+  await db.insert(users).values({
+    id: userId,
+    email: user.primaryEmailAddress?.emailAddress ?? '',
+    name: user.fullName,
+    image: user.imageUrl,
+  }).onConflictDoNothing()
 
   // If Corsair redirected back with ?connected=true
   if (resolvedSearchParams.connected === 'true') {
-    // Mark user as connected in our DB
-    await db.update(userSettings)
-      .set({ gmailConnected: true, calendarConnected: true })
-      .where(eq(userSettings.userId, userId))
+    await db.insert(userSettings)
+      .values({ userId, gmailConnected: true, calendarConnected: true })
+      .onConflictDoUpdate({
+        target: userSettings.userId,
+        set: { gmailConnected: true, calendarConnected: true }
+      })
 
     redirect('/inbox')
   }
@@ -37,9 +47,12 @@ export default async function ConnectPage({
   // Check actual live connection status in Corsair DB (fallback if local DB is out of sync)
   const isActuallyConnected = await isUserConnected(userId, 'gmail')
   if (isActuallyConnected) {
-    await db.update(userSettings)
-      .set({ gmailConnected: true, calendarConnected: true })
-      .where(eq(userSettings.userId, userId))
+    await db.insert(userSettings)
+      .values({ userId, gmailConnected: true, calendarConnected: true })
+      .onConflictDoUpdate({
+        target: userSettings.userId,
+        set: { gmailConnected: true, calendarConnected: true }
+      })
     redirect('/inbox')
   }
 
