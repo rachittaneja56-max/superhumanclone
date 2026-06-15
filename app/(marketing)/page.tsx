@@ -39,7 +39,7 @@ export default async function MarketingPage() {
                 href="/login"
                 className="btn-animated-border w-full sm:w-auto px-8 py-4 rounded-lg text-foreground font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
               >
-                Connect Gmail →
+                Connect Accounts →
               </Link>
             )}
             <a 
