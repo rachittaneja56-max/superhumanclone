@@ -24,6 +24,8 @@ export function SignInButton() {
     ? errorMessages[error] || 'An error occurred. Please try again.'
     : null;
 
+  const callbackUrl = searchParams.get('callbackUrl') || '/';
+
   return (
     <div className="flex flex-col items-center gap-4 w-full">
       {errorMessage && (
@@ -34,7 +36,7 @@ export function SignInButton() {
       <button
         onClick={() => {
           setLoading(true);
-          signIn('google', { callbackUrl: '/inbox' });
+          signIn('google', { callbackUrl });
         }}
         disabled={loading}
         className="w-full flex items-center justify-center gap-3 bg-[#18181B] hover:bg-[#27272A] border border-[#3F3F46] text-[#EDEDED] transition-all px-4 py-2.5 text-sm font-medium rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"

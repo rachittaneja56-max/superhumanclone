@@ -2,14 +2,14 @@
 import { signIn } from 'next-auth/react'
 import { useState } from 'react'
 
-export function SignInButton() {
+export function SignInButton({ callbackUrl = '/' }: { callbackUrl?: string }) {
   const [loading, setLoading] = useState(false)
 
   return (
     <button
       onClick={async () => {
         setLoading(true)
-        await signIn('google', { callbackUrl: '/inbox' })
+        await signIn('google', { callbackUrl })
       }}
       disabled={loading}
       className={`

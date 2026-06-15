@@ -25,7 +25,7 @@ export default function MarketingPage() {
           
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto mt-4">
             <Link 
-              href="/api/auth/signin?callbackUrl=/inbox"
+              href="/api/auth/signin?callbackUrl=/"
               className="btn-animated-border w-full sm:w-auto px-8 py-4 rounded-lg text-foreground font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
             >
               Go to Inbox →

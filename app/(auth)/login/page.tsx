@@ -4,9 +4,9 @@ import { ThemeToggle } from '@/components/ui/theme-toggle'
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; callbackUrl?: string }>
 }) {
-  const { error } = await searchParams
+  const { error, callbackUrl } = await searchParams
 
   let errorMessage = ''
   if (error) {
@@ -53,7 +53,7 @@ export default async function LoginPage({
         <div className="h-[1px] w-full bg-border my-6" />
 
         {/* Section 3 - SignInButton */}
-        <SignInButton />
+        <SignInButton callbackUrl={callbackUrl} />
 
         {/* Section 4 - Footer */}
         <p className="text-xs text-foreground-subtle text-center mt-6">
