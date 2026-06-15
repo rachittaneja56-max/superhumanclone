@@ -7,7 +7,7 @@ const { Pool } = pg
 // DATABASE_URL_UNPOOLED for persistent TCP connection
 // Corsair needs a real pg Pool, not Neon HTTP driver
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL_UNPOOLED,
+  connectionString: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL,
 })
 
 export const corsair = createCorsair({
@@ -24,6 +24,6 @@ if (!process.env.CORSAIR_KEK) {
     'WARNING: Losing this key permanently breaks all user connections.'
   )
 }
-if (!process.env.DATABASE_URL_UNPOOLED) {
-  throw new Error('DATABASE_URL_UNPOOLED is required for Corsair SDK')
+if (!process.env.DATABASE_URL_UNPOOLED && !process.env.DATABASE_URL) {
+  throw new Error('A database URL is required for Corsair SDK')
 }
