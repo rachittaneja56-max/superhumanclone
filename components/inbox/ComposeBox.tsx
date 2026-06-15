@@ -217,7 +217,7 @@ export function ComposeBox({ threadId }: { threadId?: string }) {
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-[12px] opacity-60">Type "/" on a new line for AI commands</span>
+        <span className="text-[12px] opacity-60">Type &quot;/&quot; on a new line for AI commands</span>
         <button
           onClick={handleSend}
           disabled={!draft || rewriteState !== "idle" || isPending}

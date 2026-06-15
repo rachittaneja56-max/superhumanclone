@@ -1,4 +1,4 @@
-// @ts-ignore
+// @ts-expect-error no typings available for express
 import express from 'express';
 import { runAgentTurn } from '../agents/orchestrator';
 

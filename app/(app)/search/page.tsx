@@ -62,7 +62,7 @@ export default function SearchPage() {
         ))}
         {results?.length === 0 && query.length >= 3 && !isLoading && (
           <p className="text-sm text-foreground-subtle text-center pt-8">
-            No results for "{query}"
+            No results for &quot;{query}&quot;
           </p>
         )}
       </div>

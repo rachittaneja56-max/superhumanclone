@@ -49,7 +49,7 @@ export default async function PrivacyPage({
             {isEditMode ? 'Edit privacy settings' : 'Your privacy, your rules'}
           </h1>
           <p className="text-sm text-foreground-muted mt-2">
-            Choose which email categories Aethra's AI can access.
+            Choose which email categories Aethra&apos;s AI can access.
             Emails from protected domains are saved locally — the AI never sees them.
           </p>
         </div>

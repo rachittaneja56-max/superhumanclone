@@ -32,7 +32,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="font-display font-semibold text-lg tracking-tight">
             aethra<span className="text-accent">.</span>
           </span>
-          <ThemeToggle />
         </div>
 
         {/* Navigation */}
@@ -43,25 +42,37 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </nav>
 
         {/* User section */}
-        <div className="border-t border-border p-3">
-          <div className="flex items-center gap-2 px-2 py-1.5">
+        <div className="border-t border-border p-3 relative group z-50">
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-raised transition-colors cursor-default">
             {/* Avatar */}
             <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-xs font-medium text-accent flex-shrink-0">
               {session.user.name?.charAt(0).toUpperCase() ?? '?'}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate text-foreground">
+              <p className="text-sm font-medium truncate text-foreground">
                 {session.user.name ?? 'User'}
               </p>
-              <p className="text-xs text-foreground-subtle truncate">
+            </div>
+          </div>
+          
+          {/* Hover Menu */}
+          <div className="absolute bottom-[calc(100%-8px)] left-3 w-[calc(100%-24px)] p-1 rounded-lg border border-border bg-surface shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all flex flex-col gap-1">
+            <div className="px-2 py-2 border-b border-border mb-1">
+              <p className="text-xs font-medium text-foreground truncate">
                 {session.user.email}
               </p>
             </div>
-            <a href="/api/auth/signout"
-              className="text-foreground-subtle hover:text-foreground transition-colors flex-shrink-0"
-              title="Sign out">
+            <div className="px-2 py-1.5 flex items-center justify-between">
+              <span className="text-xs font-medium text-foreground-subtle">Theme</span>
+              <ThemeToggle />
+            </div>
+            <Link href="/api/auth/signout"
+              className="flex items-center gap-2 px-2 py-2 text-xs font-medium text-red-500/90 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
+              title="Sign out"
+              prefetch={false}>
               <LogOut className="w-3.5 h-3.5" />
-            </a>
+              Sign out
+            </Link>
           </div>
         </div>
       </aside>

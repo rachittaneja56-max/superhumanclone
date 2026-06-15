@@ -28,7 +28,7 @@ export default function MarketingPage() {
               href="/api/auth/signin?callbackUrl=/inbox"
               className="btn-animated-border w-full sm:w-auto px-8 py-4 rounded-lg text-foreground font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
             >
-              Connect Gmail →
+              Go to Inbox →
             </Link>
             <a 
               href="#features"

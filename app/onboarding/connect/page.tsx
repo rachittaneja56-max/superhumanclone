@@ -1,5 +1,6 @@
 import { auth } from '@/auth'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { getGmailAuthUrl, getCalendarAuthUrl, isUserConnected } from '@/server/corsair/client'
 import { db } from '@/server/db'
 import { userSettings } from '@/server/db/schema'
@@ -95,12 +96,12 @@ export default async function ConnectPage({
         </p>
 
         {settings?.gmailConnected && (
-          <a
+          <Link
             href="/inbox"
             className="block w-full mt-3 h-10 border border-border rounded-lg text-sm font-medium text-foreground flex items-center justify-center hover:bg-surface-overlay transition-colors"
           >
             Continue to inbox →
-          </a>
+          </Link>
         )}
       </div>
     </div>

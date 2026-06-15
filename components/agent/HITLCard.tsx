@@ -15,6 +15,23 @@ export function HITLCard({ className }: { className?: string }) {
 
   const resolveMutation = trpc.agent.resolveHITL.useMutation();
 
+  const handleDecision = async (decision: "approved" | "rejected") => {
+    setIsSubmitting(true);
+    try {
+      if (!activeHITLAction) return;
+      await resolveMutation.mutateAsync({
+        actionId: activeHITLAction.actionId,
+        decision,
+      });
+      toast.success(`Action ${decision}`);
+    } catch (err) {
+      toast.error("Failed to resolve action");
+    } finally {
+      setActiveHITLAction(null);
+      setIsSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     if (!activeHITLAction?.expiresAt) return;
 
@@ -38,21 +55,7 @@ export function HITLCard({ className }: { className?: string }) {
 
   if (!activeHITLAction) return null;
 
-  const handleDecision = async (decision: "approved" | "rejected") => {
-    setIsSubmitting(true);
-    try {
-      await resolveMutation.mutateAsync({
-        actionId: activeHITLAction.actionId,
-        decision,
-      });
-      toast.success(`Action ${decision}`);
-    } catch (err) {
-      toast.error("Failed to resolve action");
-    } finally {
-      setActiveHITLAction(null);
-      setIsSubmitting(false);
-    }
-  };
+
 
   const totalSeconds = 5 * 60;
   const progressPercentage = (timeLeft / totalSeconds) * 100;

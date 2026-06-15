@@ -2,12 +2,19 @@
 import { trpc } from '@/lib/trpc/client'
 import { format } from 'date-fns'
 
+import { useState } from 'react'
+
 export function CalendarView({ initialEvents }: { initialEvents: any[] }) {
+  const [dateRange] = useState(() => {
+    const now = Date.now()
+    return {
+      startDate: new Date(now - 7 * 24 * 60 * 60 * 1000),
+      endDate: new Date(now + 30 * 24 * 60 * 60 * 1000),
+    }
+  })
+
   const { data: events = initialEvents } = trpc.calendar.getEvents.useQuery(
-    {
-      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    },
+    dateRange,
     { initialData: initialEvents, staleTime: 60000 }
   )
 

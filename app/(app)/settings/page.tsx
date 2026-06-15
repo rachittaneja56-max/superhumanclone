@@ -59,10 +59,11 @@ export default async function SettingsPage() {
 
           {/* Sign out */}
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
-            <a href="/api/auth/signout"
+            <Link href="/api/auth/signout"
+              prefetch={false}
               className="flex items-center px-4 py-3 hover:bg-surface-overlay transition-colors text-destructive">
               <p className="text-sm font-medium">Sign out</p>
-            </a>
+            </Link>
           </div>
 
         </div>
