@@ -7,7 +7,7 @@ import { emails, aiConsentRules } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { isDomainBlocked } from '@/lib/domain-matcher'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 export async function POST(req: Request) {
   try {
