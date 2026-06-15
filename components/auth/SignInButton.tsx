@@ -5,20 +5,20 @@ export function SignInButton({ callbackUrl = '/' }: { callbackUrl?: string }) {
   const { signIn } = useSignIn()
 
   const handleSignIn = () => {
-    if (!signIn || !('authenticateWithRedirect' in signIn)) return
+    if (!signIn) return
     
-    // @ts-expect-error Clerk v7 typings missing authenticateWithRedirect on SignInFutureResource
-    signIn.authenticateWithRedirect({
+    // Use the new sso() method for Clerk v7
+    signIn.sso({
       strategy: 'oauth_google',
       redirectUrl: '/sso-callback',
-      redirectUrlComplete: callbackUrl,
+      redirectCallbackUrl: callbackUrl || '/',
     })
   }
 
   return (
     <button
       onClick={handleSignIn}
-      disabled={!signIn || !('authenticateWithRedirect' in signIn)}
+      disabled={!signIn}
       className={`
         relative flex h-11 w-full items-center justify-center gap-3 rounded-lg
         bg-accent text-accent-foreground font-medium text-sm
