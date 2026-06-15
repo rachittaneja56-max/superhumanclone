@@ -10,7 +10,7 @@
   Upstash Redis + QStash · Ably · Railway · shadcn/ui · Tailwind · Vercel AI SDK
 - **AI Dev:** Gemini 2.5 Flash (`@ai-sdk/google`) via `server/ai/provider.ts`
 - **AI Prod:** OpenAI GPT-4o-mini + GPT-4o (`@ai-sdk/openai`) via same file
-- **Deployment:** Railway (Next.js app + worker service)
+- **Deployment:** Vercel (Next.js app) + Railway (worker service)
 - **Skills installed:** corsairdev/corsair · vercel-labs/agent-skills (shadcn,
   nextjs-best-practices, web-design-guidelines, react-best-practices)
 

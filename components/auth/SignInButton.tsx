@@ -1,33 +1,23 @@
 'use client'
-import { signIn } from 'next-auth/react'
-import { useState } from 'react'
+import { SignInButton as ClerkSignInButton } from '@clerk/nextjs'
 
 export function SignInButton({ callbackUrl = '/' }: { callbackUrl?: string }) {
-  const [loading, setLoading] = useState(false)
-
   return (
-    <button
-      onClick={async () => {
-        setLoading(true)
-        await signIn('google', { callbackUrl })
-      }}
-      disabled={loading}
-      className={`
-        relative flex h-11 w-full items-center justify-center gap-3 rounded-lg
-        bg-accent text-accent-foreground font-medium text-sm
-        transition-all duration-200 overflow-hidden
-        ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:opacity-90 hover:scale-[1.02]'}
-      `}
-    >
-      {/* Animated Border */}
-      <div className="absolute inset-0 z-0">
-        <div className="absolute inset-[-100%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,var(--accent)_0%,#ffffff_50%,var(--accent)_100%)] opacity-30" />
-      </div>
+    <ClerkSignInButton forceRedirectUrl={callbackUrl} mode="modal">
+      <button
+        className={`
+          relative flex h-11 w-full items-center justify-center gap-3 rounded-lg
+          bg-accent text-accent-foreground font-medium text-sm
+          transition-all duration-200 overflow-hidden
+          hover:opacity-90 hover:scale-[1.02]
+        `}
+      >
+        {/* Animated Border */}
+        <div className="absolute inset-0 z-0">
+          <div className="absolute inset-[-100%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,var(--accent)_0%,#ffffff_50%,var(--accent)_100%)] opacity-30" />
+        </div>
 
-      <div className="relative z-10 flex items-center justify-center gap-3 h-full w-full rounded-[7px] bg-accent">
-        {loading ? (
-          <div className="h-[18px] w-[18px] animate-spin rounded-full border-2 border-accent-foreground border-t-transparent" />
-        ) : (
+        <div className="relative z-10 flex items-center justify-center gap-3 h-full w-full rounded-[7px] bg-accent">
           <svg
             className="h-[18px] w-[18px]"
             viewBox="0 0 24 24"
@@ -50,9 +40,9 @@ export function SignInButton({ callbackUrl = '/' }: { callbackUrl?: string }) {
               fill="#EA4335"
             />
           </svg>
-        )}
-        <span>{loading ? 'Signing in…' : 'Continue with Google'}</span>
-      </div>
-    </button>
+          <span>Continue with Google</span>
+        </div>
+      </button>
+    </ClerkSignInButton>
   )
 }

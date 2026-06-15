@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { auth } from '@/server/auth'
+import { auth } from '@clerk/nextjs/server'
 import { db } from '@/server/db'
 import { aiConsentRules } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
@@ -30,14 +30,14 @@ export default async function PrivacyPage({
 }: {
   searchParams: Promise<{ mode?: string }>
 }) {
-  const session = await auth()
-  if (!session?.user?.id) redirect('/login')
+  const { userId } = await auth()
+  if (!userId) redirect('/login')
 
   const params = await searchParams
   const isEditMode = params.mode === 'edit'
 
   const existingRules = await db.query.aiConsentRules.findMany({
-    where: eq(aiConsentRules.userId, session.user.id),
+    where: eq(aiConsentRules.userId, userId),
   })
 
   return (
@@ -57,7 +57,7 @@ export default async function PrivacyPage({
         <PrivacyGateForm
           defaultGroups={DEFAULT_BLOCKED_GROUPS}
           existingRules={existingRules}
-          userId={session.user.id}
+          userId={userId}
           isEditMode={isEditMode}
         />
 

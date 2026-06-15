@@ -1,26 +1,27 @@
-import { auth } from '@/auth'
+import { auth, currentUser } from '@clerk/nextjs/server'
 import { db } from '@/server/db'
 import { NextResponse } from 'next/server'
 
 export async function GET(req: Request) {
   try {
-    const session = await auth()
+    const { userId } = await auth()
+    const user = await currentUser()
     
     let dbUser = null
-    if (session?.user?.id) {
+    if (userId) {
       dbUser = await db.query.users.findFirst({
-        where: (users, { eq }) => eq(users.id, session.user!.id)
+        where: (users, { eq }) => eq(users.id, userId)
       })
     }
 
     return NextResponse.json({
       success: true,
-      session,
+      userId,
+      user,
       dbUserExists: !!dbUser,
       dbUser: dbUser,
       env: {
         nodeEnv: process.env.NODE_ENV,
-        nextAuthUrl: process.env.NEXTAUTH_URL,
         appUrl: process.env.NEXT_PUBLIC_APP_URL,
       }
     })

@@ -1,4 +1,4 @@
-import { auth } from '@/server/auth'
+import { auth, currentUser } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -7,6 +7,7 @@ import {
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { AppClientShell } from '@/components/app-client-shell'
 import { NavItem } from '@/components/NavItem'
+import { SignOutButton } from '@clerk/nextjs'
 
 // Nav items — defined server-side (static, no state needed)
 const NAV_ITEMS = [
@@ -18,8 +19,12 @@ const NAV_ITEMS = [
 ]
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth()
-  if (!session?.user) redirect('/login')
+  const { userId } = await auth()
+  const user = await currentUser()
+  if (!userId || !user) redirect('/login')
+
+  const email = user.primaryEmailAddress?.emailAddress ?? ''
+  const name = user.fullName ?? 'User'
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -46,11 +51,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-surface-raised transition-colors cursor-default">
             {/* Avatar */}
             <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-xs font-medium text-accent flex-shrink-0">
-              {session.user.name?.charAt(0).toUpperCase() ?? '?'}
+              {name.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate text-foreground">
-                {session.user.name ?? 'User'}
+                {name}
               </p>
             </div>
           </div>
@@ -59,20 +64,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="absolute bottom-[calc(100%-8px)] left-3 w-[calc(100%-24px)] p-1 rounded-lg border border-border bg-surface shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all flex flex-col gap-1">
             <div className="px-2 py-2 border-b border-border mb-1">
               <p className="text-xs font-medium text-foreground truncate">
-                {session.user.email}
+                {email}
               </p>
             </div>
             <div className="px-2 py-1.5 flex items-center justify-between">
               <span className="text-xs font-medium text-foreground-subtle">Theme</span>
               <ThemeToggle />
             </div>
-            <Link href="/api/auth/signout"
-              className="flex items-center gap-2 px-2 py-2 text-xs font-medium text-red-500/90 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
-              title="Sign out"
-              prefetch={false}>
-              <LogOut className="w-3.5 h-3.5" />
-              Sign out
-            </Link>
+            <SignOutButton>
+              <button
+                className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-red-500/90 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
+                title="Sign out">
+                <LogOut className="w-3.5 h-3.5" />
+                Sign out
+              </button>
+            </SignOutButton>
           </div>
         </div>
       </aside>
@@ -83,7 +89,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </main>
 
       {/* Client-only shell: shortcuts, command palette, Ably */}
-      <AppClientShell userId={session.user.id} />
+      <AppClientShell userId={userId} />
 
     </div>
   )

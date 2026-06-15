@@ -8,18 +8,7 @@ export default async function LoginPage({
 }) {
   const { error, callbackUrl } = await searchParams
 
-  let errorMessage = ''
-  if (error) {
-    if (error === 'OAuthSignin' || error === 'OAuthCallback' || error === 'Callback') {
-      errorMessage = 'Sign-in failed. Please try again.'
-    } else if (error === 'OAuthAccountNotLinked') {
-      errorMessage = 'Email already linked to another account.'
-    } else if (error === 'RateLimit') {
-      errorMessage = 'Too many attempts. Please wait 15 minutes.'
-    } else {
-      errorMessage = 'Something went wrong. Please try again.'
-    }
-  }
+  let errorMessage = error ? 'Sign-in failed. Please try again.' : ''
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center relative bg-background overflow-hidden">

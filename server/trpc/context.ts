@@ -1,13 +1,12 @@
 import 'server-only'
-import { auth } from '@/auth'
+import { auth } from '@clerk/nextjs/server'
 import { db } from '@/server/db'
 import { redis } from '@/server/redis'
 import { TRPCError } from '@trpc/server'
-import { sessions } from '@/server/db/schema'
-import { eq, gt, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
 export async function createTRPCContext({ req }: { req: Request }) {
-  const session = await auth()
+  const { userId: clerkUserId } = await auth()
 
   // CSRF check for all non-GET requests
   if (req.method !== 'GET') {
@@ -22,24 +21,24 @@ export async function createTRPCContext({ req }: { req: Request }) {
 
   let userId: string | null = null
 
-  if (session?.user?.id) {
+  if (clerkUserId) {
     // Check Redis cache first
-    const cacheKey = `session:valid:${session.user.id}`
+    const cacheKey = `session:valid:${clerkUserId}`
     const cached = await redis.get(cacheKey).catch(() => null)
 
     if (cached) {
-      userId = session.user.id
+      userId = clerkUserId
     } else {
       // Verify user still exists in DB
       try {
         const { users } = await import('@/server/db/schema')
         const validUser = await db.query.users.findFirst({
-          where: eq(users.id, session.user.id),
+          where: eq(users.id, clerkUserId),
           columns: { id: true },
         })
 
         if (validUser) {
-          userId = session.user.id
+          userId = clerkUserId
           await redis.set(cacheKey, '1', { ex: 60 }).catch(() => null)
         }
       } catch (err) {
@@ -49,7 +48,7 @@ export async function createTRPCContext({ req }: { req: Request }) {
   }
 
   const ip = req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? '127.0.0.1'
-  return { db, redis, session, userId, ip }
+  return { db, redis, userId, ip }
 }
 
 export type Context = Awaited<ReturnType<typeof createTRPCContext>>

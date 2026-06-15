@@ -1,11 +1,11 @@
-import { auth } from '@/server/auth'
+import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { serverTrpc } from '@/lib/trpc/server'
 import { CalendarView } from '@/components/calendar/CalendarView'
 
 export default async function CalendarPage() {
-  const session = await auth()
-  if (!session?.user?.id) redirect('/login')
+  const { userId } = await auth()
+  if (!userId) redirect('/login')
 
   let events: any[] = []
   try {

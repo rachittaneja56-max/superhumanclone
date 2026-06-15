@@ -7,10 +7,10 @@ export const metadata = {
   description: 'Privacy-first, agent-powered, keyboard-native email client built on Corsair.',
 };
 
-import { auth } from '@/auth';
+import { auth } from '@clerk/nextjs/server';
 
 export default async function MarketingPage() {
-  const session = await auth();
+  const { userId } = await auth();
 
   return (
     <>
@@ -28,7 +28,7 @@ export default async function MarketingPage() {
           
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto mt-4">
             <Link 
-              href={session ? "/inbox" : "/login?callbackUrl=/inbox"}
+              href={userId ? "/inbox" : "/login?callbackUrl=/inbox"}
               className="btn-animated-border w-full sm:w-auto px-8 py-4 rounded-lg text-foreground font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
             >
               Go to Inbox →
@@ -123,7 +123,7 @@ export default async function MarketingPage() {
       </section>
 
       {/* WAITLIST SECTION */}
-      {!session && (
+      {!userId && (
         <section className="py-24 px-6">
           <div className="max-w-3xl mx-auto bg-surface border border-border rounded-2xl p-10 md:p-16 text-center">
             <h2 className="font-display text-3xl md:text-4xl font-semibold tracking-tight text-balance mb-4">
