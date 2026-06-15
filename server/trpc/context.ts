@@ -25,21 +25,25 @@ export async function createTRPCContext({ req }: { req: Request }) {
   if (session?.user?.id) {
     // Check Redis cache first
     const cacheKey = `session:valid:${session.user.id}`
-    const cached = await redis.get(cacheKey)
+    const cached = await redis.get(cacheKey).catch(() => null)
 
     if (cached) {
       userId = session.user.id
     } else {
-      // Verify user still exists in DB (since we use JWT strategy, sessions table is empty)
-      const { users } = await import('@/server/db/schema')
-      const validUser = await db.query.users.findFirst({
-        where: eq(users.id, session.user.id),
-        columns: { id: true },
-      })
+      // Verify user still exists in DB
+      try {
+        const { users } = await import('@/server/db/schema')
+        const validUser = await db.query.users.findFirst({
+          where: eq(users.id, session.user.id),
+          columns: { id: true },
+        })
 
-      if (validUser) {
-        userId = session.user.id
-        await redis.set(cacheKey, '1', { ex: 60 })
+        if (validUser) {
+          userId = session.user.id
+          await redis.set(cacheKey, '1', { ex: 60 }).catch(() => null)
+        }
+      } catch (err) {
+        console.error('[TRPC Context] DB user check failed:', err)
       }
     }
   }

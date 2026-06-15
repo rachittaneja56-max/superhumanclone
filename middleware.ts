@@ -1,7 +1,6 @@
-import NextAuth from 'next-auth'
+import { NextResponse, type NextRequest } from 'next/server'
+import { getToken } from 'next-auth/jwt'
 import { authConfig } from '@/auth.config'
-import { NextResponse } from 'next/server'
-const { auth } = NextAuth(authConfig)
 import { createCsrfMiddleware } from '@edge-csrf/nextjs'
 import { neon } from '@neondatabase/serverless'
 
@@ -47,9 +46,18 @@ const PUBLIC_ROUTES = [
   '/onboarding',
 ]
 
-export default auth(async function middleware(req) {
+export default async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
-  const session = (req as any).auth
+  
+  // Explicitly decode the JWT using getToken. This bypasses NextAuth v5 wrapper bugs.
+  // NextAuth automatically checks both secure and non-secure cookie names.
+  const token = await getToken({ 
+    req, 
+    secret: authConfig.secret as string || process.env.AUTH_SECRET,
+    cookieName: 'aethra.session-token',
+    secureCookie: false
+  })
+  const session = token ? { user: { id: token.sub || token.id, ...token } } : null
 
   let csrfResponse;
   if (!req.headers.has('next-action')) {
@@ -133,5 +141,5 @@ export default auth(async function middleware(req) {
     response.headers.set('Content-Security-Policy', csp)
   }
   return response
-})
+}
     

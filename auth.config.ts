@@ -41,4 +41,18 @@ export const authConfig = {
   },
   secret: process.env.AUTH_SECRET,
   trustHost: true,
+  cookies: {
+    sessionToken: {
+      name: 'aethra.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: false, // Force false to prevent local dev drops
+      },
+    },
+  },
+  pages: {
+    signIn: '/login',
+  },
 } satisfies NextAuthConfig
