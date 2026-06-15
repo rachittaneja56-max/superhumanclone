@@ -64,32 +64,90 @@ export async function POST(req: Request) {
        const fromEmail = msg.from?.email || msg.from || ''
        
        if (fromEmail) {
-         const rules = await db.query.aiConsentRules.findMany({
-           where: eq(aiConsentRules.userId, userId)
-         })
-         
-         const isBlocked = isDomainBlocked(fromEmail, rules)
-         aiTriageSkipped = isBlocked
+         const domain = fromEmail.split('@')[1] || ''
+         const versionStr = await redis.get<string>(`consent_version:${userId}`) ?? '0'
+         const cacheKey = `consent:${userId}:${domain}:${versionStr}`
+         const cached = await redis.get<string>(cacheKey)
+
+         if (cached !== null) {
+           aiTriageSkipped = cached === 'blocked'
+         } else {
+           const rules = await db.query.aiConsentRules.findMany({
+             where: eq(aiConsentRules.userId, userId)
+           })
+           
+           aiTriageSkipped = isDomainBlocked(fromEmail, rules)
+           await redis.set(cacheKey, aiTriageSkipped ? 'blocked' : 'allowed', { ex: 3600 })
+         }
        }
        
-       // 6. Direct DB save
-       await db.insert(emails).values({
-          userId,
-          corsair_message_id: msg.id,
-          thread_id: msg.threadId || msg.id,
-          subject: msg.subject || '(no subject)',
-          from_address: fromEmail,
-          from_name: msg.from?.name || '',
-          to_address: Array.isArray(msg.to) ? msg.to.map((t: any) => typeof t === 'string' ? t : t.email).join(', ') : (msg.to || ''),
-          snippet: msg.snippet || '',
-          body_text: msg.body?.text || msg.bodyText || null,
-          body_html: msg.body?.html || msg.bodyHtml || null,
-          is_read: msg.isRead ?? msg.labelIds?.includes('UNREAD') === false,
-          is_archived: false,
-          is_deleted: false,
-          ai_triage_skipped: aiTriageSkipped,
-          created_at: msg.date ? new Date(msg.date) : new Date(),
-       }).onConflictDoNothing()
+       if (aiTriageSkipped) {
+         // 6. BLOCKED: Direct DB save with ai_triage_skipped = true
+         await db.insert(emails).values({
+            userId,
+            corsair_message_id: msg.id,
+            thread_id: msg.threadId || msg.id,
+            subject: msg.subject || '(no subject)',
+            from_address: fromEmail,
+            from_name: msg.from?.name || '',
+            to_address: Array.isArray(msg.to) ? msg.to.map((t: any) => typeof t === 'string' ? t : t.email).join(', ') : (msg.to || ''),
+            snippet: msg.snippet || '',
+            body_text: msg.body?.text || msg.bodyText || null,
+            body_html: msg.body?.html || msg.bodyHtml || null,
+            is_read: msg.isRead ?? msg.labelIds?.includes('UNREAD') === false,
+            is_archived: false,
+            is_deleted: false,
+            ai_triage_skipped: true,
+            created_at: msg.date ? new Date(msg.date) : new Date(),
+         }).onConflictDoNothing()
+
+         // Ably publish webhook:email
+         if (process.env.ABLY_API_KEY) {
+           const base64Key = Buffer.from(process.env.ABLY_API_KEY).toString('base64');
+           await fetch(`https://rest.ably.io/channels/private:user-${userId}/messages`, {
+             method: 'POST',
+             headers: {
+               'Content-Type': 'application/json',
+               'Authorization': `Basic ${base64Key}`,
+             },
+             body: JSON.stringify({
+               name: 'webhook:email',
+               data: { emailId: msg.id, fromAddress: fromEmail, subject: msg.subject }
+             }),
+           }).catch((err) => console.error('Failed to publish webhook:email to ably:', err));
+         }
+
+       } else {
+         // 7. ALLOWED: Dispatch to QStash worker
+         const qstashUrl = process.env.QSTASH_URL || 'https://qstash.upstash.io/v2'
+         const qstashToken = process.env.QSTASH_TOKEN
+         if (qstashToken) {
+           await fetch(`${qstashUrl}/publish/${process.env.RAILWAY_WORKER_URL || ''}/workers/triage`, {
+             method: 'POST',
+             headers: {
+               'Authorization': `Bearer ${qstashToken}`,
+               'Content-Type': 'application/json',
+               'Upstash-Forward-X-Worker-Secret': process.env.WORKER_SECRET || '',
+             },
+             body: JSON.stringify({
+               userId,
+               emailId: msg.id, // we pass corsair id, triage worker will need to insert it
+               corsairMessageId: msg.id,
+               fromAddress: fromEmail,
+               subject: msg.subject || '(no subject)',
+               snippet: msg.snippet || '',
+               bodyText: msg.body?.text || msg.bodyText || null,
+               // we also need to pass thread_id and to_address to worker so it can insert
+               threadId: msg.threadId || msg.id,
+               fromName: msg.from?.name || '',
+               toAddress: Array.isArray(msg.to) ? msg.to.map((t: any) => typeof t === 'string' ? t : t.email).join(', ') : (msg.to || ''),
+               bodyHtml: msg.body?.html || msg.bodyHtml || null,
+               isRead: msg.isRead ?? msg.labelIds?.includes('UNREAD') === false,
+               createdAt: msg.date ? new Date(msg.date).toISOString() : new Date().toISOString(),
+             }),
+           }).catch((err) => console.error('Failed to publish to QStash:', err));
+         }
+       }
     }
 
     return NextResponse.json({ success: true })
