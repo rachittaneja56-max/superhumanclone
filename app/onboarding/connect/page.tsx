@@ -1,6 +1,6 @@
 import { auth } from '@/auth'
 import { redirect } from 'next/navigation'
-import { ensureCorsairTenant, createConnectLink } from '@/server/corsair/client'
+import { getGmailAuthUrl, getCalendarAuthUrl, isUserConnected } from '@/server/corsair/client'
 import { db } from '@/server/db'
 import { userSettings } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
@@ -26,15 +26,7 @@ export default async function ConnectPage({
     redirect('/inbox')
   }
 
-  // Ensure Corsair tenant exists for this user
-  try {
-    await ensureCorsairTenant(userId)
-    console.log('Corsair tenant ensured for userId:', userId)
-  } catch (err: any) {
-    console.error('ensureCorsairTenant FAILED:', err?.message)
-  }
-
-  // Get current connection status
+  // Get current connection status from local DB
   const settings = await db.query.userSettings.findFirst({
     where: eq(userSettings.userId, userId),
     columns: { gmailConnected: true, calendarConnected: true },
@@ -43,17 +35,27 @@ export default async function ConnectPage({
   // If already connected, go to inbox
   if (settings?.gmailConnected) redirect('/inbox')
 
-  // Generate a connect link from Corsair
-  let connectUrl: string
+  // Check actual live connection status in Corsair DB (fallback if local DB is out of sync)
+  const isActuallyConnected = await isUserConnected(userId, 'gmail')
+  if (isActuallyConnected) {
+    await db.update(userSettings)
+      .set({ gmailConnected: true, calendarConnected: true })
+      .where(eq(userSettings.userId, userId))
+    redirect('/inbox')
+  }
+
+  // Generate connect links from Corsair
+  let gmailConnectUrl: string = ''
+  let calendarConnectUrl: string = ''
   let connectError: string | null = null
+
   try {
-    const result = await createConnectLink(userId)
-    console.log('createConnectLink result:', JSON.stringify(result, null, 2))
-    connectUrl = result.url ?? result ?? ''
+    // Ideally we would have a unified connect link, but for now we'll prioritize Gmail
+    gmailConnectUrl = await getGmailAuthUrl(userId)
+    calendarConnectUrl = await getCalendarAuthUrl(userId)
   } catch (err: any) {
-    console.error('createConnectLink FAILED:', err?.message, err?.stack)
+    console.error('getAuthUrl FAILED:', err?.message, err?.stack)
     connectError = err?.message ?? 'Unknown error'
-    connectUrl = ''
   }
 
   return (
@@ -73,15 +75,23 @@ export default async function ConnectPage({
           </div>
         )}
 
-        <a
-          href={connectUrl}
-          className="block w-full h-11 bg-accent text-accent-foreground rounded-lg font-medium text-sm flex items-center justify-center hover:bg-accent-hover transition-colors"
-        >
-          Connect Gmail & Calendar →
-        </a>
+        <div className="space-y-3">
+          <a
+            href={gmailConnectUrl}
+            className="block w-full h-11 bg-accent text-accent-foreground rounded-lg font-medium text-sm flex items-center justify-center hover:bg-accent-hover transition-colors"
+          >
+            Connect Gmail →
+          </a>
+          <a
+            href={calendarConnectUrl}
+            className="block w-full h-11 bg-surface-overlay text-foreground border border-border rounded-lg font-medium text-sm flex items-center justify-center hover:bg-surface-elevated transition-colors"
+          >
+            Connect Google Calendar →
+          </a>
+        </div>
 
         <p className="text-xs text-foreground-subtle text-center mt-4">
-          You&apos;ll be redirected to a secure Corsair page to authorize access.
+          You&apos;ll be redirected to a secure Google OAuth page to authorize access.
         </p>
 
         {settings?.gmailConnected && (
@@ -96,4 +106,3 @@ export default async function ConnectPage({
     </div>
   )
 }
-

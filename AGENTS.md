@@ -1,11 +1,11 @@
-# AGENTS.md — Tempo Codebase Rules
+# AGENTS.md — Aethra Codebase Rules
 ## AI-Powered Gmail + Calendar Client built on Corsair
 
 ---
 
 ## Project Identity
 
-- **Product:** Tempo — AI-powered email and calendar client
+- **Product:** Aethra — AI-powered email and calendar client
 - **Stack:** Next.js 15 App Router · tRPC v11 · Drizzle ORM · Neon (pgvector) ·
   Upstash Redis + QStash · Ably · Railway · shadcn/ui · Tailwind · Vercel AI SDK
 - **AI Dev:** Gemini 2.5 Flash (`@ai-sdk/google`) via `server/ai/provider.ts`

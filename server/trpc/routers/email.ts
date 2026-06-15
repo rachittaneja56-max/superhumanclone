@@ -4,12 +4,12 @@ import { emails, auditLogs, calendarEvents, autoReplyDrafts } from '@/server/db/
 import { eq, and, desc, gt, between, inArray, asc } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
-  getEmails,
+  getThreads,
   sendEmail as corsairSendEmail,
   archiveEmail,
   deleteEmail as corsairDeleteEmail,
-  syncGmailInbox,
-  getThread as corsairGetThread,
+  syncInbox as syncGmailInbox,
+  getThreadMessages as corsairGetThread,
   markEmailRead,
 } from '@/server/corsair/client';
 import { generateDigest, rewriteDraft } from '@/server/ai/provider';
@@ -73,6 +73,9 @@ export const emailRouter = router({
       for (const email of threadEmails) {
         if (!email.body_text) {
           const result = await corsairGetThread(ctx.userId!, input.threadId);
+          if (result.needsConnect) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+          }
           if (result.data && Array.isArray(result.data)) {
             for (const msg of result.data) {
               await ctx.db.update(emails)
@@ -126,7 +129,10 @@ export const emailRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       // Archive in Corsair/Gmail
-      await archiveEmail(ctx.userId!, input.emailId)
+      const archiveResult = await archiveEmail(ctx.userId!, input.emailId)
+      if (archiveResult.needsConnect) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
 
       // Also update local DB if it exists (for cache/UI purposes)
       const localResult = await ctx.db.update(emails)
@@ -374,12 +380,16 @@ export const emailRouter = router({
 
       const payload = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
 
-      await corsairSendEmail(ctx.userId!, {
+      const sendResult = await corsairSendEmail(ctx.userId!, {
         to: payload.to,
         subject: payload.subject,
         body: payload.body,
         threadId: payload.threadId,
       });
+
+      if (sendResult.needsConnect) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
 
       await ctx.redis.del(redisKey);
 

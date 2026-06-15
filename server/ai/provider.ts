@@ -4,7 +4,7 @@ import { google } from '@ai-sdk/google';
 import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
 import * as prompts from './prompts';
-import { createCorsairMCPClient, sendEmail, createCalendarEvent } from '../corsair/client';
+import { sendEmail, createCalendarEvent } from '../corsair/client';
 import { db } from '../db';
 import { emails } from '../db/schema';
 import { eq, and, isNotNull, sql } from 'drizzle-orm';
@@ -237,12 +237,6 @@ export async function streamAgentResponse(
   messages: { role: 'user' | 'assistant'; content: string }[],
   hitlInterceptor: (action: any) => Promise<boolean>
 ) {
-  // Create Corsair MCP client for this tenant
-  const mcpClient = await createCorsairMCPClient(userId);
-
-  // CRITICAL from docs: await tools() before streamText
-  const corsairTools = await mcpClient.tools();
-
   // Build our custom tools that wrap HITL
   const aethraTools: any = {
     searchEmails: tool({
@@ -306,17 +300,12 @@ export async function streamAgentResponse(
     } as any),
   };
 
-
   const result = streamText({
     model: getModel('smart'),
     system: prompts.agentSystem,
     messages: messages as any, // Cast messages for type matching
-    // Combine our HITL tools with Corsair's MCP tools
-    tools: { ...aethraTools, ...(corsairTools as any) },
+    tools: aethraTools,
   });
-
-  // ALWAYS close MCP client after use (from Corsair docs warning)
-  Promise.resolve(result.text).catch(() => {}).finally(() => mcpClient.close?.());
 
   return result;
 }
