@@ -2,7 +2,7 @@ import { auth } from '@/server/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
-  Mail, Calendar, Bot, Search, Settings, LogOut
+  Mail, Calendar, Bot, Search, Settings
 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { AppClientShell } from '@/components/app-client-shell'
@@ -28,11 +28,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <aside className="w-60 flex-shrink-0 flex flex-col border-r border-border bg-surface">
 
         {/* Logo */}
-        <div className="h-14 flex items-center justify-between px-4 border-b border-border">
+        <div className="h-14 flex items-center px-4 border-b border-border">
           <span className="font-display font-semibold text-lg tracking-tight">
             aethra<span className="text-accent">.</span>
           </span>
-          <ThemeToggle />
         </div>
 
         {/* Navigation */}
@@ -44,23 +43,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
         {/* User section */}
         <div className="border-t border-border p-3">
-          <div className="flex items-center gap-2 px-2 py-1.5">
-            {/* Avatar */}
-            <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-xs font-medium text-accent flex-shrink-0">
-              {session.user.name?.charAt(0).toUpperCase() ?? '?'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium truncate text-foreground">
-                {session.user.name ?? 'User'}
-              </p>
-              <p className="text-xs text-foreground-subtle truncate">
-                {session.user.email}
-              </p>
-            </div>
-            <a href="/api/auth/signout"
-              className="text-foreground-subtle hover:text-foreground transition-colors flex-shrink-0"
-              title="Sign out">
-              <LogOut className="w-3.5 h-3.5" />
+          <div className="flex items-center justify-between px-2 py-1.5">
+            <ThemeToggle />
+            <a href="/api/auth/signout" title="Sign out">
+              <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-xs font-medium text-accent hover:bg-accent/30 transition-colors">
+                {session.user.name?.charAt(0).toUpperCase() ?? '?'}
+              </div>
             </a>
           </div>
         </div>
