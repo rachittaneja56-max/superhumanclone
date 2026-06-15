@@ -9,7 +9,7 @@ export function SignInButton() {
     <button
       onClick={async () => {
         setLoading(true)
-        await signIn('google', { callbackUrl: '/inbox' })
+        await signIn('google', { callbackUrl: '/' })
       }}
       disabled={loading}
       className={`

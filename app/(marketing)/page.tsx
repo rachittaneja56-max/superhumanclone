@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import { auth } from '@/server/auth';
 import { WaitlistForm } from '@/components/landing/WaitlistForm';
 import { Shield, Bot, Search, Sparkles, Sun, Keyboard } from 'lucide-react';
 
@@ -8,7 +9,9 @@ export const metadata = {
   description: 'Privacy-first, agent-powered, keyboard-native email client built on Corsair.',
 };
 
-export default function MarketingPage() {
+export default async function MarketingPage() {
+  const session = await auth();
+
   return (
     <>
       <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 pb-20 text-center bg-dot-grid">
@@ -24,12 +27,21 @@ export default function MarketingPage() {
           </p>
           
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto mt-4">
-            <Link 
-              href="/api/auth/signin?callbackUrl=/inbox"
-              className="btn-animated-border w-full sm:w-auto px-8 py-4 rounded-lg text-foreground font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
-            >
-              Connect Gmail →
-            </Link>
+            {session?.user ? (
+              <Link 
+                href="/inbox"
+                className="btn-animated-border w-full sm:w-auto px-8 py-4 rounded-lg text-foreground font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
+              >
+                Go to Inbox →
+              </Link>
+            ) : (
+              <Link 
+                href="/login"
+                className="btn-animated-border w-full sm:w-auto px-8 py-4 rounded-lg text-foreground font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
+              >
+                Connect Gmail →
+              </Link>
+            )}
             <a 
               href="#features"
               className="w-full sm:w-auto px-8 py-4 rounded-lg border border-border bg-surface text-foreground font-medium hover:bg-surface-raised transition-all flex items-center justify-center gap-2"

@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 
-export function MarketingNav() {
+export function MarketingNav({ user }: { user?: any }) {
   const [isScrolled, setIsScrolled] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -39,9 +39,20 @@ export function MarketingNav() {
         </Link>
         
         <div className="flex items-center gap-6">
-          <Link href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm px-2 py-1">
-            Sign in
-          </Link>
+          {user ? (
+            <Link href="/inbox" className="flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-full p-1 pr-3 hover:bg-surface-raised transition-colors">
+              <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-xs font-medium text-accent flex-shrink-0">
+                {user.name?.charAt(0).toUpperCase() ?? '?'}
+              </div>
+              <span className="text-sm font-medium text-foreground hidden sm:inline-block">
+                {user.name ?? 'Inbox'}
+              </span>
+            </Link>
+          ) : (
+            <Link href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm px-2 py-1">
+              Sign in
+            </Link>
+          )}
           <ThemeToggle />
         </div>
       </div>
