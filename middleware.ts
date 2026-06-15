@@ -51,7 +51,7 @@ export default clerkMiddleware(async (auth, req) => {
     img-src 'self' data: blob: https: clerk.com *.clerk.com;
     font-src 'self' https://fonts.gstatic.com;
     connect-src 'self' wss://*.ably.io https://*.ably.io https://*.railway.app clerk.com *.clerk.com *.clerk.accounts.dev https://clerk-telemetry.com;
-    frame-src blob:;
+    frame-src 'self' blob: https://challenges.cloudflare.com clerk.com *.clerk.com *.clerk.accounts.dev;
     object-src 'none';
     base-uri 'self';
     form-action 'self';
