@@ -1,4 +1,5 @@
 import { SignInButton } from '@/components/auth/SignInButton'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 export default async function LoginPage({
   searchParams,
@@ -24,6 +25,11 @@ export default async function LoginPage({
     <div className="flex min-h-screen w-full items-center justify-center relative bg-background overflow-hidden">
       {/* Background Dot Grid */}
       <div className="absolute inset-0 bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:24px_24px] opacity-15" />
+
+      {/* Theme Toggle in top right */}
+      <div className="absolute top-4 right-4 z-20">
+        <ThemeToggle />
+      </div>
 
       <div className="relative z-10 w-full max-w-sm mx-auto bg-surface border border-border rounded-[16px] p-[40px] px-[36px] shadow-sm">
         {/* Section 1 - Brand */}
