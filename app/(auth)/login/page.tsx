@@ -9,7 +9,7 @@ export default async function LoginPage({
 }) {
   const { error, callbackUrl } = await searchParams
 
-  let errorMessage = error ? 'Sign-in failed. Please try again.' : ''
+  const errorMessage = error ? 'Sign-in failed. Please try again.' : ''
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center relative bg-background overflow-hidden">

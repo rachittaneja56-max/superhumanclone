@@ -23,19 +23,34 @@ const NAV_ITEMS = [
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { userId } = await auth()
-  const user = await currentUser()
-  if (!userId || !user) redirect('/login')
+  if (!userId) redirect('/login')
 
-  const email = user.primaryEmailAddress?.emailAddress ?? ''
-  const name = user.fullName ?? 'User'
+  // Attempt to read from local DB first to avoid slow network request to Clerk
+  let localUser = await db.query.users.findFirst({
+    where: eq(users.id, userId)
+  })
 
-  // Sync user to DB for local development where webhooks might not fire
-  await db.insert(users).values({
-    id: userId,
-    email: email,
-    name: name,
-    image: user.imageUrl,
-  }).onConflictDoNothing()
+  // If missing locally (e.g. webhook race condition), fetch from Clerk and sync
+  if (!localUser) {
+    const clerkUser = await currentUser()
+    if (!clerkUser) redirect('/login')
+    
+    localUser = {
+      id: userId,
+      email: clerkUser.primaryEmailAddress?.emailAddress ?? '',
+      name: clerkUser.fullName ?? 'User',
+      image: clerkUser.imageUrl,
+      createdAt: new Date(),
+      emailVerified: new Date(),
+    }
+
+    await db.insert(users).values({
+      id: localUser.id,
+      email: localUser.email,
+      name: localUser.name,
+      image: localUser.image,
+    }).onConflictDoNothing()
+  }
 
   const settings = await db.query.userSettings.findFirst({
     where: eq(userSettings.userId, userId)
@@ -51,6 +66,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
 
 
+
+  const email = localUser.email ?? ''
+  const name = localUser.name ?? 'User'
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

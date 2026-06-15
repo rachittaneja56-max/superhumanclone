@@ -13,6 +13,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
 
+  const firstEmailId = thread?.[0]?.id;
+
   // Mark as read on mount
   useEffect(() => {
     if (!thread || thread.length === 0) return;
@@ -20,7 +22,8 @@ export function ThreadView({ threadId }: { threadId: string }) {
     if (unread.length > 0) {
       markRead.mutate({ emailIds: unread.map((e) => e.id).slice(0, 50) });
     }
-  }, [thread?.[0]?.id]); 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstEmailId]); 
 
   const virtualizer = useVirtualizer({
     count: thread?.length || 0,

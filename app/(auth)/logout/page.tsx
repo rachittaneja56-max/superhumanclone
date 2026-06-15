@@ -33,7 +33,7 @@ export default function LogoutPage() {
             You have been signed out
           </h2>
           <p className="text-sm text-foreground-muted mt-1">
-            It's safe to close this window now.
+            It&apos;s safe to close this window now.
           </p>
         </div>
 
