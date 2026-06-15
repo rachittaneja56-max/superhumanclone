@@ -1,56 +1,66 @@
-import { auth } from '@/auth'
-import { db } from '@/server/db'
-import { userSettings } from '@/server/db/schema'
-import { eq } from 'drizzle-orm'
 import { redirect } from 'next/navigation'
-import { acceptPrivacyPolicy } from './actions'
+import { auth } from '@/server/auth'
+import { db } from '@/server/db'
+import { aiConsentRules } from '@/server/db/schema'
+import { eq } from 'drizzle-orm'
+import { PrivacyGateForm } from '@/components/onboarding/PrivacyGateForm'
 
-export default async function PrivacyPage() {
+const DEFAULT_BLOCKED_GROUPS = [
+  {
+    name: '💰 Financial',
+    domains: ['*@hdfcbank.com', '*@icicibank.com', '*@razorpay.com',
+              '*@stripe.com', '*@zerodha.com', '*@paytm.com'],
+  },
+  {
+    name: '🏥 Health',
+    domains: ['*@practo.com', '*@apollo247.com', '*@1mg.com'],
+  },
+  {
+    name: '⚖️ Legal',
+    domains: ['*@court.gov.in'],
+  },
+  {
+    name: '👥 HR & Payroll',
+    domains: ['*@darwinbox.com', '*@keka.com', '*@greythr.com'],
+  },
+]
+
+export default async function PrivacyPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string }>
+}) {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const settings = await db.query.userSettings.findFirst({
-    where: eq(userSettings.userId, session.user.id),
-    columns: { onboardingCompleted: true },
+  const params = await searchParams
+  const isEditMode = params.mode === 'edit'
+
+  const existingRules = await db.query.aiConsentRules.findMany({
+    where: eq(aiConsentRules.userId, session.user.id),
   })
 
-  if (settings?.onboardingCompleted) {
-    redirect('/onboarding/connect')
-  }
-
   return (
-    <div suppressHydrationWarning className="flex min-h-screen w-full items-center justify-center relative bg-background overflow-hidden">
-      <div suppressHydrationWarning className="absolute inset-0 bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:24px_24px] opacity-15" />
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-lg bg-surface border border-border rounded-xl p-8">
 
-      <div suppressHydrationWarning className="relative z-10 w-full max-w-sm mx-auto bg-surface border border-border rounded-[16px] p-[40px] px-[36px] shadow-sm">
-        
-        <div suppressHydrationWarning className="flex flex-col items-start mb-6">
-          <h2 className="font-display font-semibold text-xl text-foreground">
-            Your Privacy First
-          </h2>
+        <div className="mb-6">
+          <h1 className="font-display font-semibold text-2xl tracking-tight">
+            {isEditMode ? 'Edit privacy settings' : 'Your privacy, your rules'}
+          </h1>
           <p className="text-sm text-foreground-muted mt-2">
-            Aethra uses AI to intelligently triage and draft your emails. To do this, your email content is securely processed by our AI models.
+            Choose which email categories Aethra's AI can access.
+            Emails from protected domains are saved locally — the AI never sees them.
           </p>
         </div>
 
-        <div suppressHydrationWarning className="flex flex-col gap-3 mb-6">
-          <div suppressHydrationWarning className="p-3 rounded-lg border border-border bg-background flex gap-2 items-start">
-             <span className="font-medium text-green-500">✓</span> 
-             <p className="text-sm text-foreground">Your data is <span className="font-semibold">never</span> used to train public models.</p>
-          </div>
-          <div suppressHydrationWarning className="p-3 rounded-lg border border-border bg-background flex gap-2 items-start">
-             <span className="font-medium text-green-500">✓</span> 
-             <p className="text-sm text-foreground">We do not sell your personal information or email data.</p>
-          </div>
-        </div>
+        <PrivacyGateForm
+          defaultGroups={DEFAULT_BLOCKED_GROUPS}
+          existingRules={existingRules}
+          userId={session.user.id}
+          isEditMode={isEditMode}
+        />
 
-        <div suppressHydrationWarning className="mt-6 pt-6 border-t border-border">
-          <form action={acceptPrivacyPolicy}>
-            <button type="submit" className="flex w-full items-center justify-center h-10 rounded-lg bg-accent text-accent-foreground font-medium text-sm hover:opacity-90 transition-opacity">
-              I Understand & Agree →
-            </button>
-          </form>
-        </div>
       </div>
     </div>
   )

@@ -2,10 +2,10 @@ import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
 import { db } from '../../db';
 import { emails, calendarEvents, users } from '../../db/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, gte, lte } from 'drizzle-orm';
 import { smartFillFromThread } from '../../ai/provider';
 import { TRPCError } from '@trpc/server';
-import { createCalendarEvent } from '../../corsair/client';
+import { createCalendarEvent, getCalendarEvents } from '../../corsair/client';
 
 export const calendarRouter = router({
   smartFillFromThread: protectedProcedure
@@ -87,5 +87,32 @@ export const calendarRouter = router({
       // We will assume webhook handles it or UI refetches.
 
       return { success: true, event: result.data };
+    }),
+
+  getEvents: protectedProcedure
+    .input(z.object({
+      startDate: z.date(),
+      endDate: z.date(),
+    }))
+    .query(async ({ ctx, input }) => {
+      // First try our local DB
+      const localEvents = await ctx.db
+        .select()
+        .from(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.userId, ctx.userId!),
+            gte(calendarEvents.start_time, input.startDate),
+            lte(calendarEvents.start_time, input.endDate),
+          )
+        )
+        .orderBy(asc(calendarEvents.start_time))
+
+      if (localEvents.length > 0) return localEvents
+
+      // Fall back to Corsair if local DB is empty
+      const result = await getCalendarEvents(ctx.userId!, { limit: 50 })
+      if (!result.success || !result.data) return []
+      return result.data
     }),
 });

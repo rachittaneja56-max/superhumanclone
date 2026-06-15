@@ -25,7 +25,7 @@ export function AutoReplyPanel({ emailId, onSelect }: { emailId: string; onSelec
     }
   );
 
-  const toggleSuggestions = trpc.settings.toggleDraftSuggestions.useMutation();
+  const updateSetting = trpc.settings.updateSetting.useMutation();
 
   useEffect(() => {
     if (isFetching && (!replies || replies.length === 0)) {
@@ -35,7 +35,7 @@ export function AutoReplyPanel({ emailId, onSelect }: { emailId: string; onSelec
 
   const handleDisable = async () => {
     try {
-      await toggleSuggestions.mutateAsync({ enabled: false });
+      await updateSetting.mutateAsync({ key: "draftSuggestionsEnabled", value: false });
       toast.success("Draft suggestions disabled");
     } catch (err) {
       toast.error("Failed to disable suggestions");

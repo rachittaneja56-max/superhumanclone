@@ -1,146 +1,99 @@
-'use client';
-
-import { trpc } from '@/lib/trpc/client';
-import { useUIStore } from '@/store/ui-store';
-import { formatDistanceToNow } from 'date-fns';
-import { toast } from 'sonner';
-import { useState } from 'react';
-
-import type { RouterOutputs } from '@/lib/trpc/client';
-type Email = RouterOutputs['email']['getThreads'][number];
+'use client'
+import { trpc } from '@/lib/trpc/client'
+import { formatDistanceToNow } from 'date-fns'
+import { useRouter } from 'next/navigation'
+import { useUIStore } from '@/store/ui-store'
+import { toast } from 'sonner'
 
 interface ThreadListProps {
-  initialData: Email[];
+  initialData: any[]
 }
 
 export function ThreadList({ initialData }: ThreadListProps) {
-  const { data: emails } = trpc.email.getThreads.useQuery(
-    { limit: 50, isArchived: false },
-    { initialData }
-  );
+  const router = useRouter()
+  const { selectedEmailId, setSelectedEmail } = useUIStore()
 
-  const { selectedEmailId, setSelectedEmail } = useUIStore();
-  const utils = trpc.useUtils();
-  
+  const { data: threads = initialData } = trpc.email.getThreads.useQuery(
+    { limit: 50, isArchived: false },
+    {
+      initialData,
+      refetchOnWindowFocus: false,
+      staleTime: 30000,
+    }
+  )
+
   const archiveMutation = trpc.email.archiveEmail.useMutation({
     onMutate: async ({ emailId }) => {
-      await utils.email.getThreads.cancel();
-      const prevData = utils.email.getThreads.getData({ limit: 50, isArchived: false });
-      utils.email.getThreads.setData(
-        { limit: 50, isArchived: false },
-        (old: any[] | undefined) => old ? old.filter((e: any) => e.id !== emailId) : []
-      );
-
-      return { prevData };
-    },
-    onError: (err, newEmail, context) => {
-      if (context?.prevData) {
-        utils.email.getThreads.setData({ limit: 50, isArchived: false }, context.prevData);
-      }
-      toast.error('Failed to archive email.');
-    },
-    onSuccess: (_, { emailId }) => {
-      toast('Archived', {
-        action: {
-          label: 'Undo',
-          onClick: () => restoreMutation.mutate({ emailId }),
-        },
+      toast.success('Archived', {
+        action: { label: 'Undo', onClick: () => {} },
         duration: 10000,
-      });
-    }
-  });
+      })
+    },
+    onError: () => toast.error('Failed to archive'),
+  })
 
-  const restoreMutation = trpc.email.restoreFromArchive.useMutation({
-    onSuccess: () => {
-      utils.email.getThreads.invalidate();
-      toast.success('Restored from archive');
-    }
-  });
-
-  const handleArchive = (e: React.MouseEvent, emailId: string) => {
-    e.stopPropagation();
-    archiveMutation.mutate({ emailId });
-  };
-
-  const getTagColor = (tag: string) => {
-    switch (tag) {
-      case 'work': return 'bg-tag-blue';
-      case 'personal': return 'bg-tag-green';
-      case 'finance': return 'bg-tag-yellow';
-      case 'travel': return 'bg-tag-purple';
-      case 'newsletter': return 'bg-tag-red';
-      default: return 'bg-muted-foreground';
-    }
-  };
-
-  if (!emails || emails.length === 0) {
+  if (threads.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground p-8 h-full">
-        <p>No messages here.</p>
-        <p className="text-sm">You&apos;re all caught up!</p>
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
+          <span className="text-2xl">✉️</span>
+        </div>
+        <p className="text-sm text-foreground-muted">Your inbox is empty</p>
+        <p className="text-xs text-foreground-subtle">
+          Syncing your Gmail — check back in a moment
+        </p>
       </div>
-    );
+    )
   }
 
   return (
-    <div className="flex flex-col w-full">
-      {emails.map((email: any) => {
-        const isSelected = selectedEmailId === email.id;
-        const fromNameInitial = email.from_name ? email.from_name.charAt(0).toUpperCase() : email.from_address.charAt(0).toUpperCase();
-
-        return (
-          <div
-            key={email.id}
-            onClick={() => setSelectedEmail(email.id)}
-            className={`group relative flex items-center gap-4 p-4 border-b border-border cursor-pointer transition-all duration-200 ${
-              isSelected ? 'bg-accent/10 border-l-2 border-l-accent' : 'hover:bg-surface-overlay border-l-2 border-l-transparent hover:border-l-accent'
-            }`}
-          >
-            {/* Left: Avatar */}
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-primary-foreground font-medium flex-shrink-0 ${getTagColor(email.tag)}`}>
-              {fromNameInitial}
-            </div>
-
-            {/* Content */}
-            <div className="flex-1 min-w-0 flex flex-col">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <span className={`truncate ${!email.is_read ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground'}`}>
-                  {email.from_name || email.from_address}
-                </span>
-                <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
-                  {formatDistanceToNow(new Date(email.created_at), { addSuffix: true })}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-sm text-foreground truncate max-w-full block">
-                  {email.subject || '(No Subject)'}
-                  <span className="text-muted-foreground ml-2 font-normal">
-                    {email.snippet ? `- ${email.snippet}` : ''}
-                  </span>
-                </span>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {email.priority === 'high' || email.priority === 'urgent' ? (
-                    <div className="w-2 h-2 rounded-full bg-destructive flex-shrink-0" title="High Priority" />
-                  ) : null}
-                  <span className="text-xs px-2 py-0.5 rounded-full border border-border bg-surface text-muted-foreground capitalize">
-                    {email.tag}
-                  </span>
-                  
-                  <button 
-                    onClick={(e) => handleArchive(e, email.id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 hover:bg-surface-raised rounded-md text-muted-foreground hover:text-foreground focus:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    title="Archive (e)"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
+    <div className="divide-y divide-border">
+      {threads.map((thread: any) => (
+        <div
+          key={thread.id}
+          onClick={() => {
+            setSelectedEmail(thread.id)
+            router.push('/inbox/' + thread.threadId)
+          }}
+          className={[
+            'px-4 py-3 cursor-pointer transition-all duration-100',
+            'hover:bg-surface-overlay',
+            selectedEmailId === thread.id
+              ? 'bg-accent/5 border-l-2 border-accent pl-[14px]'
+              : 'border-l-2 border-transparent',
+          ].join(' ')}
+        >
+          <div className="flex items-start justify-between gap-2 mb-0.5">
+            <span className={[
+              'text-sm truncate',
+              !thread.isRead ? 'font-semibold text-foreground' : 'text-foreground-muted',
+            ].join(' ')}>
+              {thread.fromName || thread.fromAddress || 'Unknown'}
+            </span>
+            <span className="text-xs text-foreground-subtle flex-shrink-0">
+              {thread.receivedAt
+                ? formatDistanceToNow(new Date(thread.receivedAt), { addSuffix: true })
+                : ''}
+            </span>
           </div>
-        );
-      })}
+          <p className={[
+            'text-sm truncate',
+            !thread.isRead ? 'font-medium text-foreground' : 'text-foreground-muted',
+          ].join(' ')}>
+            {thread.subject || '(no subject)'}
+          </p>
+          {thread.tldr && !thread.aiTriageSkipped && (
+            <p className="text-xs text-accent mt-0.5 truncate">
+              ✦ {thread.tldr}
+            </p>
+          )}
+          {thread.snippet && (
+            <p className="text-xs text-foreground-subtle truncate mt-0.5">
+              {thread.snippet}
+            </p>
+          )}
+        </div>
+      ))}
     </div>
-  );
+  )
 }

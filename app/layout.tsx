@@ -1,42 +1,49 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono, Instrument_Sans } from "next/font/google";
-import { headers } from "next/headers";
+import { ThemeProvider } from "@/components/ui/theme-provider";
 import { TRPCProvider } from "@/components/trpc-provider";
+import { Toaster } from "sonner";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
+const instrumentSans = Instrument_Sans({
+  subsets: ['latin'],
+  variable: '--font-display',
+  weight: ['400', '500', '600'],
+})
 
 const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-});
-
-const instrumentSans = Instrument_Sans({
-  variable: "--font-display",
-  subsets: ["latin"],
-});
+  subsets: ['latin'],
+  variable: '--font-mono',
+  weight: ['400', '500'],
+})
 
 export const metadata: Metadata = {
   title: "Aethra",
   description: "AI-powered Gmail + Calendar client built on Corsair",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${jetbrainsMono.variable} ${instrumentSans.variable} h-full antialiased`}
-      suppressHydrationWarning
-    >
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
-        <TRPCProvider>{children}</TRPCProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className={[
+        instrumentSans.variable,
+        jetbrainsMono.variable,
+        'font-sans antialiased bg-background text-foreground',
+      ].join(' ')}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+        >
+          <TRPCProvider>
+            {children}
+            <Toaster richColors position="bottom-right" />
+          </TRPCProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

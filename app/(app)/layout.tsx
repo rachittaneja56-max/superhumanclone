@@ -1,92 +1,79 @@
-import Link from 'next/link';
-import { ThemeToggle } from '@/components/ui/theme-toggle';
-import { Mail, Calendar, Bot, Search, Settings, LogOut } from 'lucide-react';
-import { headers } from 'next/headers';
+import { auth } from '@/server/auth'
+import { redirect } from 'next/navigation'
+import Link from 'next/link'
+import {
+  Mail, Calendar, Bot, Search, Settings, LogOut
+} from 'lucide-react'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
+import { AppClientShell } from '@/components/app-client-shell'
+import { NavItem } from '@/components/NavItem'
 
-import { auth } from '@/server/auth';
-import { AppProviders } from '@/components/layout/AppProviders';
+// Nav items — defined server-side (static, no state needed)
+const NAV_ITEMS = [
+  { href: '/inbox',    icon: Mail,     label: 'Inbox' },
+  { href: '/calendar', icon: Calendar, label: 'Calendar' },
+  { href: '/agent',    icon: Bot,      label: 'Agent' },
+  { href: '/search',   icon: Search,   label: 'Search' },
+  { href: '/settings', icon: Settings, label: 'Settings' },
+]
 
-export default async function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const session = await auth();
-  
-  const navItems = [
-    { name: 'Inbox', href: '/inbox', icon: Mail },
-    { name: 'Calendar', href: '/calendar', icon: Calendar },
-    { name: 'Agent', href: '/agent', icon: Bot },
-    { name: 'Search', href: '/search', icon: Search },
-    { name: 'Settings', href: '/settings', icon: Settings },
-  ];
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth()
+  if (!session?.user) redirect('/login')
 
   return (
-    <div className="flex flex-col md:flex-row h-screen w-full overflow-hidden bg-background font-sans">
-      {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-[240px] flex-shrink-0 flex-col bg-surface border-r border-border h-full">
-        <div className="h-16 flex items-center justify-between px-6 border-b border-transparent">
-          <Link href="/inbox" className="flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm">
-            <span className="font-display font-semibold text-xl tracking-tight">
-              aethra<span className="text-accent">.</span>
-            </span>
-          </Link>
+    <div className="flex h-screen overflow-hidden bg-background">
+
+      {/* Sidebar */}
+      <aside className="w-60 flex-shrink-0 flex flex-col border-r border-border bg-surface">
+
+        {/* Logo */}
+        <div className="h-14 flex items-center justify-between px-4 border-b border-border">
+          <span className="font-display font-semibold text-lg tracking-tight">
+            aethra<span className="text-accent">.</span>
+          </span>
           <ThemeToggle />
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            // Next.js requires plain objects or ReactNodes to cross the SC -> CC boundary.
-            // By instantiating the Icon here, we pass a serializable React element instead of a function reference.
-            const { icon, ...serializableItem } = item;
-            return <NavItem key={item.name} item={serializableItem} icon={<Icon className="w-5 h-5" />} />;
-          })}
+        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+          {NAV_ITEMS.map((item) => (
+            <NavItem key={item.href} {...item} />
+          ))}
         </nav>
 
-        {/* User Footer */}
-        <div className="p-4 border-t border-border flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-accent/20 text-accent flex items-center justify-center font-medium text-xs flex-shrink-0">
-              {session?.user?.name?.charAt(0).toUpperCase() || session?.user?.email?.charAt(0).toUpperCase() || 'U'}
+        {/* User section */}
+        <div className="border-t border-border p-3">
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            {/* Avatar */}
+            <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center text-xs font-medium text-accent flex-shrink-0">
+              {session.user.name?.charAt(0).toUpperCase() ?? '?'}
             </div>
-            <div className="flex flex-col overflow-hidden">
-              <span className="text-sm font-medium truncate">{session?.user?.name || 'User'}</span>
-              <span className="text-xs text-muted-foreground truncate">{session?.user?.email || 'user@example.com'}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium truncate text-foreground">
+                {session.user.name ?? 'User'}
+              </p>
+              <p className="text-xs text-foreground-subtle truncate">
+                {session.user.email}
+              </p>
             </div>
+            <a href="/api/auth/signout"
+              className="text-foreground-subtle hover:text-foreground transition-colors flex-shrink-0"
+              title="Sign out">
+              <LogOut className="w-3.5 h-3.5" />
+            </a>
           </div>
-          <Link href="/api/auth/signout" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-            <LogOut className="w-4 h-4" />
-            <span>Sign out</span>
-          </Link>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <AppProviders userId={session?.user?.id}>
-          <div className="flex-1 overflow-y-auto w-full h-full">
-            {children}
-          </div>
-        </AppProviders>
+      {/* Main content */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {children}
       </main>
 
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden flex items-center justify-around w-full h-16 bg-surface border-t border-border flex-shrink-0 pb-safe">
-        {navItems.slice(0, 4).map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link key={item.name} href={item.href} className="flex flex-col items-center justify-center w-full h-full text-muted-foreground hover:text-foreground">
-              <Icon className="w-5 h-5 mb-1" />
-              <span className="text-[10px] font-medium">{item.name}</span>
-            </Link>
-          );
-        })}
-      </nav>
-    </div>
-  );
-}
+      {/* Client-only shell: shortcuts, command palette, Ably */}
+      <AppClientShell userId={session.user.id} />
 
-// Inline client component for active path navigation
-import { NavItem } from '@/components/inbox/NavItem';
+    </div>
+  )
+}
