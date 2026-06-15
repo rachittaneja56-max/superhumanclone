@@ -1,5 +1,4 @@
 import NextAuth from 'next-auth'
-import Google from 'next-auth/providers/google'
 import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import { db } from '@/server/db'
 import { users, accounts, sessions, verificationTokens } from '@/server/db/schema'
@@ -7,38 +6,18 @@ import { headers } from 'next/headers'
 import { checkSignInRateLimit } from '@/server/auth/rate-limiter'
 import { ensureUserSettings } from '@/server/auth/helpers'
 import { redis } from '@/server/redis'
+import { authConfig } from './auth.config'
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  ...authConfig,
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,
     sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   }),
-
-  session: {
-    strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60,
-    updateAge: 24 * 60 * 60,
-  },
-
-  providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          prompt: 'consent',
-          access_type: 'offline',
-          scope: 'openid email profile',
-          // NOTE: NO gmail or calendar scopes here
-          // Corsair handles Gmail/Calendar OAuth separately
-        },
-      },
-    }),
-  ],
-
   callbacks: {
+    ...authConfig.callbacks,
     async signIn({ user, account }) {
       const headersList = await headers()
       const ip = headersList.get('x-forwarded-for') ?? headersList.get('x-real-ip') ?? '127.0.0.1'
@@ -48,22 +27,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       return true
     },
-
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id
-      }
-      return token
-    },
-
-    async session({ session, token }) {
-      if (session.user && token.id) {
-        session.user.id = token.id as string
-      }
-      return session
-    },
   },
-
   events: {
     async createUser({ user }) {
       if (user.id) {
@@ -78,29 +42,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
   },
-
-  pages: {
-    signIn: '/login',
-    error: '/login',
-  },
-
-  secret: process.env.AUTH_SECRET,
-
-  useSecureCookies: process.env.NODE_ENV === 'production',
-
-  cookies: {
-    sessionToken: {
-      name: process.env.NODE_ENV === 'production'
-        ? '__Secure-authjs.session-token'
-        : 'authjs.session-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
-    },
-  },
-
-  trustHost: true,
 })
