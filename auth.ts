@@ -1,7 +1,7 @@
 import NextAuth from 'next-auth'
 import { DrizzleAdapter } from '@auth/drizzle-adapter'
 import { db } from '@/server/db'
-import { users, accounts, sessions, verificationTokens } from '@/server/db/schema'
+import { users, authAccounts, authSessions, authVerificationTokens } from '@/server/db/schema'
 import { headers } from 'next/headers'
 import { checkSignInRateLimit } from '@/server/auth/rate-limiter'
 import { ensureUserSettings } from '@/server/auth/helpers'
@@ -12,10 +12,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: DrizzleAdapter(db, {
     usersTable: users,
-    accountsTable: accounts,
-    verificationTokensTable: verificationTokens,
+    accountsTable: authAccounts,
+    sessionsTable: authSessions,
+    verificationTokensTable: authVerificationTokens,
   }),
-  session: { strategy: 'jwt' },
+  // Do NOT override session here — authConfig.session already sets strategy:'jwt' + maxAge + updateAge
   callbacks: {
     ...authConfig.callbacks,
     async signIn({ user, account }) {
