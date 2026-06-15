@@ -28,8 +28,9 @@ export const authConfig = {
       return token
     },
     async session({ session, token }) {
-      if (session.user && token.sub) {
-        session.user.id = token.sub
+      const userId = token.sub || token.id
+      if (session.user && userId) {
+        session.user.id = userId as string
       }
       return session
     },
@@ -40,15 +41,4 @@ export const authConfig = {
   },
   secret: process.env.AUTH_SECRET,
   trustHost: true,
-  cookies: {
-    sessionToken: {
-      name: process.env.NODE_ENV === 'production' ? '__Secure-authjs.session-token' : 'authjs.session-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
-    },
-  },
 } satisfies NextAuthConfig

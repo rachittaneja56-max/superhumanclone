@@ -13,9 +13,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,
-    sessionsTable: sessions,
     verificationTokensTable: verificationTokens,
   }),
+  session: { strategy: 'jwt' },
   callbacks: {
     ...authConfig.callbacks,
     async signIn({ user, account }) {
