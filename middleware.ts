@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { createCsrfMiddleware } from '@edge-csrf/nextjs'
-import { neon } from '@neondatabase/serverless'
 
 const csrfProtect = createCsrfMiddleware({
   cookie: {
@@ -66,36 +65,6 @@ export default clerkMiddleware(async (auth, req) => {
   if (isAppRoute(req) || isOnboardingRoute(req)) {
     if (!userId) {
       await auth.protect()
-    }
-  }
-
-  if (isAppRoute(req) && userId) {
-    try {
-      const sql = neon(process.env.DATABASE_URL!)
-      const result = await sql`
-        SELECT
-          onboarding_completed,
-          gmail_connected
-        FROM user_settings
-        WHERE user_id = ${userId}
-        LIMIT 1
-      `
-
-      const settings = result[0]
-
-      if (!settings) {
-        return NextResponse.redirect(new URL('/onboarding/privacy', req.url))
-      }
-
-      if (!settings.onboarding_completed) {
-        return NextResponse.redirect(new URL('/onboarding/privacy', req.url))
-      }
-
-      if (!settings.gmail_connected) {
-        return NextResponse.redirect(new URL('/onboarding/connect', req.url))
-      }
-    } catch (error) {
-      console.error('Middleware settings check failed:', error)
     }
   }
 

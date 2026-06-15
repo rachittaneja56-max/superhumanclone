@@ -8,6 +8,9 @@ import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { AppClientShell } from '@/components/app-client-shell'
 import { NavItem } from '@/components/NavItem'
 import { SignOutButton } from '@clerk/nextjs'
+import { db } from '@/server/db'
+import { userSettings } from '@/server/db/schema'
+import { eq } from 'drizzle-orm'
 
 // Nav items — defined server-side (static, no state needed)
 const NAV_ITEMS = [
@@ -22,6 +25,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { userId } = await auth()
   const user = await currentUser()
   if (!userId || !user) redirect('/login')
+
+  const settings = await db.query.userSettings.findFirst({
+    where: eq(userSettings.userId, userId)
+  })
+
+  if (!settings || !settings.onboardingCompleted) {
+    redirect('/onboarding/privacy')
+  }
+
+  if (!settings.gmailConnected) {
+    redirect('/onboarding/connect')
+  }
+
 
   const email = user.primaryEmailAddress?.emailAddress ?? ''
   const name = user.fullName ?? 'User'
