@@ -48,15 +48,7 @@ export async function processPurgeJob(payload: unknown) {
 }
 
 // Next.js Edge/Node Route compatibility wrapper
-import { verifySignatureAppRouter } from '@upstash/qstash/nextjs';
-
 export async function POST(req: Request) {
-  // Validate X-Worker-Secret
-  const workerSecret = req.headers.get('x-worker-secret');
-  if (workerSecret !== process.env.WORKER_SECRET) {
-    return new Response('Unauthorized worker secret', { status: 401 });
-  }
-
   try {
     const payload = await req.json();
     const result = await processPurgeJob(payload);

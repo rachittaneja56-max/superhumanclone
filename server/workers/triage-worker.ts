@@ -112,7 +112,7 @@ export async function processTriageJob(payload: unknown) {
         Authorization: 'Basic ' + Buffer.from(ablyKey).toString('base64'),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ name: 'webhook:email', data: { emailId, tag, priority, tldr: tldr.slice(0, 100) } })
+      body: JSON.stringify({ name: 'email:triaged', data: { emailId, tag, priority, tldr: tldr.slice(0, 100) } })
     });
   }
 
@@ -130,15 +130,7 @@ export async function processTriageJob(payload: unknown) {
 }
 
 // Next.js Edge/Node Route compatibility wrapper if it gets exposed directly
-import { verifySignatureAppRouter } from '@upstash/qstash/nextjs';
-
 export async function POST(req: Request) {
-  // Validate X-Worker-Secret
-  const workerSecret = req.headers.get('x-worker-secret');
-  if (workerSecret !== process.env.WORKER_SECRET) {
-    return new Response('Unauthorized worker secret', { status: 401 });
-  }
-
   try {
     const payload = await req.json();
     const result = await processTriageJob(payload);

@@ -235,19 +235,6 @@ export const emailRouter = router({
       });
 
       for (const t of trashed) {
-        // Cancel QStash job
-        const jobId = await ctx.redis.get<string>(`deletejob:${ctx.userId}:${t.corsair_message_id}`);
-        if (jobId) {
-          try {
-            await qstash.messages.delete(jobId);
-          } catch(e) {}
-        }
-        
-        // Delete Redis keys
-        await ctx.redis.del(`deletejob:${ctx.userId}:${t.corsair_message_id}`);
-        await ctx.redis.del(`deleted:${ctx.userId}:${t.corsair_message_id}`);
-
-        // Delete from Corsair
         await corsairDeleteEmail(ctx.userId!, t.corsair_message_id);
       }
 

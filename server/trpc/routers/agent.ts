@@ -54,8 +54,8 @@ export const agentRouter = router({
         .set({ status: input.decision, resolved_at: new Date() })
         .where(eq(hitlActions.id, input.actionId));
 
-      // Publish to Redis via SET to resume the agent interceptor polling
-      await redis.set(`hitl:response:${input.actionId}`, input.decision, { ex: 300 });
+      // Publish to Redis to resume the agent interceptor
+      await redis.publish(`hitl:response:${input.actionId}`, input.decision);
 
       // Audit Log
       await db.insert(auditLogs).values({
