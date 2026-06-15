@@ -57,6 +57,21 @@ export default async function SettingsPage() {
             </Link>
           </div>
 
+          {/* Integrations link */}
+          <div className="bg-surface border border-border rounded-xl overflow-hidden">
+            <Link href="/onboarding/connect"
+              className="flex items-center justify-between px-4 py-3
+                hover:bg-surface-overlay transition-colors">
+              <div>
+                <p className="text-sm font-medium">Connected Accounts</p>
+                <p className="text-xs text-foreground-muted mt-0.5">
+                  Connect or manage your Gmail and Calendar
+                </p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-foreground-subtle" />
+            </Link>
+          </div>
+
           {/* Sign out */}
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
             <Link href="/api/auth/signout"

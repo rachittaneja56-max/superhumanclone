@@ -62,7 +62,7 @@ export default auth(async function middleware(req) {
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
   const csp = `
     default-src 'self';
-    script-src 'self' 'nonce-${nonce}' 'strict-dynamic' ${process.env.NODE_ENV === 'development' ? "'unsafe-eval'" : ""};
+    script-src 'self' 'unsafe-inline' 'unsafe-eval' https:;
     style-src 'self' 'unsafe-inline';
     img-src 'self' data: blob: https:;
     font-src 'self' https://fonts.gstatic.com;

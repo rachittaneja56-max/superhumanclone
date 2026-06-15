@@ -2,40 +2,24 @@
 
 import * as React from "react";
 import { Moon, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 
 export function ThemeToggle() {
-  const [theme, setTheme] = React.useState<"light" | "dark" | null>(null);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
-    const savedTheme = localStorage.getItem("aethra-theme") as "light" | "dark" | null;
-    const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const initialTheme = savedTheme || (systemDark ? "dark" : "light");
-    
-    setTheme(initialTheme);
-    
-    if (initialTheme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    setMounted(true);
   }, []);
 
-  const toggleTheme = () => {
-    const newTheme = theme === "dark" ? "light" : "dark";
-    setTheme(newTheme);
-    localStorage.setItem("aethra-theme", newTheme);
-    
-    if (newTheme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  };
-
-  if (theme === null) {
+  if (!mounted) {
     return <Button variant="outline" size="icon" disabled className="w-9 h-9" />;
   }
+
+  const toggleTheme = () => {
+    setTheme(theme === "dark" ? "light" : "dark");
+  };
 
   return (
     <Button 
@@ -46,9 +30,9 @@ export function ThemeToggle() {
       title="Toggle theme"
     >
       {theme === "light" ? (
-        <Sun className="h-[1.2rem] w-[1.2rem] transition-all" />
-      ) : (
         <Moon className="h-[1.2rem] w-[1.2rem] transition-all" />
+      ) : (
+        <Sun className="h-[1.2rem] w-[1.2rem] transition-all" />
       )}
       <span className="sr-only">Toggle theme</span>
     </Button>
