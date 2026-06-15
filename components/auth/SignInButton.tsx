@@ -2,10 +2,10 @@
 import { useSignIn } from '@clerk/nextjs'
 
 export function SignInButton({ callbackUrl = '/' }: { callbackUrl?: string }) {
-  const { isLoaded, signIn } = useSignIn()
+  const { signIn } = useSignIn()
 
   const handleSignIn = () => {
-    if (!isLoaded || !signIn) return
+    if (!signIn || !('authenticateWithRedirect' in signIn)) return
     
     // @ts-expect-error Clerk v7 typings missing authenticateWithRedirect on SignInFutureResource
     signIn.authenticateWithRedirect({
@@ -18,7 +18,7 @@ export function SignInButton({ callbackUrl = '/' }: { callbackUrl?: string }) {
   return (
     <button
       onClick={handleSignIn}
-      disabled={!isLoaded || !signIn}
+      disabled={!signIn || !('authenticateWithRedirect' in signIn)}
       className={`
         relative flex h-11 w-full items-center justify-center gap-3 rounded-lg
         bg-accent text-accent-foreground font-medium text-sm
