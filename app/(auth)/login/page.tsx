@@ -1,4 +1,5 @@
 import { SignInButton } from '@/components/auth/SignInButton'
+import { EmailSignInForm } from '@/components/auth/EmailSignInForm'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 export default async function LoginPage({
@@ -41,10 +42,23 @@ export default async function LoginPage({
         {/* Separator */}
         <div className="h-[1px] w-full bg-border my-6" />
 
-        {/* Section 3 - SignInButton */}
+        {/* Section 3 - Google Sign In */}
         <SignInButton callbackUrl={callbackUrl} />
 
-        {/* Section 4 - Footer */}
+        {/* OR Divider */}
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-surface px-2 text-foreground-muted">Or continue with</span>
+          </div>
+        </div>
+
+        {/* Section 4 - Email Magic Link */}
+        <EmailSignInForm callbackUrl={callbackUrl} />
+
+        {/* Section 5 - Footer */}
         <p className="text-xs text-foreground-subtle text-center mt-6">
           Privacy-first by design. Your emails never leave your control.
         </p>
