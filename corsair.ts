@@ -1,7 +1,8 @@
 import { createCorsair } from 'corsair'
 import { gmail } from '@corsair-dev/gmail'
 import { googlecalendar } from '@corsair-dev/googlecalendar'
-import { Pool } from 'pg'
+import pg from 'pg'
+const { Pool } = pg
 
 // DATABASE_URL_UNPOOLED for persistent TCP connection
 // Corsair needs a real pg Pool, not Neon HTTP driver
