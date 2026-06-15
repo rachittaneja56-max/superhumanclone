@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { WaitlistForm } from '@/components/landing/WaitlistForm';
 import { Shield, Bot, Search, Sparkles, Sun, Keyboard } from 'lucide-react';
 
@@ -42,25 +41,6 @@ export default function MarketingPage() {
             <div className="flex items-center gap-2"><span aria-hidden="true">🔒</span> Your data stays yours</div>
             <div className="flex items-center gap-2"><span aria-hidden="true">⌨</span> Fully keyboard navigable</div>
             <div className="flex items-center gap-2"><span aria-hidden="true">⚡</span> Sub-100ms search</div>
-          </div>
-          
-          <div className="relative mt-12 rounded-xl overflow-hidden border border-border shadow-2xl">
-            <Image
-              src="/screenshots/inbox-dark.png"
-              alt="Aethra inbox"
-              width={1440}
-              height={900}
-              priority
-              className="w-full dark:block hidden"
-            />
-            <Image
-              src="/screenshots/inbox-light.png"
-              alt="Aethra inbox"
-              width={1440}
-              height={900}
-              priority
-              className="w-full dark:hidden block"
-            />
           </div>
         </div>
       </section>

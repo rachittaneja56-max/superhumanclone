@@ -17,7 +17,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   }),
 
   session: {
-    strategy: 'database',
+    strategy: 'jwt',
     maxAge: 30 * 24 * 60 * 60, 
     updateAge: 24 * 60 * 60,    
   },
@@ -49,9 +49,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       return true
     },
 
-    async session({ session, user }) {
-      if (session.user && user.id) {
-        session.user.id = user.id
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id
+      }
+      return token
+    },
+
+    async session({ session, token }) {
+      if (session.user && token.id) {
+        session.user.id = token.id as string
       }
       return session
     },
