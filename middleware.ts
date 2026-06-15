@@ -51,11 +51,12 @@ export default async function middleware(req: NextRequest) {
   
   // Explicitly decode the JWT using getToken. This bypasses NextAuth v5 wrapper bugs.
   // NextAuth automatically checks both secure and non-secure cookie names.
+  const isProd = process.env.NODE_ENV === 'production'
   const token = await getToken({ 
     req, 
     secret: authConfig.secret as string || process.env.AUTH_SECRET,
-    cookieName: 'aethra.session-token',
-    secureCookie: false
+    cookieName: isProd ? '__Secure-aethra.session-token' : 'aethra.session-token',
+    secureCookie: isProd
   })
   const session = token ? { user: { id: token.sub || token.id, ...token } } : null
 

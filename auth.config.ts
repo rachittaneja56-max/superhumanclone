@@ -1,6 +1,8 @@
 import type { NextAuthConfig } from 'next-auth'
 import Google from 'next-auth/providers/google'
 
+const isProd = process.env.NODE_ENV === 'production'
+
 export const authConfig = {
   providers: [
     Google({
@@ -43,16 +45,13 @@ export const authConfig = {
   trustHost: true,
   cookies: {
     sessionToken: {
-      name: 'aethra.session-token',
+      name: isProd ? '__Secure-aethra.session-token' : 'aethra.session-token',
       options: {
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
-        secure: false, // Force false to prevent local dev drops
+        secure: isProd,
       },
     },
-  },
-  pages: {
-    signIn: '/login',
   },
 } satisfies NextAuthConfig
