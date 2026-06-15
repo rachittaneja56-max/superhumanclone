@@ -24,7 +24,7 @@ export function SignInButton() {
     ? errorMessages[error] || 'An error occurred. Please try again.'
     : null;
 
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  const callbackUrl = searchParams.get('callbackUrl') || '/inbox';
 
   return (
     <div className="flex flex-col items-center gap-4 w-full">

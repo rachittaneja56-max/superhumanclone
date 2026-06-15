@@ -7,7 +7,11 @@ export const metadata = {
   description: 'Privacy-first, agent-powered, keyboard-native email client built on Corsair.',
 };
 
-export default function MarketingPage() {
+import { auth } from '@/auth';
+
+export default async function MarketingPage() {
+  const session = await auth();
+
   return (
     <>
       <section className="relative min-h-screen flex flex-col items-center justify-center px-6 pt-24 pb-20 text-center bg-dot-grid">
@@ -24,7 +28,7 @@ export default function MarketingPage() {
           
           <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto mt-4">
             <Link 
-              href="/api/auth/signin?callbackUrl=/"
+              href={session ? "/inbox" : "/login?callbackUrl=/inbox"}
               className="btn-animated-border w-full sm:w-auto px-8 py-4 rounded-lg text-foreground font-medium hover:opacity-90 transition-all flex items-center justify-center gap-2"
             >
               Go to Inbox →
@@ -119,17 +123,19 @@ export default function MarketingPage() {
       </section>
 
       {/* WAITLIST SECTION */}
-      <section className="py-24 px-6">
-        <div className="max-w-3xl mx-auto bg-surface border border-border rounded-2xl p-10 md:p-16 text-center">
-          <h2 className="font-display text-3xl md:text-4xl font-semibold tracking-tight text-balance mb-4">
-            Get early access
-          </h2>
-          <p className="text-muted-foreground mb-10 max-w-md mx-auto text-balance">
-            We are in beta. Join the waitlist to get access to features still in testing.
-          </p>
-          <WaitlistForm />
-        </div>
-      </section>
+      {!session && (
+        <section className="py-24 px-6">
+          <div className="max-w-3xl mx-auto bg-surface border border-border rounded-2xl p-10 md:p-16 text-center">
+            <h2 className="font-display text-3xl md:text-4xl font-semibold tracking-tight text-balance mb-4">
+              Get early access
+            </h2>
+            <p className="text-muted-foreground mb-10 max-w-md mx-auto text-balance">
+              We are in beta. Join the waitlist to get access to features still in testing.
+            </p>
+            <WaitlistForm />
+          </div>
+        </section>
+      )}
     </>
   );
 }
