@@ -18,8 +18,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
   session: {
     strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, 
-    updateAge: 24 * 60 * 60,    
+    maxAge: 30 * 24 * 60 * 60,
+    updateAge: 24 * 60 * 60,
   },
 
   providers: [
@@ -84,19 +84,5 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     error: '/login',
   },
 
-  useSecureCookies: process.env.NODE_ENV === 'production',
-
-  cookies: {
-    sessionToken: {
-      name: process.env.NODE_ENV === 'production'
-        ? '__Secure-next-auth.session-token'
-        : 'next-auth.session-token',
-      options: {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        secure: process.env.NODE_ENV === 'production',
-      },
-    },
-  },
+  trustHost: true,
 })

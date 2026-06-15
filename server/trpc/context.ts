@@ -30,16 +30,14 @@ export async function createTRPCContext({ req }: { req: Request }) {
     if (cached) {
       userId = session.user.id
     } else {
-      // Verify session still exists in DB
-      const validSession = await db.query.sessions.findFirst({
-        where: and(
-          eq(sessions.userId, session.user.id),
-          gt(sessions.expires, new Date())
-        ),
-        columns: { sessionToken: true },
+      // Verify user still exists in DB (since we use JWT strategy, sessions table is empty)
+      const { users } = await import('@/server/db/schema')
+      const validUser = await db.query.users.findFirst({
+        where: eq(users.id, session.user.id),
+        columns: { id: true },
       })
 
-      if (validSession) {
+      if (validUser) {
         userId = session.user.id
         await redis.set(cacheKey, '1', { ex: 60 })
       }
