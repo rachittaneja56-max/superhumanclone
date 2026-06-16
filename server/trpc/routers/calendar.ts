@@ -86,7 +86,7 @@ export const calendarRouter = router({
   getEvents: protectedProcedure
     .input(getEventsSchema)
     .query(async ({ ctx, input }) => {
-      // First try our local DB
+      // Try local DB first
       const localEvents = await ctx.db
         .select()
         .from(calendarEvents)
@@ -99,25 +99,42 @@ export const calendarRouter = router({
         )
         .orderBy(asc(calendarEvents.start_time))
 
-      if (localEvents.length > 0) return localEvents
+      if (localEvents.length > 0) {
+        // Normalize DB rows to camelCase for the client
+        return localEvents.map(e => ({
+          id: e.id,
+          userId: e.userId,
+          corsair_event_id: e.corsair_event_id,
+          title: e.title,
+          description: e.description,
+          startTime: e.start_time,
+          endTime: e.end_time,
+          location: e.location,
+          is_all_day: e.is_all_day,
+          status: e.status,
+        }))
+      }
 
-      // Fall back to Corsair if local DB is empty
-      const result = await getCalendarEvents(ctx.userId!, { limit: 50 })
-      if (!result.success || !result.data) return []
-      
-      return result.data.map((e: any) => ({
-        id: e.id,
-        userId: ctx.userId!,
-        corsair_event_id: e.id,
-        title: e.summary || '(No Title)',
-        description: e.description || null,
-        start_time: new Date(e.start?.dateTime || e.start?.date || Date.now()),
-        end_time: new Date(e.end?.dateTime || e.end?.date || Date.now()),
-        location: e.location || null,
-        is_all_day: !!e.start?.date,
-        status: e.status || 'confirmed',
-        created_at: new Date(),
-        updated_at: new Date(),
-      }))
+      // Fall back to Corsair if local DB is empty for this date range
+      try {
+        const result = await getCalendarEvents(ctx.userId!, { limit: 50 })
+        if (!result.success || !result.data) return []
+
+        return (result.data as any[]).map((e: any) => ({
+          id: e.id,
+          userId: ctx.userId!,
+          corsair_event_id: e.id,
+          title: e.summary || e.title || '(No Title)',
+          description: e.description || null,
+          startTime: new Date(e.start?.dateTime || e.start?.date || e.startTime || Date.now()),
+          endTime: new Date(e.end?.dateTime || e.end?.date || e.endTime || Date.now()),
+          location: e.location || null,
+          is_all_day: !!(e.start?.date),
+          status: e.status || 'confirmed',
+        }))
+      } catch (err) {
+        console.warn('[getEvents] Corsair fallback failed:', err)
+        return []
+      }
     }),
 });

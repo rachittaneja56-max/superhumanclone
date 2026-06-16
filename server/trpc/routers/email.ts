@@ -8,6 +8,7 @@ import {
   deleteEmail as corsairDeleteEmail,
   getThreadMessages as corsairGetThread,
   markEmailRead,
+  getMessages as corsairGetMessages,
 } from '@/server/corsair/client';
 import { generateDigest, rewriteDraft } from '@/server/ai/provider';
 import { Client } from '@upstash/qstash';
@@ -35,7 +36,7 @@ export const emailRouter = router({
     .use(createRateLimitMiddleware('getThreads', 200, 60))
     .input(getThreadsSchema)
     .query(async ({ ctx, input }) => {
-      const results = await ctx.db.query.emails.findMany({
+      let results = await ctx.db.query.emails.findMany({
         where: and(
           eq(emails.userId, ctx.userId!),
           eq(emails.is_archived, input.isArchived),
@@ -57,8 +58,60 @@ export const emailRouter = router({
         limit: input.limit
       });
 
+      // If local DB is empty (e.g. first load before webhooks), pull from Corsair
       if (results.length === 0) {
-        return [];
+        try {
+          const corsairResult = await corsairGetMessages(ctx.userId!, { limit: input.limit });
+          if (corsairResult.success && Array.isArray(corsairResult.data) && corsairResult.data.length > 0) {
+            // Seed local DB with the fetched messages
+            for (const msg of corsairResult.data) {
+              const msgId = msg.id ?? msg.corsair_message_id;
+              if (!msgId) continue;
+              await ctx.db.insert(emails).values({
+                userId: ctx.userId!,
+                corsair_message_id: msgId,
+                thread_id: msg.threadId ?? msg.thread_id ?? msgId,
+                from_address: msg.from ?? msg.from_address ?? '',
+                from_name: msg.fromName ?? msg.from_name ?? null,
+                to_address: msg.to ?? msg.to_address ?? '',
+                subject: msg.subject ?? null,
+                snippet: msg.snippet ?? null,
+                body_text: msg.bodyText ?? msg.body_text ?? null,
+                body_html: msg.bodyHtml ?? msg.body_html ?? null,
+                is_read: msg.isRead ?? msg.is_read ?? false,
+                is_archived: false,
+                is_deleted: false,
+                ai_triage_skipped: true,
+              }).onConflictDoNothing();
+            }
+            // Re-fetch after seed
+            results = await ctx.db.query.emails.findMany({
+              where: and(
+                eq(emails.userId, ctx.userId!),
+                eq(emails.is_archived, input.isArchived),
+                eq(emails.is_deleted, false)
+              ),
+              columns: {
+                id: true,
+                thread_id: true,
+                from_name: true,
+                from_address: true,
+                subject: true,
+                snippet: true,
+                is_read: true,
+                tldr: true,
+                ai_triage_skipped: true,
+                created_at: true,
+              },
+              orderBy: [desc(emails.created_at)],
+              limit: input.limit
+            });
+          }
+        } catch (err) {
+          // Corsair fetch failed (not connected) — return empty gracefully
+          console.warn('[getThreads] Corsair fallback failed:', err);
+          return [];
+        }
       }
 
       return results.map(r => ({
