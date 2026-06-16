@@ -50,6 +50,10 @@ export const settingsRouter = router({
       }
       // Invalidate consent cache
       await ctx.redis.incr('consent_version:' + ctx.userId)
+      // Set privacyConfigured to true
+      await ctx.db.update(userSettings)
+        .set({ privacyConfigured: true })
+        .where(eq(userSettings.userId, ctx.userId!))
       return { updated: true, count: input.rules.length }
     }),
 });

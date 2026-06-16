@@ -127,13 +127,18 @@ export function PrivacyGateForm({
             : isEditMode ? 'Save changes' : 'Continue →'}
         </button>
         {!isEditMode && (
-          <button
-            onClick={() => router.push('/onboarding/connect')}
-            className="px-4 h-10 border border-border rounded-lg text-sm
-              text-foreground-muted hover:text-foreground transition-colors"
-          >
-            Skip
-          </button>
+          <form action={async () => {
+            const { acceptPrivacyPolicy } = await import('@/app/onboarding/privacy/actions')
+            await acceptPrivacyPolicy()
+          }}>
+            <button
+              type="submit"
+              className="px-4 h-10 border border-border rounded-lg text-sm
+                text-foreground-muted hover:text-foreground transition-colors"
+            >
+              Skip
+            </button>
+          </form>
         )}
       </div>
     </div>
