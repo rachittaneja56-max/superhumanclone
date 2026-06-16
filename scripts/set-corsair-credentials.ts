@@ -1,4 +1,4 @@
-import { corsair } from '../corsair.ts';
+import { corsair } from '../corsair';
 
 import { setupCorsair } from 'corsair';
 
