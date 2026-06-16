@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { NextRequest } from 'next/server'
 import { ensureTenantProvisioned } from '@/server/corsair/provision'
 import { syncInboxIfEmpty } from '@/server/corsair/sync'
+import { getCorsairCallbackUrl } from '@/server/corsair/url'
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')
@@ -13,8 +14,7 @@ export async function GET(req: NextRequest) {
     return redirect('/onboarding/connect?error=missing_params')
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
-  const redirectUri = `${baseUrl.replace(/\/$/, '')}/api/corsair/callback`
+  const redirectUri = getCorsairCallbackUrl(req)
 
   try {
     const result = await processOAuthCallback(corsair, {

@@ -1,7 +1,4 @@
 import 'server-only'
-import { db } from '@/server/db'
-import { corsairAccounts, corsairIntegrations } from '@/server/db/schema'
-import { eq, and } from 'drizzle-orm'
 
 // Type helper — plugins are dynamically attached, need 'as any'
 type CorsairTenant = {
@@ -53,19 +50,23 @@ export async function isUserConnected(
   userId: string,
   plugin: 'gmail' | 'googlecalendar'
 ): Promise<boolean> {
-  const result = await db
-    .select()
-    .from(corsairAccounts)
-    .innerJoin(corsairIntegrations, eq(corsairAccounts.integrationId, corsairIntegrations.id))
-    .where(
-      and(
-        eq(corsairAccounts.tenantId, userId),
-        eq(corsairIntegrations.name, plugin)
-      )
+  try {
+    const t = await getTenant(userId)
+    const keys = (t as any)[plugin]?.keys
+    const [accessToken, refreshToken] = await Promise.all([
+      keys?.get_access_token?.(),
+      keys?.get_refresh_token?.(),
+    ])
+    return (
+      typeof accessToken === 'string' &&
+      accessToken.length > 0 &&
+      typeof refreshToken === 'string' &&
+      refreshToken.length > 0
     )
-    .limit(1)
-
-  return result.length > 0
+  } catch (err: any) {
+    if (isAuthError(err) || err?.message?.includes('Account not found')) return false
+    throw err
+  }
 }
 
 import { generateOAuthUrl } from 'corsair/oauth'
@@ -74,7 +75,8 @@ export async function getGmailAuthUrl(userId: string, redirectUri?: string): Pro
   const { ensureIntegrationCredentials } = await import('@/server/corsair/provision')
   await ensureIntegrationCredentials()
   const { corsair } = await import('@/corsair')
-  const rUri = redirectUri || (process.env.NEXT_PUBLIC_APP_URL + '/api/corsair/callback')
+  const { getConfiguredAppUrl } = await import('@/server/corsair/url')
+  const rUri = redirectUri || `${getConfiguredAppUrl()}/api/corsair/callback`
   const result = await generateOAuthUrl(corsair, 'gmail', {
     tenantId: userId,
     redirectUri: rUri,
@@ -86,7 +88,8 @@ export async function getCalendarAuthUrl(userId: string, redirectUri?: string): 
   const { ensureIntegrationCredentials } = await import('@/server/corsair/provision')
   await ensureIntegrationCredentials()
   const { corsair } = await import('@/corsair')
-  const rUri = redirectUri || (process.env.NEXT_PUBLIC_APP_URL + '/api/corsair/callback')
+  const { getConfiguredAppUrl } = await import('@/server/corsair/url')
+  const rUri = redirectUri || `${getConfiguredAppUrl()}/api/corsair/callback`
   const result = await generateOAuthUrl(corsair, 'googlecalendar', {
     tenantId: userId,
     redirectUri: rUri,

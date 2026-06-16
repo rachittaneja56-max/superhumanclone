@@ -3,8 +3,10 @@ import { gmail } from '@corsair-dev/gmail'
 import { googlecalendar } from '@corsair-dev/googlecalendar'
 import pg from 'pg'
 import { gmailWebhookHooks, googleCalendarWebhookHooks } from '@/server/corsair/webhook-hooks'
+import { getConfiguredAppUrl } from '@/server/corsair/url'
 
 const { Pool } = pg
+const appUrl = getConfiguredAppUrl()
 
 // DATABASE_URL_UNPOOLED for persistent TCP connection
 // Corsair needs a real pg Pool, not Neon HTTP driver
@@ -27,8 +29,8 @@ export const corsair = createCorsair({
   kek: process.env.CORSAIR_KEK!,
   multiTenancy: true,
   connect: {
-    baseUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-    redirectUri: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/corsair/callback`,
+    baseUrl: appUrl,
+    redirectUri: `${appUrl}/api/corsair/callback`,
   },
 })
 

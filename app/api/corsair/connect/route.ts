@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { getGmailAuthUrl, getCalendarAuthUrl } from '@/server/corsair/client'
 import { ensureTenantProvisioned } from '@/server/corsair/provision'
+import { getCorsairCallbackUrl } from '@/server/corsair/url'
 
 export async function GET(req: NextRequest) {
   const session = await getSession()
@@ -12,8 +13,7 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url)
   const provider = url.searchParams.get('provider')
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || url.origin
-  const redirectUri = `${baseUrl.replace(/\/$/, '')}/api/corsair/callback`
+  const redirectUri = getCorsairCallbackUrl(req)
 
   try {
     await ensureTenantProvisioned(userId)

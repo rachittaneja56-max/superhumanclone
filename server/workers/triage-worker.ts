@@ -132,6 +132,11 @@ export async function processTriageJob(payload: unknown) {
 // Next.js Edge/Node Route compatibility wrapper if it gets exposed directly
 export async function POST(req: Request) {
   try {
+    const secret = process.env.WORKER_SECRET
+    if (secret && req.headers.get('x-worker-secret') !== secret) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+
     const payload = await req.json();
     const result = await processTriageJob(payload);
     if (result.status === 400) {
