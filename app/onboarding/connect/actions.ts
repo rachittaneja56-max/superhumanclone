@@ -4,6 +4,7 @@ import { getSession } from '@/lib/auth'
 import { db } from '@/server/db'
 import { userSettings } from '@/server/db/schema'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
 import { disconnectIntegration } from '@/server/corsair/client'
 import { eq } from 'drizzle-orm'
 
@@ -22,20 +23,32 @@ export async function continueToDashboard() {
   redirect('/inbox')
 }
 
-export async function handleDisconnect(integration: 'gmail' | 'calendar') {
+async function disconnectAndRefresh(integration: 'gmail' | 'googlecalendar', redirectTo: string) {
   const session = await getSession()
   const userId = session.userId
   if (!userId) return
 
-  // Mock disconnect logic (ideal: call corsair.deleteTenant or similar)
   await disconnectIntegration(userId, integration)
-
-  // Update local settings
   await db.update(userSettings)
     .set({
-      ...(integration === 'gmail' ? { gmailConnected: false } : { calendarConnected: false })
+      ...(integration === 'gmail' ? { gmailConnected: false } : {}),
+      ...(integration === 'googlecalendar' ? { calendarConnected: false } : {}),
     })
     .where(eq(userSettings.userId, userId))
+
+  await revalidatePath('/onboarding/connect')
+  await revalidatePath('/inbox')
+  await revalidatePath('/calendar')
+
+  redirect(redirectTo)
+}
+
+export async function disconnectGmail() {
+  await disconnectAndRefresh('gmail', '/onboarding/connect?disconnected=gmail')
+}
+
+export async function disconnectCalendar() {
+  await disconnectAndRefresh('googlecalendar', '/onboarding/connect?disconnected=calendar')
 }
 
 export async function disconnectAll() {
@@ -43,7 +56,6 @@ export async function disconnectAll() {
   const userId = session.userId
   if (!userId) return
 
-  // Disconnect from database and api stubs
   await disconnectIntegration(userId, 'gmail')
   await disconnectIntegration(userId, 'googlecalendar')
 
@@ -54,5 +66,8 @@ export async function disconnectAll() {
     })
     .where(eq(userSettings.userId, userId))
 
-  redirect('/onboarding/connect')
+  revalidatePath('/onboarding/connect')
+  revalidatePath('/inbox')
+  revalidatePath('/calendar')
+  redirect('/onboarding/connect?disconnected=all')
 }
