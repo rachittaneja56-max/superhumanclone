@@ -17,10 +17,12 @@ export default async function InboxPage() {
   let initialThreads: any[] = []
   try {
     const trpc = await serverTrpc()
-    initialThreads = await trpc.email.getThreads({
+    const rawThreads = await trpc.email.getThreads({
       limit: 50,
       isArchived: false,
     })
+    // Force pure JSON serialization to strip any Next.js RSC payload crashers
+    initialThreads = JSON.parse(JSON.stringify(rawThreads))
   } catch (err) {
     console.error('Failed to fetch threads:', err)
     // Page still renders — ThreadList shows empty state
