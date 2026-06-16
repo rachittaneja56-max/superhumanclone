@@ -1,5 +1,4 @@
 import 'server-only'
-import { corsair } from '@/corsair'
 import { db } from '@/server/db'
 import { corsairAccounts, corsairIntegrations } from '@/server/db/schema'
 import { eq, and } from 'drizzle-orm'
@@ -33,7 +32,8 @@ type CorsairTenant = {
   }
 }
 
-function getTenant(userId: string): CorsairTenant {
+async function getTenant(userId: string): Promise<CorsairTenant> {
+  const { corsair } = await import('@/corsair')
   return corsair.withTenant(userId) as any
 }
 
@@ -61,6 +61,7 @@ export async function isUserConnected(
 import { generateOAuthUrl } from 'corsair/oauth'
 
 export async function getGmailAuthUrl(userId: string): Promise<string> {
+  const { corsair } = await import('@/corsair')
   const result = await generateOAuthUrl(corsair, 'gmail', {
     tenantId: userId,
     redirectUri: process.env.NEXT_PUBLIC_APP_URL + '/api/corsair/callback',
@@ -69,6 +70,7 @@ export async function getGmailAuthUrl(userId: string): Promise<string> {
 }
 
 export async function getCalendarAuthUrl(userId: string): Promise<string> {
+  const { corsair } = await import('@/corsair')
   const result = await generateOAuthUrl(corsair, 'googlecalendar', {
     tenantId: userId,
     redirectUri: process.env.NEXT_PUBLIC_APP_URL + '/api/corsair/callback',
@@ -79,7 +81,7 @@ export async function getCalendarAuthUrl(userId: string): Promise<string> {
 // ── Gmail — Cached DB reads (RECOMMENDED for UI) ─────────────────
 
 export async function getThreads(userId: string, params?: { limit?: number; offset?: number }) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     const result = await t.gmail.db.threads.list({
       limit: params?.limit ?? 50,
@@ -93,7 +95,7 @@ export async function getThreads(userId: string, params?: { limit?: number; offs
 }
 
 export async function getMessages(userId: string, params?: { limit?: number }) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     const result = await t.gmail.db.messages.list({
       limit: params?.limit ?? 50,
@@ -106,7 +108,7 @@ export async function getMessages(userId: string, params?: { limit?: number }) {
 }
 
 export async function getThreadMessages(userId: string, threadId: string) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     const result = await t.gmail.db.messages.list({ threadId })
     return { success: true, data: result, needsConnect: false }
@@ -124,7 +126,7 @@ export async function sendEmail(userId: string, payload: {
   body: string
   threadId?: string
 }) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     const result = await t.gmail.api.messages.send({
       to: payload.to,
@@ -140,7 +142,7 @@ export async function sendEmail(userId: string, payload: {
 }
 
 export async function archiveEmail(userId: string, messageId: string) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     await t.gmail.api.messages.modify({
       id: messageId,
@@ -154,7 +156,7 @@ export async function archiveEmail(userId: string, messageId: string) {
 }
 
 export async function markEmailRead(userId: string, messageId: string) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     await t.gmail.api.messages.modify({
       id: messageId,
@@ -168,7 +170,7 @@ export async function markEmailRead(userId: string, messageId: string) {
 }
 
 export async function deleteEmail(userId: string, messageId: string) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     await t.gmail.api.messages.trash({ id: messageId })
     return { success: true, needsConnect: false }
@@ -181,7 +183,7 @@ export async function deleteEmail(userId: string, messageId: string) {
 // ── Gmail — Trigger sync ──────────────────────────────────────────
 
 export async function syncInbox(userId: string) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     await t.gmail.api.messages.list({ maxResults: 100 })
     return { success: true, needsConnect: false }
@@ -194,7 +196,7 @@ export async function syncInbox(userId: string) {
 // ── Calendar — Cached DB reads ────────────────────────────────────
 
 export async function getCalendarEvents(userId: string, params?: { limit?: number }) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     let result
     try {
@@ -226,7 +228,7 @@ export async function createCalendarEvent(userId: string, event: {
   description?: string
   addMeetLink?: boolean
 }) {
-  const t = getTenant(userId)
+  const t = await getTenant(userId)
   try {
     const payload: any = {
       summary: event.title,

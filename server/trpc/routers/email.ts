@@ -1,16 +1,12 @@
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
-import { z } from 'zod';
 import { emails, auditLogs, calendarEvents, autoReplyDrafts } from '@/server/db/schema';
 import { eq, and, desc, gt, between, inArray, asc } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
-  getThreads,
   sendEmail as corsairSendEmail,
   archiveEmail,
   deleteEmail as corsairDeleteEmail,
-  syncInbox as syncGmailInbox,
   getThreadMessages as corsairGetThread,
-  getMessages as corsairGetMessages,
   markEmailRead,
 } from '@/server/corsair/client';
 import { generateDigest, rewriteDraft } from '@/server/ai/provider';
@@ -62,33 +58,7 @@ export const emailRouter = router({
       });
 
       if (results.length === 0) {
-        const syncResult = await syncGmailInbox(ctx.userId!);
-        if (syncResult.needsConnect) {
-          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Gmail not connected' });
-        }
-        
-        // Fallback to Corsair DB directly to instantly hydrate the UI
-        const corsairResult = await corsairGetMessages(ctx.userId!, { limit: input.limit });
-        if (!corsairResult.success || !corsairResult.data) return [];
-        
-        return corsairResult.data.map((m: any) => {
-          const fromParts = (m.from || '').split('<');
-          const fromName = fromParts[0].trim().replace(/"/g, '');
-          const fromAddress = fromParts[1] ? fromParts[1].replace('>', '').trim() : m.from;
-
-          return {
-            id: m.id,
-            threadId: m.threadId || m.id,
-            fromAddress: fromAddress || 'unknown@example.com',
-            fromName: fromName || null,
-            subject: m.subject || '(No Subject)',
-            snippet: m.snippet || '',
-            isRead: !((m.labelIds || []).includes('UNREAD')),
-            aiTriageSkipped: true,
-            tldr: null,
-            receivedAt: new Date(m.internalDate ? parseInt(m.internalDate) : Date.now()),
-          };
-        });
+        return [];
       }
 
       return results.map(r => ({
