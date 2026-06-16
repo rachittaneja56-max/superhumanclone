@@ -61,7 +61,8 @@ export default async function ConnectPage({
   }
 
   // Generate connect links from Corsair dynamically on redirect
-  const workspaceConnectUrl = '/api/corsair/connect?provider=gmail&flow=workspace'
+  const gmailConnectUrl = '/api/corsair/connect?provider=gmail'
+  const calendarConnectUrl = '/api/corsair/connect?provider=googlecalendar'
   const connectError: string | null = null
 
   const allConnected = settings.gmailConnected && settings.calendarConnected
@@ -110,17 +111,31 @@ export default async function ConnectPage({
 
         <div className="flex flex-col sm:flex-row items-center justify-between pt-6 border-t border-border gap-4">
           <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
-            {allConnected ? (
+            {settings.gmailConnected ? (
               <div className="flex items-center justify-center gap-2 text-tag-green font-medium text-sm px-6 py-2.5 border border-border rounded-lg bg-background w-full sm:w-auto">
                 <CheckCircle2 className="w-5 h-5" />
-                <span>Google Workspace connected</span>
+                <span>Gmail connected</span>
               </div>
             ) : (
               <a
-                href={workspaceConnectUrl}
+                href={gmailConnectUrl}
                 className="px-6 py-2.5 bg-accent text-accent-foreground rounded-lg font-medium text-sm hover:opacity-90 transition-opacity w-full sm:w-auto text-center"
               >
-                Connect Google Workspace
+                Connect Gmail
+              </a>
+            )}
+
+            {settings.calendarConnected ? (
+              <div className="flex items-center justify-center gap-2 text-tag-green font-medium text-sm px-6 py-2.5 border border-border rounded-lg bg-background w-full sm:w-auto">
+                <CheckCircle2 className="w-5 h-5" />
+                <span>Calendar connected</span>
+              </div>
+            ) : (
+              <a
+                href={calendarConnectUrl}
+                className="px-6 py-2.5 bg-accent text-accent-foreground rounded-lg font-medium text-sm hover:opacity-90 transition-opacity w-full sm:w-auto text-center"
+              >
+                Connect Calendar
               </a>
             )}
           </div>

@@ -184,13 +184,67 @@ export const emailRouter = router({
   getThread: protectedProcedure
     .input(getThreadSchema)
     .query(async ({ ctx, input }) => {
-      const threadEmails = await ctx.db.query.emails.findMany({
+      let threadEmails = await ctx.db.query.emails.findMany({
         where: and(
           eq(emails.thread_id, input.threadId),
           eq(emails.userId, ctx.userId!)
         ),
         orderBy: [asc(emails.created_at)]
       });
+
+      if (threadEmails.length === 0) {
+        const result = await corsairGetThread(ctx.userId!, input.threadId);
+        if (result.needsConnect) {
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+        }
+
+        const messages = Array.isArray(result.data?.messages) ? result.data.messages : []
+        for (const msg of messages) {
+          if (!msg?.id) continue;
+
+          const headers = msg.payload?.headers || [];
+          const fromVal = getHeader(headers, 'From');
+          const toVal = getHeader(headers, 'To');
+          const subjectVal = getHeader(headers, 'Subject') || '(no subject)';
+          const { text: bodyText, html: bodyHtml } = parseEmailBody(msg.payload);
+
+          let fromName: string | null = null;
+          let fromAddress = '';
+          const match = fromVal.match(/^(.*?)\s*<([^>]+)>/);
+          if (match) {
+            fromName = match[1].replace(/['"]/g, '').trim();
+            fromAddress = match[2].trim();
+          } else {
+            fromAddress = fromVal.trim();
+          }
+
+          await ctx.db.insert(emails).values({
+            userId: ctx.userId!,
+            corsair_message_id: msg.id,
+            thread_id: msg.threadId || input.threadId,
+            from_address: fromAddress || 'unknown@unknown.com',
+            from_name: fromName,
+            to_address: toVal || '',
+            subject: subjectVal,
+            snippet: msg.snippet ?? null,
+            body_text: bodyText || null,
+            body_html: bodyHtml || null,
+            is_read: !msg.labelIds?.includes('UNREAD'),
+            is_archived: false,
+            is_deleted: false,
+            ai_triage_skipped: true,
+            created_at: msg.internalDate ? new Date(Number(msg.internalDate)) : new Date(),
+          }).onConflictDoNothing();
+        }
+
+        threadEmails = await ctx.db.query.emails.findMany({
+          where: and(
+            eq(emails.thread_id, input.threadId),
+            eq(emails.userId, ctx.userId!)
+          ),
+          orderBy: [asc(emails.created_at)]
+        });
+      }
 
       let hydrated = false;
       for (const email of threadEmails) {

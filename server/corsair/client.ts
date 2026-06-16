@@ -1,4 +1,7 @@
 import 'server-only'
+import { db } from '@/server/db'
+import { corsairAccounts, corsairIntegrations } from '@/server/db/schema'
+import { eq, and } from 'drizzle-orm'
 
 // Type helper — plugins are dynamically attached, need 'as any'
 type CorsairTenant = {
@@ -46,21 +49,17 @@ async function getTenant(userId: string): Promise<CorsairTenant> {
 
 // ── Connection check ─────────────────────────────────────────────
 
-import { db } from '@/server/db'
-import { corsairAccounts } from '@/server/db/schema'
-import { eq, and } from 'drizzle-orm'
-
 export async function isUserConnected(
   userId: string,
   plugin: 'gmail' | 'googlecalendar'
 ): Promise<boolean> {
   try {
-    const account = await db.query.corsairAccounts.findFirst({
-      where: and(
-        eq(corsairAccounts.tenantId, userId),
-        eq(corsairAccounts.integrationId, plugin)
-      )
-    })
+    const account = await db
+      .select({ id: corsairAccounts.id })
+      .from(corsairAccounts)
+      .innerJoin(corsairIntegrations, eq(corsairAccounts.integrationId, corsairIntegrations.id))
+      .where(and(eq(corsairAccounts.tenantId, userId), eq(corsairIntegrations.name, plugin)))
+      .limit(1)
     return !!account
   } catch (err: any) {
     console.error(`[isUserConnected] Error checking connection for ${plugin}:`, err)

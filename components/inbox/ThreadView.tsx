@@ -3,12 +3,21 @@
 import React, { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { CalendarIcon } from "lucide-react";
+import { Archive, CalendarIcon, Trash2 } from "lucide-react";
 import { ComposeBox } from "./ComposeBox";
+import { toast } from "sonner";
 
 export function ThreadView({ threadId }: { threadId: string }) {
   const { data: thread, isLoading } = trpc.email.getThread.useQuery({ threadId });
   const markRead = trpc.email.markRead.useMutation();
+  const archiveMutation = trpc.email.archiveEmail.useMutation({
+    onSuccess: () => toast.success("Archived"),
+    onError: () => toast.error("Failed to archive"),
+  });
+  const deleteMutation = trpc.email.deleteEmail.useMutation({
+    onSuccess: () => toast.success("Moved to trash"),
+    onError: () => toast.error("Failed to delete"),
+  });
   
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -40,6 +49,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
   const combinedSnippets = thread.map((e) => e.snippet).join(" ");
   const meetingRegex = /\b(meet|call|sync|chat|zoom|teams|schedule|availability|calendar|invite)\b/i;
   const hasMeetingIntent = meetingRegex.test(combinedSnippets);
+  const primaryEmailId = thread[0]?.corsair_message_id || thread[0]?.id;
   
   const useVirtual = thread.length > 20;
 
@@ -47,7 +57,27 @@ export function ThreadView({ threadId }: { threadId: string }) {
     <div className="flex flex-col h-full bg-[var(--surface)] font-sans relative">
       {/* Header */}
       <div className="flex-shrink-0 p-6 border-b" style={{ borderColor: "var(--border)" }}>
-        <h2 className="font-display tracking-tight text-2xl mb-4 font-semibold text-[var(--text)]">{subject}</h2>
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <h2 className="font-display tracking-tight text-2xl font-semibold text-[var(--text)]">{subject}</h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => archiveMutation.mutate({ emailId: primaryEmailId })}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md border text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <Archive className="w-4 h-4" />
+              Archive
+            </button>
+            <button
+              onClick={() => deleteMutation.mutate({ emailId: primaryEmailId })}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-md border text-sm hover:bg-red-500/10 text-red-600 transition-colors"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <Trash2 className="w-4 h-4" />
+              Trash
+            </button>
+          </div>
+        </div>
         {showTldr && (
           <div
             className="p-4 rounded-r-md text-sm mb-2 text-[var(--text)]"
