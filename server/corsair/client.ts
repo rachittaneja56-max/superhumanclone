@@ -46,26 +46,25 @@ async function getTenant(userId: string): Promise<CorsairTenant> {
 
 // ── Connection check ─────────────────────────────────────────────
 
+import { db } from '@/server/db'
+import { corsairAccounts } from '@/server/db/schema'
+import { eq, and } from 'drizzle-orm'
+
 export async function isUserConnected(
   userId: string,
   plugin: 'gmail' | 'googlecalendar'
 ): Promise<boolean> {
   try {
-    const t = await getTenant(userId)
-    const keys = (t as any)[plugin]?.keys
-    const [accessToken, refreshToken] = await Promise.all([
-      keys?.get_access_token?.(),
-      keys?.get_refresh_token?.(),
-    ])
-    return (
-      typeof accessToken === 'string' &&
-      accessToken.length > 0 &&
-      typeof refreshToken === 'string' &&
-      refreshToken.length > 0
-    )
+    const account = await db.query.corsairAccounts.findFirst({
+      where: and(
+        eq(corsairAccounts.tenantId, userId),
+        eq(corsairAccounts.integrationId, plugin)
+      )
+    })
+    return !!account
   } catch (err: any) {
-    if (isAuthError(err) || err?.message?.includes('Account not found')) return false
-    throw err
+    console.error(`[isUserConnected] Error checking connection for ${plugin}:`, err)
+    return false
   }
 }
 

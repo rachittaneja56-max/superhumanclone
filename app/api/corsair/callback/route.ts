@@ -1,7 +1,6 @@
 import { processOAuthCallback } from 'corsair/oauth'
 import { corsair } from '@/corsair'
-import { redirect } from 'next/navigation'
-import { NextRequest } from 'next/server'
+import { NextResponse, NextRequest } from 'next/server'
 import { ensureTenantProvisioned } from '@/server/corsair/provision'
 import { syncInboxIfEmpty } from '@/server/corsair/sync'
 import { getCorsairCallbackUrl } from '@/server/corsair/url'
@@ -11,7 +10,7 @@ export async function GET(req: NextRequest) {
   const state = req.nextUrl.searchParams.get('state')
 
   if (!code || !state) {
-    return redirect('/onboarding/connect?error=missing_params')
+    return NextResponse.redirect(new URL('/onboarding/connect?error=missing_params', req.url))
   }
 
   const redirectUri = getCorsairCallbackUrl(req)
@@ -36,9 +35,9 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return redirect(`/onboarding/connect?connected=true&plugin=${encodeURIComponent(result.plugin)}`)
+    return NextResponse.redirect(new URL(`/onboarding/connect?connected=true&plugin=${encodeURIComponent(result.plugin)}`, req.url))
   } catch (error: any) {
     console.error('OAuth Callback Error:', error)
-    return redirect('/onboarding/connect?error=' + encodeURIComponent(error.message))
+    return NextResponse.redirect(new URL('/onboarding/connect?error=' + encodeURIComponent(error.message), req.url))
   }
 }
