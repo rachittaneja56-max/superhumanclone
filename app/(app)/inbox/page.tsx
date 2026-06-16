@@ -63,16 +63,16 @@ export default async function InboxPage({
   }
 
   // Fetch from our local DB. The inbox must render even if sync/Corsair is down.
-  let initialThreads: any[] = []
+  let initialMailboxPage = { items: [], nextPageToken: null } as { items: any[]; nextPageToken: string | null }
   try {
     const trpc = await serverTrpc()
     const rawThreads = await trpc.email.getMailboxThreads({
       folder,
-      limit: 30,
+      limit: 20,
       offset: 0,
       query: '',
     })
-    initialThreads = JSON.parse(JSON.stringify(rawThreads))
+    initialMailboxPage = JSON.parse(JSON.stringify(rawThreads))
   } catch (err) {
     console.error('Failed to fetch threads:', err)
   }
@@ -81,7 +81,7 @@ export default async function InboxPage({
     <div className="flex flex-col h-full overflow-hidden">
       <MorningDigestBanner />
       <div className="flex-1 min-h-0 overflow-hidden">
-        <MailWorkspace initialThreads={initialThreads} initialFolder={folder} initialComposeOpen={composeOpen} />
+        <MailWorkspace initialMailboxPage={initialMailboxPage} initialFolder={folder} initialComposeOpen={composeOpen} />
       </div>
     </div>
   )

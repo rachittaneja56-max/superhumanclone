@@ -148,17 +148,17 @@ export function ThreadView({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-border bg-surface">
-        <ComposeBox
-          threadId={threadId}
-          replyTo={
-            replyMode === "forward"
-              ? {
-                  subject: forwardSubject,
-                  bodyPrefix: `\n\n--- Forwarded message ---\nFrom: ${latest?.senderName || latest?.senderAddress || ""}\nDate: ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : ""}\nSubject: ${subject}\n`,
-                }
-              : replyMode
+      {replyMode && (
+        <div className="shrink-0 border-t border-border bg-surface px-4 py-4 sm:px-6">
+          <ComposeBox
+            threadId={threadId}
+            replyTo={
+              replyMode === "forward"
                 ? {
+                    subject: forwardSubject,
+                    bodyPrefix: `\n\n--- Forwarded message ---\nFrom: ${latest?.senderName || latest?.senderAddress || ""}\nDate: ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : ""}\nSubject: ${subject}\n`,
+                  }
+                : {
                     to:
                       replyMode === "replyAll"
                         ? Array.from(
@@ -167,16 +167,24 @@ export function ThreadView({
                                 .flatMap((email) => [email.senderAddress, email.recipientAddress])
                                 .filter(Boolean) as string[]
                             )
-                          )
-                            .join(", ")
+                          ).join(", ")
                         : latest?.senderAddress || "",
                     subject: replySubject,
                     bodyPrefix: `\n\nOn ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : "a previous date"}, ${latest?.senderName || latest?.senderAddress || "someone"} wrote:\n`,
                   }
-                : undefined
-          }
-        />
-      </div>
+            }
+          />
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setReplyMode(null)}
+              className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-raised"
+            >
+              Close composer
+            </button>
+          </div>
+        </div>
+      )}
 
       {hasMeetingIntent && !compact && (
         <button

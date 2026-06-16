@@ -1,6 +1,6 @@
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
 import { emails, auditLogs, calendarEvents, autoReplyDrafts, users } from '@/server/db/schema';
-import { eq, and, desc, gt, between, inArray, asc, or, ilike, sql } from 'drizzle-orm';
+import { eq, and, desc, gt, between, inArray, asc, or, ilike, sql, lt } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
   archiveEmail,
@@ -29,6 +29,7 @@ const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' });
 
 import {
   getThreadsSchema,
+  getMailboxThreadsSchema,
   getUnreadCountsSchema,
   getThreadSchema,
   markReadSchema,
@@ -49,13 +50,6 @@ import { z } from 'zod';
 
 const bulkActionSchema = z.object({
   emailIds: z.array(z.string()).min(1).max(100),
-});
-
-const mailboxSchema = z.object({
-  folder: z.enum(['inbox', 'drafts', 'sent', 'spam', 'trash']),
-  limit: z.number().int().min(1).max(100).default(50),
-  offset: z.number().int().min(0).default(0),
-  query: z.string().trim().optional().default(''),
 });
 
 const draftSchema = z.object({
@@ -111,6 +105,26 @@ async function invalidateMailCaches(ctx: any, threadId?: string | null) {
   await invalidateMailCache(ctx.redis, ctx.userId);
   if (threadId) {
     await ctx.redis.del(`thread:${ctx.userId}:${threadId}`).catch(() => null);
+  }
+}
+
+function encodePageToken(row?: { createdAt?: string | Date | null; id?: string | null }) {
+  if (!row?.createdAt || !row.id) return null;
+  const payload = JSON.stringify({
+    createdAt: new Date(row.createdAt).toISOString(),
+    id: row.id,
+  });
+  return Buffer.from(payload, 'utf8').toString('base64url');
+}
+
+function decodePageToken(token?: string | null): { createdAt: string; id: string } | null {
+  if (!token) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(token, 'base64url').toString('utf8')) as { createdAt?: string; id?: string };
+    if (!parsed.createdAt || !parsed.id) return null;
+    return { createdAt: parsed.createdAt, id: parsed.id };
+  } catch {
+    return null;
   }
 }
 
@@ -186,16 +200,18 @@ async function resolveEmailActionTarget(
 export const emailRouter = router({
   getMailboxThreads: protectedProcedure
     .use(createRateLimitMiddleware('getMailboxThreads', 240, 60))
-    .input(mailboxSchema)
+    .input(getMailboxThreadsSchema)
     .query(async ({ ctx, input }) => {
       const version = Number((await ctx.redis.get<string>(mailVersionKey(ctx.userId!))) ?? '0');
-      const cacheKey = mailboxCacheKey(ctx.userId!, input.folder, version, input.limit, input.offset, input.query || '');
+      const cacheKey = mailboxCacheKey(ctx.userId!, input.folder, version, input.limit, input.offset, input.query || '', input.pageToken || '');
       const cached = await ctx.redis.get<string>(cacheKey);
       if (cached) {
         try {
           return JSON.parse(cached);
         } catch {}
       }
+
+      const cursor = decodePageToken(input.pageToken);
 
       if (input.folder === 'drafts') {
         const draftKeys = await ctx.redis.smembers(`drafts:index:${ctx.userId}`).catch(() => []);
@@ -209,8 +225,23 @@ export const emailRouter = router({
           const q = input.query.trim().toLowerCase();
           if (!q) return true;
           return [draft.to, draft.cc, draft.bcc, draft.subject, draft.body].join(' ').toLowerCase().includes(q);
-        }).sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
-        const result = filtered.slice(input.offset, input.offset + input.limit).map((draft: any) => ({
+        }).sort((a: any, b: any) => {
+          const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
+          const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
+          if (bTime !== aTime) return bTime - aTime;
+          return String(b.id).localeCompare(String(a.id));
+        });
+        const cursorFiltered = cursor
+          ? filtered.filter((draft: any) => {
+              const createdAt = new Date(draft.updatedAt || draft.createdAt || 0);
+              const cursorDate = new Date(cursor.createdAt);
+              if (createdAt.getTime() !== cursorDate.getTime()) {
+                return createdAt.getTime() < cursorDate.getTime();
+              }
+              return String(draft.id) < cursor.id;
+            })
+          : filtered.slice(input.offset);
+        const page = cursorFiltered.slice(0, input.limit + 1).map((draft: any) => ({
           id: draft.id,
           threadId: draft.threadId || draft.id,
           mailbox: 'drafts',
@@ -221,6 +252,9 @@ export const emailRouter = router({
           receivedAt: draft.updatedAt || draft.createdAt || null,
           badges: ['Drafts'],
         }));
+        const items = page.slice(0, input.limit);
+        const nextPageToken = page.length > input.limit ? encodePageToken(items[items.length - 1]) : null;
+        const result = { items, nextPageToken };
         await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: cacheTtls.mailbox });
         return result;
       }
@@ -240,6 +274,12 @@ export const emailRouter = router({
               eq(emails.is_archived, true)
             ),
             me?.email ? eq(emails.from_address, me.email) : sql`true`,
+            cursor
+              ? or(
+                  lt(emails.created_at, new Date(cursor.createdAt)),
+                  and(eq(emails.created_at, new Date(cursor.createdAt)), lt(emails.id, cursor.id))
+                )
+              : sql`true`,
             pattern
               ? or(
                   ilike(emails.subject, pattern),
@@ -260,8 +300,8 @@ export const emailRouter = router({
             created_at: true,
           },
           orderBy: [desc(emails.created_at)],
-          limit: input.limit,
-          offset: input.offset,
+          limit: input.limit + 1,
+          offset: cursor ? 0 : input.offset,
         });
         const mapped = rows.map((r) =>
           mapEmailForListClient({
@@ -271,8 +311,11 @@ export const emailRouter = router({
             mailbox: 'sent',
           })
         );
-        await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: cacheTtls.mailbox });
-        return mapped;
+        const items = mapped.slice(0, input.limit);
+        const nextPageToken = mapped.length > input.limit ? encodePageToken(items[items.length - 1]) : null;
+        const result = { items, nextPageToken };
+        await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: cacheTtls.mailbox });
+        return result;
       }
 
       const isSpam = input.folder === 'spam';
@@ -281,6 +324,12 @@ export const emailRouter = router({
           eq(emails.userId, ctx.userId!),
           input.folder === 'trash' ? eq(emails.is_deleted, true) : eq(emails.is_deleted, false),
           input.folder === 'inbox' ? eq(emails.is_archived, false) : sql`true`,
+          cursor
+            ? or(
+                lt(emails.created_at, new Date(cursor.createdAt)),
+                and(eq(emails.created_at, new Date(cursor.createdAt)), lt(emails.id, cursor.id))
+              )
+            : sql`true`,
           isSpam
             ? or(
                 eq(emails.tag, 'newsletter'),
@@ -310,14 +359,17 @@ export const emailRouter = router({
           is_deleted: true,
         },
         orderBy: [desc(emails.created_at)],
-          limit: input.limit,
-          offset: input.offset,
-        });
+        limit: input.limit + 1,
+        offset: cursor ? 0 : input.offset,
+      });
 
       const mapped = rows.map((r) => mapEmailForListClient({ ...r, mailbox: input.folder }));
+      const items = mapped.slice(0, input.limit);
+      const nextPageToken = mapped.length > input.limit ? encodePageToken(items[items.length - 1]) : null;
+      const result = { items, nextPageToken };
 
-      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: cacheTtls.mailbox });
-      return mapped;
+      await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: cacheTtls.mailbox });
+      return result;
     }),
 
   getThreads: protectedProcedure

@@ -23,7 +23,11 @@ const FOLDER_LABELS: Record<Folder, string> = {
   trash: "Trash",
 };
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 20;
+type MailboxPage = {
+  items: EmailListClientItem[];
+  nextPageToken: string | null;
+};
 const AI_COMMANDS = [
   { id: "improve_tone", label: "Improve" },
   { id: "make_shorter", label: "Shorten" },
@@ -33,11 +37,11 @@ const AI_COMMANDS = [
 ] as const;
 
 export function MailWorkspace({
-  initialThreads,
+  initialMailboxPage,
   initialFolder,
   initialComposeOpen,
 }: {
-  initialThreads: EmailListClientItem[];
+  initialMailboxPage: MailboxPage;
   initialFolder: Folder;
   initialComposeOpen: boolean;
 }) {
@@ -49,13 +53,12 @@ export function MailWorkspace({
   const [query, setQuery] = useState("");
   const [composeOpen, setComposeOpen] = useState(initialComposeOpen);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [threads, setThreads] = useState<EmailListClientItem[]>(initialThreads);
-  const [hasMore, setHasMore] = useState(initialThreads.length === PAGE_SIZE);
+  const [threads, setThreads] = useState<EmailListClientItem[]>(initialMailboxPage.items);
+  const [nextPageToken, setNextPageToken] = useState<string | null>(initialMailboxPage.nextPageToken);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [agentSessionId] = useState(() => crypto.randomUUID());
   const [approvedThreadContext, setApprovedThreadContext] = useState<string | null>(null);
 
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const deferredQuery = useDeferredValue(query.trim());
   const { agentPanelOpen, closeAgentPanel } = useUIStore();
@@ -67,8 +70,8 @@ export function MailWorkspace({
   const mailboxQuery = trpc.email.getMailboxThreads.useQuery(
     { folder, limit: PAGE_SIZE, offset: 0, query: deferredQuery },
     {
-      initialData: folder === initialFolder && !deferredQuery ? initialThreads : undefined,
-      placeholderData: (prev: EmailListClientItem[] | undefined) => prev,
+      initialData: folder === initialFolder && !deferredQuery ? initialMailboxPage : undefined,
+      placeholderData: (prev: MailboxPage | undefined) => prev,
       refetchOnWindowFocus: false,
     }
   );
@@ -112,10 +115,10 @@ export function MailWorkspace({
   }, [selected?.threadId, selected?.id]);
 
   useEffect(() => {
-    const incoming = (mailboxQuery.data ?? initialThreads) as EmailListClientItem[];
-    setThreads(incoming);
-    setHasMore(incoming.length === PAGE_SIZE);
-  }, [folder, initialThreads, mailboxQuery.data, deferredQuery]);
+    const incoming = (mailboxQuery.data ?? initialMailboxPage) as MailboxPage;
+    setThreads(incoming.items);
+    setNextPageToken(incoming.nextPageToken);
+  }, [folder, initialMailboxPage, mailboxQuery.data, deferredQuery]);
 
   useEffect(() => {
     if (!selectedThreadFromUrl) {
@@ -259,7 +262,7 @@ export function MailWorkspace({
   ]);
 
   const fetchMore = useCallback(async () => {
-    if (isFetchingMore || !hasMore || mailboxQuery.isLoading) return;
+    if (isFetchingMore || !nextPageToken || mailboxQuery.isLoading) return;
 
     setIsFetchingMore(true);
     try {
@@ -267,13 +270,14 @@ export function MailWorkspace({
         folder,
         limit: PAGE_SIZE,
         offset: threads.length,
+        pageToken: nextPageToken,
         query: deferredQuery,
       });
 
       setThreads((prev) => {
         const seen = new Set(prev.map((item) => item.threadId || item.id));
         const merged = [...prev];
-        for (const item of nextPage) {
+        for (const item of nextPage.items ?? []) {
           const key = item.threadId || item.id;
           if (!seen.has(key)) {
             merged.push(item);
@@ -282,27 +286,15 @@ export function MailWorkspace({
         }
         return merged;
       });
-      setHasMore(nextPage.length === PAGE_SIZE);
+      setNextPageToken(nextPage.nextPageToken ?? null);
     } catch {
       toast.error("Could not load more mail right now.");
     } finally {
       setIsFetchingMore(false);
     }
-  }, [deferredQuery, folder, hasMore, isFetchingMore, mailboxQuery.isLoading, threads.length, utils.email.getMailboxThreads]);
+  }, [deferredQuery, folder, isFetchingMore, mailboxQuery.isLoading, nextPageToken, threads.length, utils.email.getMailboxThreads]);
 
-  useEffect(() => {
-    const node = loadMoreRef.current;
-    if (!node || !hasMore) return;
-
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) {
-        void fetchMore();
-      }
-    }, { rootMargin: "320px 0px" });
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [fetchMore, hasMore]);
+  const hasMore = Boolean(nextPageToken);
 
   const handleSend = async (payload: {
     to: string[];
@@ -325,52 +317,51 @@ export function MailWorkspace({
   return (
     <div className="flex h-full min-h-0 min-w-0 bg-background text-foreground">
       <main className="flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-4 sm:px-5">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="truncate text-xl font-semibold sm:text-2xl">{FOLDER_LABELS[folder]}</h1>
-                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                  {threads.length}
-                </span>
-                {folder === "inbox" && unreadCountsQuery.data && (
-                  <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground-muted">
-                    {unreadCountsQuery.data.inbox} unread
+        {!selected && (
+          <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-4 sm:px-5">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h1 className="truncate text-xl font-semibold sm:text-2xl">{FOLDER_LABELS[folder]}</h1>
+                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                    {threads.length}
                   </span>
-                )}
-              </div>
-              <p className="mt-1 text-sm text-foreground-muted">
-                {selected
-                  ? "Reading mode: the thread fills the workspace."
-                  : folder === "drafts"
+                  {folder === "inbox" && unreadCountsQuery.data && (
+                    <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground-muted">
+                      {unreadCountsQuery.data.inbox} unread
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-sm text-foreground-muted">
+                  {folder === "drafts"
                     ? "Drafts stay saved while you work."
                     : "Click a conversation to open the thread view."}
-              </p>
-            </div>
-
-            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 sm:max-w-xl">
-                <Search className="h-4 w-4 shrink-0 text-foreground-subtle" />
-                <input
-                  ref={searchInputRef}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search mail"
-                  className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-foreground-subtle"
-                />
+                </p>
               </div>
-              <button
-                onClick={() => setComposeOpen(true)}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01]"
-                style={{ backgroundColor: "var(--accent)" }}
-              >
-                <SquarePen className="h-4 w-4" />
-                Compose
-              </button>
-            </div>
-          </div>
 
-          {undoPending && (
+              <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 sm:max-w-xl">
+                  <Search className="h-4 w-4 shrink-0 text-foreground-subtle" />
+                  <input
+                    ref={searchInputRef}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search mail"
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-foreground-subtle"
+                  />
+                </div>
+                <button
+                  onClick={() => setComposeOpen(true)}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01]"
+                  style={{ backgroundColor: "var(--accent)" }}
+                >
+                  <SquarePen className="h-4 w-4" />
+                  Compose
+                </button>
+              </div>
+            </div>
+
+            {undoPending && (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent-subtle px-4 py-3 text-sm">
               <div className="min-w-0">
                 <div className="font-medium text-foreground">
@@ -381,12 +372,13 @@ export function MailWorkspace({
               <button
                 onClick={cancelUndo}
                 className="shrink-0 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-raised"
-              >
-                Undo
-              </button>
-            </div>
-          )}
-        </div>
+                >
+                  Undo
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {selected ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -479,14 +471,20 @@ export function MailWorkspace({
                       );
                     })}
 
-                    <div ref={loadMoreRef} className="flex min-h-12 items-center justify-center py-3">
+                    <div className="flex min-h-12 items-center justify-center py-3">
                       {isFetchingMore ? (
                         <div className="inline-flex items-center gap-2 text-xs text-foreground-muted">
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Loading more mail
                         </div>
                       ) : hasMore ? (
-                        <span className="text-xs text-foreground-subtle">Scroll to load more</span>
+                        <button
+                          type="button"
+                          onClick={() => void fetchMore()}
+                          className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-raised"
+                        >
+                          Load more
+                        </button>
                       ) : (
                         <span className="text-xs text-foreground-subtle">You&apos;re caught up.</span>
                       )}

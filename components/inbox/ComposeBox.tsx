@@ -167,7 +167,7 @@ export function ComposeBox({
 
   return (
     <div
-      className="sticky bottom-0 z-20 flex flex-col space-y-3 border-t border-border bg-surface p-4 font-sans"
+      className="flex flex-col space-y-3 border-t border-border bg-surface p-4 font-sans"
     >
       {/* Basic To / Subject fields for stub compose - would be hidden if just replying */}
       <div className="flex space-x-2 mb-2">
@@ -188,9 +188,6 @@ export function ComposeBox({
       </div>
 
       <div className="relative w-full">
-        <div className="mb-2 text-[11px] text-foreground-subtle">
-          Try typing <span className="font-medium text-foreground">/</span> for AI suggestions.
-        </div>
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
           <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">AI assist</span>
           {COMMANDS.map((cmd) => (
@@ -287,7 +284,7 @@ export function ComposeBox({
 
       <div className="flex items-center justify-between">
         <span className="text-[12px] opacity-60">
-          Try typing &quot;/&quot; for AI suggestions
+          Ctrl/Cmd + Enter to send
         </span>
         <button
           onClick={handleSend}

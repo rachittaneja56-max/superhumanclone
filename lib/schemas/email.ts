@@ -9,6 +9,14 @@ export const getThreadsSchema = z.object({
 
 export const getUnreadCountsSchema = z.object({});
 
+export const getMailboxThreadsSchema = z.object({
+  folder: z.enum(['inbox', 'drafts', 'sent', 'spam', 'trash']),
+  limit: z.number().int().min(1).max(100).default(20),
+  offset: z.number().int().min(0).default(0),
+  pageToken: z.string().optional(),
+  query: z.string().trim().optional().default(''),
+});
+
 export const getThreadSchema = z.object({
   threadId: z.string().min(1).max(200)
 });

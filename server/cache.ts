@@ -19,8 +19,8 @@ export function settingsCacheKey(userId: string, version: string | number) {
   return `user:${userId}:settings:v1:${version}`;
 }
 
-export function mailboxCacheKey(userId: string, folder: string, version: string | number, limit: number, offset: number, query: string) {
-  return `user:${userId}:mailbox:${folder}:v1:${version}:${limit}:${offset}:${encodeURIComponent(query.trim().toLowerCase())}`;
+export function mailboxCacheKey(userId: string, folder: string, version: string | number, limit: number, offset: number, query: string, pageToken = '') {
+  return `user:${userId}:mailbox:${folder}:v1:${version}:${limit}:${offset}:${encodeURIComponent(query.trim().toLowerCase())}:${encodeURIComponent(pageToken)}`;
 }
 
 export function unreadCountsCacheKey(userId: string, version: string | number) {
@@ -50,4 +50,3 @@ export const cacheTtls = {
   unread: UNREAD_TTL,
   thread: THREAD_TTL,
 };
-
