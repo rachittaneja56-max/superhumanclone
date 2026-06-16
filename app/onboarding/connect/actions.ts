@@ -37,3 +37,22 @@ export async function handleDisconnect(integration: 'gmail' | 'calendar') {
     })
     .where(eq(userSettings.userId, userId))
 }
+
+export async function disconnectAll() {
+  const session = await getSession()
+  const userId = session.userId
+  if (!userId) return
+
+  // Disconnect from database and api stubs
+  await disconnectIntegration(userId, 'gmail')
+  await disconnectIntegration(userId, 'googlecalendar')
+
+  await db.update(userSettings)
+    .set({
+      gmailConnected: false,
+      calendarConnected: false
+    })
+    .where(eq(userSettings.userId, userId))
+
+  redirect('/onboarding/connect')
+}

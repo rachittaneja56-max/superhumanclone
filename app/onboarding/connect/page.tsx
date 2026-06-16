@@ -1,11 +1,11 @@
 import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import { getGmailAuthUrl, getCalendarAuthUrl, isUserConnected } from '@/server/corsair/client'
+import { isUserConnected } from '@/server/corsair/client'
 import { db } from '@/server/db'
 import { userSettings, users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { Mail, Calendar, CheckCircle2 } from 'lucide-react'
-import { continueToDashboard, handleDisconnect } from './actions'
+import { continueToDashboard, disconnectAll } from './actions'
 
 export default async function ConnectPage({
   searchParams
@@ -58,18 +58,10 @@ export default async function ConnectPage({
     redirect('/onboarding/privacy')
   }
 
-  // Generate connect links from Corsair
-  let gmailConnectUrl: string = ''
-  let calendarConnectUrl: string = ''
-  let connectError: string | null = null
-
-  try {
-    if (!settings.gmailConnected) gmailConnectUrl = await getGmailAuthUrl(userId)
-    if (!settings.calendarConnected) calendarConnectUrl = await getCalendarAuthUrl(userId)
-  } catch (err: any) {
-    console.error('getAuthUrl FAILED:', err?.message, err?.stack)
-    connectError = err?.message ?? 'Unknown error'
-  }
+  // Generate connect links from Corsair dynamically on redirect
+  const gmailConnectUrl = '/api/corsair/connect?provider=gmail'
+  const calendarConnectUrl = '/api/corsair/connect?provider=googlecalendar'
+  const connectError: string | null = null
 
   const allConnected = settings.gmailConnected && settings.calendarConnected
   const canContinue = settings.gmailConnected
@@ -87,7 +79,7 @@ export default async function ConnectPage({
 
       {(resolvedSearchParams.error || connectError) && (
         <div className="mb-6 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm max-w-2xl w-full text-center">
-          Connection failed: {connectError || 'Please try again.'}
+          Connection failed: {resolvedSearchParams.error || connectError || 'Please try again.'}
         </div>
       )}
 
@@ -147,11 +139,7 @@ export default async function ConnectPage({
           </div>
 
           {(settings.gmailConnected || settings.calendarConnected) && (
-            <form action={async () => {
-              'use server'
-              if (settings.gmailConnected) await handleDisconnect('gmail')
-              if (settings.calendarConnected) await handleDisconnect('calendar')
-            }}>
+            <form action={disconnectAll}>
               <button
                 type="submit"
                 className="px-6 py-2.5 bg-background border border-destructive/20 text-destructive rounded-lg font-medium text-sm hover:bg-destructive/10 transition-colors w-full sm:w-auto"

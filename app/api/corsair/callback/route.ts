@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     return redirect('/onboarding/connect?error=missing_params')
   }
 
-  const redirectUri = process.env.NEXT_PUBLIC_APP_URL + '/api/corsair/callback'
+  const redirectUri = new URL('/api/corsair/callback', req.url).toString()
 
   try {
     await processOAuthCallback(corsair, {
