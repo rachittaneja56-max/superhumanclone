@@ -5,8 +5,9 @@ import { trpc } from "@/lib/trpc/client";
 import { useUIStore } from "@/store/ui-store";
 import { HITLCard } from "./HITLCard";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowUp, Bot } from "lucide-react";
+import { Loader2, ArrowUp, Bot, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -17,7 +18,15 @@ const SUGGESTED_PROMPTS = [
   "Summarize my unread emails",
 ];
 
-export function AgentChat({ sessionId }: { sessionId: string }) {
+export function AgentChat({
+  sessionId,
+  threadContext,
+  onClearThreadContext,
+}: {
+  sessionId: string;
+  threadContext?: string | null;
+  onClearThreadContext?: () => void;
+}) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -59,9 +68,10 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
       const res = await fetch("/api/trpc/agent.chatMessage", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           message: text, 
-          sessionId 
+          sessionId,
+          threadContext: threadContext ?? undefined,
         }),
       });
 
@@ -101,10 +111,37 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex h-full w-full flex-col rounded-2xl border border-border bg-surface shadow-sm">
-      <div className="border-b border-border px-5 py-4">
-        <div className="text-base font-semibold text-foreground">AI Assistant</div>
-        <p className="mt-1 text-sm text-foreground-muted">Ask Aethra about mail, schedules, and follow-ups.</p>
-      </div>
+        <div className="border-b border-border px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-semibold text-foreground">AI Assistant</div>
+            <p className="mt-1 text-sm text-foreground-muted">Ask Aethra about mail, schedules, and follow-ups.</p>
+          </div>
+        </div>
+        {threadContext && (
+          <div className="mt-3 flex items-start justify-between gap-3 rounded-xl border border-accent/20 bg-accent-subtle px-3 py-2 text-xs">
+            <div className="min-w-0">
+              <div className="font-medium text-foreground">Thread context attached</div>
+              <div className="mt-1 line-clamp-2 whitespace-pre-wrap text-foreground-muted">
+                {threadContext}
+              </div>
+            </div>
+            {onClearThreadContext && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClearThreadContext()
+                  toast.message("Thread context removed")
+                }}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted hover:bg-surface-raised hover:text-foreground"
+                aria-label="Remove thread context"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        )}
+        </div>
       <div className="flex min-h-0 flex-1 flex-col px-4 py-5">
       
       {!hasStarted && messages.length === 0 ? (

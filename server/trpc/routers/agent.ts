@@ -82,6 +82,7 @@ export const agentRouter = router({
           userId: ctx.userId,
           sessionId: input.sessionId,
           message: input.message,
+          threadContext: input.threadContext,
         }),
       });
 

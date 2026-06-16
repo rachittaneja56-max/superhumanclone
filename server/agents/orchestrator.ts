@@ -10,7 +10,8 @@ export async function runAgentTurn(
   userId: string,
   sessionId: string,
   userMessage: string,
-  onChunk: (chunk: string) => void
+  onChunk: (chunk: string) => void,
+  threadContext?: string
 ) {
   // 1. Rate limit: 50 messages/hour per userId
   const dateStr = new Date().toISOString().slice(0, 13); // YYYY-MM-DD-HH
@@ -46,7 +47,11 @@ export async function runAgentTurn(
   // Keep last 20 messages to prevent context overflow
   const recentHistory = history.slice(-20) as { role: 'user' | 'assistant'; content: string }[];
   
-  const messages = [...recentHistory, { role: 'user' as const, content: userMessage }];
+  const contextualMessage = threadContext?.trim()
+    ? `Thread context explicitly approved by the user:\n<email_content>${threadContext.trim()}</email_content>\n\nUser message:\n${userMessage}`
+    : userMessage;
+
+  const messages = [...recentHistory, { role: 'user' as const, content: contextualMessage }];
 
   // 3. Build curried hitlInterceptor
   const hitlInterceptorForSession = (action: any) => hitlInterceptor(userId, sessionId, action);

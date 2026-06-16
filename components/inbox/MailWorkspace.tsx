@@ -3,13 +3,16 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Loader2, Search, SquarePen, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, Loader2, Search, SquarePen, X, Bot } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
 import type { EmailListClientItem } from "@/lib/email-client";
 import { sendEmailSchema } from "@/lib/schemas";
 import { ThreadView } from "./ThreadView";
+import { ThreadEmptyState } from "./ThreadView";
+import { AgentChat } from "@/components/agent/AgentChat";
+import { useUIStore } from "@/store/ui-store";
 
 type Folder = "inbox" | "drafts" | "sent" | "spam" | "trash";
 
@@ -50,9 +53,12 @@ export function MailWorkspace({
   const [threads, setThreads] = useState<EmailListClientItem[]>(initialThreads);
   const [hasMore, setHasMore] = useState(initialThreads.length === PAGE_SIZE);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [agentSessionId] = useState(() => crypto.randomUUID());
+  const [approvedThreadContext, setApprovedThreadContext] = useState<string | null>(null);
 
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const deferredQuery = useDeferredValue(query.trim());
+  const { agentPanelOpen, closeAgentPanel } = useUIStore();
 
   const folder = normalizeFolder(searchParams.get("folder") ?? initialFolder);
   const composeFromUrl = searchParams.get("compose") === "true";
@@ -71,12 +77,28 @@ export function MailWorkspace({
     () => threads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || null,
     [threads, activeThreadId]
   );
+  const selectedThreadContext = useMemo(() => {
+    if (!selected) return null;
+
+    return [
+      `Subject: ${selected.subject || "(no subject)"}`,
+      `From: ${selected.senderName || "Unknown sender"}`,
+      `Snippet: ${selected.snippet || "No preview available."}`,
+      selected.badges.length > 0 ? `Labels: ${selected.badges.slice(0, 3).join(", ")}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }, [selected]);
   const sendMutation = trpc.email.sendEmail.useMutation();
   const { startUndoWindow, countdown, cancel: cancelUndo, isPending: undoPending } = useUndoSend();
 
   useEffect(() => {
     setComposeOpen(composeFromUrl || initialComposeOpen);
   }, [composeFromUrl, initialComposeOpen]);
+
+  useEffect(() => {
+    setApprovedThreadContext(null);
+  }, [selected?.threadId, selected?.id]);
 
   useEffect(() => {
     const incoming = (mailboxQuery.data ?? initialThreads) as EmailListClientItem[];
@@ -340,10 +362,15 @@ export function MailWorkspace({
             </div>
           </section>
 
-          {selected && (
-            <aside className="hidden w-[34rem] shrink-0 bg-surface xl:flex xl:flex-col">
-              <div className="flex items-center justify-between border-b border-border px-4 py-3">
-                <div className="text-sm font-medium text-foreground">Thread</div>
+          <aside className="hidden w-[34rem] shrink-0 border-l border-border bg-surface xl:flex xl:flex-col">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">{selected ? "Thread" : "Conversation"}</div>
+                <div className="text-xs text-foreground-subtle">
+                  {selected ? "Read the message in a calmer layout." : "Select a message to open the thread pane."}
+                </div>
+              </div>
+              {selected && (
                 <button
                   onClick={closeThread}
                   className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground"
@@ -351,18 +378,94 @@ export function MailWorkspace({
                 >
                   <X className="h-4 w-4" />
                 </button>
-              </div>
-              <div className="min-h-0 flex-1">
-                {folder === "drafts" ? (
+              )}
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden">
+              {selected ? (
+                folder === "drafts" ? (
                   <DraftPreviewCard draft={selected} />
                 ) : (
                   <ThreadView threadId={selected.threadId || selected.id} compact mailbox={folder} />
-                )}
-              </div>
-            </aside>
-          )}
+                )
+              ) : (
+                <ThreadEmptyState />
+              )}
+            </div>
+          </aside>
         </div>
       </main>
+
+      {agentPanelOpen && (
+        <aside className="fixed inset-y-4 right-4 z-40 hidden w-[24rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_24px_80px_rgba(0,0,0,0.45)] xl:flex">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <Bot className="h-4 w-4 text-accent" />
+                Agent
+              </div>
+              <div className="text-xs text-foreground-subtle">Ask about mail without leaving the workspace.</div>
+            </div>
+            <button
+              onClick={closeAgentPanel}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+              aria-label="Close agent panel"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-hidden p-3">
+            {selectedThreadContext && !approvedThreadContext && (
+              <div className="mb-3 rounded-xl border border-border bg-background p-3 text-xs text-foreground-muted">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-foreground">Optional thread context</div>
+                    <p className="mt-1 leading-5">
+                      Aethra will only use this thread if you explicitly attach it.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setApprovedThreadContext(selectedThreadContext)}
+                    className="shrink-0 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-[11px] font-medium text-accent transition-colors hover:bg-accent/15"
+                  >
+                    Use this thread as context
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {approvedThreadContext && (
+              <div className="mb-3 rounded-xl border border-accent/20 bg-accent-subtle px-3 py-2 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium text-foreground">Context attached</div>
+                    <div className="mt-1 line-clamp-3 whitespace-pre-wrap text-foreground-muted">
+                      {approvedThreadContext}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setApprovedThreadContext(null)}
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted hover:bg-surface-raised hover:text-foreground"
+                    aria-label="Remove thread context"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="h-full min-h-0 overflow-hidden rounded-xl border border-border bg-background">
+              <AgentChat
+                sessionId={agentSessionId}
+                threadContext={approvedThreadContext}
+                onClearThreadContext={() => setApprovedThreadContext(null)}
+              />
+            </div>
+          </div>
+        </aside>
+      )}
 
       {composeOpen && <ComposeModal onClose={closeCompose} onSend={handleSend} />}
     </div>

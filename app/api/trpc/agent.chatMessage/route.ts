@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { message, sessionId } = body;
+    const { message, sessionId, threadContext } = body;
 
     if (!message || !sessionId) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
@@ -33,6 +33,7 @@ export async function POST(req: Request) {
         userId,
         sessionId,
         message,
+        threadContext,
       }),
     });
 

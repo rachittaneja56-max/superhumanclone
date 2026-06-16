@@ -10,4 +10,5 @@ export const resolveHITLSchema = z.object({
 export const chatMessageSchema = z.object({
   message: z.string().min(1).max(5000),
   sessionId: z.string().uuid(),
+  threadContext: z.string().max(8000).optional(),
 });

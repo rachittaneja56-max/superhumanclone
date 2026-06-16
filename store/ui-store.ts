@@ -5,6 +5,7 @@ interface UIState {
   selectedEmailIds: string[];
   focusLayer: number;
   commandPaletteOpen: boolean;
+  agentPanelOpen: boolean;
   activeHITLAction: any | null;
   cheatsheetOpen: boolean;
   setSelectedEmail: (id: string | null) => void;
@@ -14,6 +15,9 @@ interface UIState {
   openPalette: () => void;
   closePalette: () => void;
   toggleCheatsheet: () => void;
+  openAgentPanel: () => void;
+  closeAgentPanel: () => void;
+  toggleAgentPanel: () => void;
   pushFocusLayer: () => void;
   popFocusLayer: () => void;
   setActiveHITLAction: (action: any | null) => void;
@@ -24,6 +28,7 @@ export const useUIStore = create<UIState>((set) => ({
   selectedEmailIds: [],
   focusLayer: 0,
   commandPaletteOpen: false,
+  agentPanelOpen: false,
   activeHITLAction: null,
   cheatsheetOpen: false,
   setSelectedEmail: (id) => set({ selectedEmailId: id }),
@@ -38,6 +43,9 @@ export const useUIStore = create<UIState>((set) => ({
   openPalette: () => set({ commandPaletteOpen: true, focusLayer: 1 }),
   closePalette: () => set((state) => ({ commandPaletteOpen: false, focusLayer: Math.max(0, state.focusLayer - 1) })),
   toggleCheatsheet: () => set((state) => ({ cheatsheetOpen: !state.cheatsheetOpen })),
+  openAgentPanel: () => set({ agentPanelOpen: true }),
+  closeAgentPanel: () => set({ agentPanelOpen: false }),
+  toggleAgentPanel: () => set((state) => ({ agentPanelOpen: !state.agentPanelOpen })),
   pushFocusLayer: () => set((state) => ({ focusLayer: state.focusLayer + 1 })),
   popFocusLayer: () => set((state) => ({ focusLayer: Math.max(0, state.focusLayer - 1) })),
   setActiveHITLAction: (action) => set({ activeHITLAction: action }),

@@ -83,19 +83,19 @@ export function ThreadView({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface font-sans">
-      <div className="shrink-0 border-b border-border bg-surface px-4 py-4 sm:px-6">
+      <div className="shrink-0 border-b border-border bg-surface px-4 py-5 sm:px-6">
         <div className="min-w-0">
-          <h2 className="truncate font-display text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl">
+          <h2 className="max-w-[32rem] truncate font-display text-2xl font-semibold tracking-tight text-[var(--text)] sm:text-[1.75rem]">
             {subject}
           </h2>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-foreground-muted">
-            <span>{typedThread[0]?.senderName || "Unknown sender"}</span>
-            <span>{typedThread[0]?.recipientSummary || "Recipients hidden"}</span>
-            <span>{formatDateLabel(typedThread[0]?.createdAt)}</span>
+          <div className="mt-3 flex flex-wrap gap-2 text-sm text-foreground-muted">
+            <span className="rounded-full border border-border bg-background px-3 py-1">{typedThread[0]?.senderName || "Unknown sender"}</span>
+            <span className="rounded-full border border-border bg-background px-3 py-1">{typedThread[0]?.recipientSummary || "Recipients hidden"}</span>
+            <span className="rounded-full border border-border bg-background px-3 py-1">{formatDateLabel(typedThread[0]?.createdAt)}</span>
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-5 flex flex-wrap gap-2">
           <ActionButton onClick={() => setReplyMode("reply")} icon={<Reply className="h-4 w-4" />} label="Reply" />
           <ActionButton onClick={() => setReplyMode("replyAll")} icon={<ReplyAll className="h-4 w-4" />} label="Reply all" />
           <ActionButton onClick={() => setReplyMode("forward")} icon={<Forward className="h-4 w-4" />} label="Forward" />
@@ -129,7 +129,7 @@ export function ThreadView({
 
         {showTldr && (
           <div
-            className="mt-4 rounded-xl p-4 text-sm text-[var(--text)]"
+            className="mt-5 rounded-xl p-4 text-sm leading-6 text-[var(--text)]"
             style={{
               backgroundColor: "var(--accent-subtle)",
               borderLeft: "3px solid var(--accent)",
@@ -140,8 +140,8 @@ export function ThreadView({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
           {typedThread.map((email) => (
             <EmailMessage key={email.id} email={email} />
           ))}
@@ -194,10 +194,13 @@ export function ThreadView({
 export function ThreadEmptyState() {
   return (
     <div className="flex h-full items-center justify-center px-6">
-      <div className="max-w-sm rounded-2xl border border-dashed border-border bg-background/40 p-8 text-center">
-        <div className="text-sm font-medium text-foreground">Select a conversation</div>
+      <div className="max-w-md rounded-2xl border border-border bg-background p-8 text-center shadow-sm">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+          <MailOpen className="h-6 w-6" />
+        </div>
+        <div className="text-base font-semibold text-foreground">Select a conversation</div>
         <p className="mt-2 text-sm leading-6 text-foreground-muted">
-          Open a thread to see the message, safe recipients summary, and reply actions here.
+          Open a thread to read the conversation, review safe recipients, and use reply actions here.
         </p>
       </div>
     </div>
@@ -255,20 +258,20 @@ function EmailMessage({ email }: { email: EmailThreadClientItem }) {
 
   return (
     <div
-      className="overflow-hidden rounded-2xl border p-5 shadow-sm"
+      className="overflow-hidden rounded-2xl border p-6 shadow-sm"
       style={{
         backgroundColor: "var(--surface)",
         borderColor: "var(--border)",
         borderLeft: !email.isRead ? "2px solid var(--accent)" : "1px solid var(--border)",
       }}
     >
-      <div className="mb-4 border-b pb-3" style={{ borderColor: "var(--border)" }}>
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-5 border-b pb-4" style={{ borderColor: "var(--border)" }}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate font-medium text-[var(--text)]">{email.senderName}</div>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-foreground-subtle">
-              <span>{email.recipientSummary}</span>
-              <span>{createdLabel}</span>
+            <div className="truncate text-base font-semibold text-[var(--text)]">{email.senderName}</div>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-foreground-subtle">
+              <span className="rounded-full border border-border bg-background px-2.5 py-1">{email.recipientSummary}</span>
+              <span className="rounded-full border border-border bg-background px-2.5 py-1">{createdLabel}</span>
             </div>
           </div>
         </div>
@@ -281,13 +284,13 @@ function EmailMessage({ email }: { email: EmailThreadClientItem }) {
             sandbox=""
             referrerPolicy="no-referrer"
             title={`Email from ${email.senderName}`}
-            className="min-h-[24rem] w-full border-0"
+            className="min-h-[28rem] w-full border-0"
           />
         </div>
       ) : (
-        <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-[var(--text)]">
-          {email.bodyText || email.snippet || "No content available."}
-        </pre>
+        <div className="space-y-4 text-[15px] leading-7 text-[var(--text)]">
+          {renderReadableText(email.bodyText || email.snippet || "No content available.")}
+        </div>
       )}
     </div>
   );
@@ -295,4 +298,14 @@ function EmailMessage({ email }: { email: EmailThreadClientItem }) {
 
 function formatDateLabel(value?: string | null) {
   return value ? new Date(value).toLocaleString() : "Unknown date";
+}
+
+function renderReadableText(value: string) {
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph, index) => (
+      <p key={index} className="whitespace-pre-wrap break-words">
+        {paragraph}
+      </p>
+    ));
 }
