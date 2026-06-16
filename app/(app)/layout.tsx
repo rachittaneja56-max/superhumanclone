@@ -39,10 +39,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   })
 
   if (!settings || !settings.onboardingCompleted) {
-    redirect('/onboarding/privacy')
-  }
-
-  if (!settings.gmailConnected) {
     redirect('/onboarding/connect')
   }
 

@@ -5,9 +5,10 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string; callbackUrl?: string }>
 }) {
-  const { error } = await searchParams
+  const { error, callbackUrl } = await searchParams
 
   const errorMessage = error ? 'Sign-in failed. Please try again.' : ''
+  const targetUrl = callbackUrl ? `/api/auth/google?callbackUrl=${encodeURIComponent(callbackUrl)}` : '/api/auth/google'
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center relative bg-background overflow-hidden">
@@ -42,7 +43,7 @@ export default async function LoginPage({
 
         {/* Section 3 - Google Sign In */}
         <a
-          href="/api/auth/google"
+          href={targetUrl}
           className={`
             relative flex h-11 w-full items-center justify-center gap-3 rounded-lg
             bg-accent text-accent-foreground font-medium text-sm

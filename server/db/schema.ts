@@ -72,6 +72,7 @@ export const userSettings = pgTable('user_settings', {
   onboardingCompleted: boolean('onboarding_completed').default(false).notNull(),
   gmailConnected: boolean('gmail_connected').default(false).notNull(),
   calendarConnected: boolean('calendar_connected').default(false).notNull(),
+  privacyConfigured: boolean('privacy_configured').default(false).notNull(),
   aiEnabled: boolean('ai_enabled').default(true).notNull(),
   draftSuggestionsEnabled: boolean('draft_suggestions_enabled').default(true).notNull(),
   autoTagEnabled: boolean('auto_tag_enabled').default(true).notNull(),

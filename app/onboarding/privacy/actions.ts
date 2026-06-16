@@ -11,10 +11,10 @@ export async function acceptPrivacyPolicy() {
   if (!userId) return
 
   await db.insert(userSettings)
-    .values({ userId, onboardingCompleted: true })
+    .values({ userId, privacyConfigured: true })
     .onConflictDoUpdate({
       target: userSettings.userId,
-      set: { onboardingCompleted: true }
+      set: { privacyConfigured: true }
     })
     
   redirect('/onboarding/connect')

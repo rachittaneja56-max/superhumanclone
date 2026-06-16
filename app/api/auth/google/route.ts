@@ -3,11 +3,14 @@ import { googleOAuthClient } from "@/lib/oauth";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const callbackUrl = url.searchParams.get("callbackUrl") || "/inbox";
+
   const state = generateState();
   const codeVerifier = generateCodeVerifier();
   
-  const url = await googleOAuthClient.createAuthorizationURL({
+  const authUrl = await googleOAuthClient.createAuthorizationURL({
     state,
     scopes: ["openid", "profile", "email"],
     codeVerifier
@@ -31,5 +34,13 @@ export async function GET() {
     sameSite: "lax"
   });
 
-  return NextResponse.redirect(url);
+  cookieStore.set("google_auth_callback", callbackUrl, {
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
+    maxAge: 60 * 10,
+    sameSite: "lax"
+  });
+
+  return NextResponse.redirect(authUrl);
 }

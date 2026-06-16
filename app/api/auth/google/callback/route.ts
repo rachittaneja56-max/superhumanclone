@@ -15,6 +15,8 @@ export async function GET(request: Request) {
   const cookieStore = await cookies();
   const storedState = cookieStore.get("google_oauth_state")?.value ?? null;
   const storedCodeVerifier = cookieStore.get("google_code_verifier")?.value ?? null;
+  const callbackUrlCookie = cookieStore.get("google_auth_callback");
+  const callbackUrl = callbackUrlCookie ? callbackUrlCookie.value : "/inbox";
 
   if (!code || !state || !storedState || state !== storedState || !storedCodeVerifier) {
     return new Response(null, {
