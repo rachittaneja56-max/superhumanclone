@@ -1,5 +1,8 @@
 import 'server-only'
 import { corsair } from '@/corsair'
+import { db } from '@/server/db'
+import { corsairAccounts } from '@/server/db/schema'
+import { eq, and } from 'drizzle-orm'
 
 // Type helper — plugins are dynamically attached, need 'as any'
 type CorsairTenant = {
@@ -40,18 +43,13 @@ export async function isUserConnected(
   userId: string,
   plugin: 'gmail' | 'googlecalendar'
 ): Promise<boolean> {
-  try {
-    const t = getTenant(userId)
-    if (plugin === 'gmail') {
-      await t.gmail.db.threads.list({ limit: 1 })
-    } else {
-      await t.googlecalendar.db.events.list({ limit: 1 })
-    }
-    return true
-  } catch (err: any) {
-    if (isAuthError(err)) return false
-    throw err
-  }
+  const account = await db.query.corsairAccounts.findFirst({
+    where: and(
+      eq(corsairAccounts.tenantId, userId),
+      eq(corsairAccounts.integrationId, plugin)
+    )
+  })
+  return !!account
 }
 
 import { generateOAuthUrl } from 'corsair/oauth'
@@ -246,7 +244,9 @@ export async function createCalendarEvent(userId: string, event: {
 function isAuthError(err: any): boolean {
   const msg = err?.message?.toLowerCase() ?? ''
   const code = err?.code ?? ''
+  const name = err?.name ?? ''
   return (
+    name === 'AuthMissingError' ||
     code === 'UNAUTHENTICATED' ||
     code === 401 ||
     msg.includes('token') ||
