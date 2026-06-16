@@ -4,9 +4,12 @@ import { TRPCError } from '@trpc/server';
 
 const ablyLimit = createRateLimitMiddleware('ably', 10, 60);
 
+import { getAblyTokenSchema } from '@/lib/schemas';
+
 export const realtimeRouter = router({
   getAblyToken: protectedProcedure
     .use(ablyLimit)
+    .input(getAblyTokenSchema)
     .query(async ({ ctx }) => {
       if (!process.env.ABLY_API_KEY) {
         throw new TRPCError({

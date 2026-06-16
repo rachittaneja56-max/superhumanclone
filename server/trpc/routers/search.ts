@@ -8,13 +8,12 @@ const vectorSearchLimit = createRateLimitMiddleware('search:vector', 60, 60);
 const textSearchLimit = createRateLimitMiddleware('search:text', 200, 60);
 const searchContactsLimit = createRateLimitMiddleware('search:contacts', 100, 60);
 
+import { vectorSearchSchema, textSearchSchema, searchContactsSchema } from '@/lib/schemas';
+
 export const searchRouter = router({
   vectorSearch: protectedProcedure
     .use(vectorSearchLimit)
-    .input(z.object({
-      query: z.string().min(1).max(500),
-      limit: z.number().default(20)
-    }))
+    .input(vectorSearchSchema)
     .query(async ({ ctx, input }) => {
       const { query, limit } = input;
       
@@ -59,10 +58,7 @@ export const searchRouter = router({
 
   textSearch: protectedProcedure
     .use(textSearchLimit)
-    .input(z.object({
-      query: z.string().min(1).max(500),
-      limit: z.number().default(20)
-    }))
+    .input(textSearchSchema)
     .query(async ({ ctx, input }) => {
       const { query, limit } = input;
       return ctx.db.query.emails.findMany({
@@ -81,9 +77,7 @@ export const searchRouter = router({
 
   searchContacts: protectedProcedure
     .use(searchContactsLimit)
-    .input(z.object({
-      query: z.string().min(1).max(100),
-    }))
+    .input(searchContactsSchema)
     .query(async ({ ctx, input }) => {
       const { query } = input;
       

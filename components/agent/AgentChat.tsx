@@ -27,7 +27,7 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
   const { activeHITLAction, setActiveHITLAction } = useUIStore();
   
   // Refetch pending HITL
-  const getPendingHITL = trpc.agent.getPendingHITL.useQuery(undefined, {
+  const getPendingHITL = trpc.agent.getPendingHITL.useQuery({}, {
     enabled: true,
   });
 

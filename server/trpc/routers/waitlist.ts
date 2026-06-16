@@ -2,11 +2,12 @@ import { router, publicProcedure, createPublicRateLimitMiddleware } from '../trp
 import { z } from 'zod';
 import { waitlistEmails } from '@/server/db/schema';
 import { TRPCError } from '@trpc/server';
+import { joinWaitlistSchema } from '@/lib/schemas';
 
 export const waitlistRouter = router({
   join: publicProcedure
     .use(createPublicRateLimitMiddleware('waitlist', 3, 3600))
-    .input(z.object({ email: z.string().email('Please enter a valid email address') }))
+    .input(joinWaitlistSchema)
     .mutation(async ({ ctx, input }) => {
       try {
         await ctx.db.insert(waitlistEmails).values({ email: input.email });

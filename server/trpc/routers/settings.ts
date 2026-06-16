@@ -4,19 +4,19 @@ import { db } from '../../db';
 import { aiConsentRules, userSettings } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import { redis } from '../../redis';
+import { getUserSettingsSchema, updateSettingSchema, updatePrivacyRulesSchema } from '@/lib/schemas';
 
 export const settingsRouter = router({
-  getUserSettings: protectedProcedure.query(async ({ ctx }) => {
+  getUserSettings: protectedProcedure
+    .input(getUserSettingsSchema)
+    .query(async ({ ctx }) => {
     return ctx.db.query.userSettings.findFirst({
       where: eq(userSettings.userId, ctx.userId!),
     })
   }),
 
   updateSetting: protectedProcedure
-    .input(z.object({
-      key: z.enum(['aiEnabled','draftSuggestionsEnabled','autoTagEnabled']),
-      value: z.boolean(),
-    }))
+    .input(updateSettingSchema)
     .mutation(async ({ ctx, input }) => {
       await ctx.db.update(userSettings)
         .set({ [input.key]: input.value })
@@ -25,13 +25,7 @@ export const settingsRouter = router({
     }),
 
   updatePrivacyRules: protectedProcedure
-    .input(z.object({
-      rules: z.array(z.object({
-        pattern: z.string().max(200),
-        isBlocked: z.boolean(),
-        groupName: z.string().optional(),
-      })),
-    }))
+    .input(updatePrivacyRulesSchema)
     .mutation(async ({ ctx, input }) => {
       // Delete existing rules
       await ctx.db.delete(aiConsentRules)

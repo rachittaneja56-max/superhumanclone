@@ -17,14 +17,26 @@ import { Client } from '@upstash/qstash';
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' });
 
+import {
+  getThreadsSchema,
+  getThreadSchema,
+  markReadSchema,
+  archiveEmailSchema,
+  restoreFromArchiveSchema,
+  deleteEmailSchema,
+  restoreEmailSchema,
+  emptyTrashSchema,
+  getMorningDigestSchema,
+  rewriteDraftSchema,
+  sendEmailSchema,
+  sendConfirmedSchema,
+  cancelSendSchema,
+  getAutoRepliesSchema
+} from '@/lib/schemas';
 export const emailRouter = router({
   getThreads: protectedProcedure
     .use(createRateLimitMiddleware('getThreads', 200, 60))
-    .input(z.object({
-      limit: z.number().min(1).max(100).default(50),
-      isArchived: z.boolean().default(false),
-      tag: z.string().optional(),
-    }))
+    .input(getThreadsSchema)
     .query(async ({ ctx, input }) => {
       const results = await ctx.db.query.emails.findMany({
         where: and(
@@ -57,9 +69,7 @@ export const emailRouter = router({
     }),
 
   getThread: protectedProcedure
-    .input(z.object({
-      threadId: z.string().min(1).max(200)
-    }))
+    .input(getThreadSchema)
     .query(async ({ ctx, input }) => {
       const threadEmails = await ctx.db.query.emails.findMany({
         where: and(
@@ -102,9 +112,7 @@ export const emailRouter = router({
     }),
 
   markRead: protectedProcedure
-    .input(z.object({
-      emailIds: z.array(z.string().uuid()).max(50)
-    }))
+    .input(markReadSchema)
     .mutation(async ({ ctx, input }) => {
       await ctx.db.update(emails)
         .set({ is_read: true })
@@ -124,9 +132,7 @@ export const emailRouter = router({
 
   archiveEmail: protectedProcedure
     .use(createRateLimitMiddleware('archiveEmail', 100, 60))
-    .input(z.object({
-      emailId: z.string(), // Using Corsair's message ID now
-    }))
+    .input(archiveEmailSchema)
     .mutation(async ({ ctx, input }) => {
       // Archive in Corsair/Gmail
       const archiveResult = await archiveEmail(ctx.userId!, input.emailId)
@@ -151,9 +157,7 @@ export const emailRouter = router({
     }),
 
   restoreFromArchive: protectedProcedure
-    .input(z.object({
-      emailId: z.string(),
-    }))
+    .input(restoreFromArchiveSchema)
     .mutation(async ({ ctx, input }) => {
       // NOTE: Our client currently doesn't implement unarchive via Corsair,
       // but to match previous local behavior:
@@ -166,9 +170,7 @@ export const emailRouter = router({
     }),
 
   deleteEmail: protectedProcedure
-    .input(z.object({
-      emailId: z.string(), // Corsair message id
-    }))
+    .input(deleteEmailSchema)
     .mutation(async ({ ctx, input }) => {
       // 1. Fetch row to verify ownership
       const email = await ctx.db.query.emails.findFirst({
@@ -200,9 +202,7 @@ export const emailRouter = router({
     }),
 
   restoreEmail: protectedProcedure
-    .input(z.object({
-      emailId: z.string(),
-    }))
+    .input(restoreEmailSchema)
     .mutation(async ({ ctx, input }) => {
       // 1. Redis get
       const jobId = await ctx.redis.get<string>(`deletejob:${ctx.userId}:${input.emailId}`);
@@ -227,6 +227,7 @@ export const emailRouter = router({
     }),
 
   emptyTrash: protectedProcedure
+    .input(emptyTrashSchema)
     .mutation(async ({ ctx }) => {
       // Find all is_deleted=true
       const trashed = await ctx.db.query.emails.findMany({
@@ -247,7 +248,7 @@ export const emailRouter = router({
 
   getMorningDigest: protectedProcedure
     .use(createRateLimitMiddleware('getMorningDigest', 10, 3600))
-    .input(z.object({}))
+    .input(getMorningDigestSchema)
     .query(async ({ ctx }) => {
       const today = new Date();
       const year = today.getFullYear();
@@ -340,11 +341,7 @@ export const emailRouter = router({
 
   rewriteDraft: protectedProcedure
     .use(createRateLimitMiddleware('rewriteDraft', 20, 60))
-    .input(z.object({
-      draft: z.string().min(1).max(5000),
-      instruction: z.enum(['improve_tone','make_shorter','make_formal','convert_to_bullets','translate']),
-      translateTo: z.string().max(50).optional(),
-    }))
+    .input(rewriteDraftSchema)
     .mutation(async ({ input }) => {
       const rewritten = await rewriteDraft(input.draft, input.instruction, input.translateTo);
       return { rewritten };
@@ -352,13 +349,7 @@ export const emailRouter = router({
 
   sendEmail: protectedProcedure
     .use(createRateLimitMiddleware('sendEmail', 20, 3600))
-    .input(z.object({
-      to: z.array(z.string().email()),
-      cc: z.array(z.string().email()).optional(),
-      subject: z.string().min(1),
-      body: z.string(),
-      threadId: z.string().optional()
-    }))
+    .input(sendEmailSchema)
     .mutation(async ({ ctx, input }) => {
       const undoToken = crypto.randomUUID();
       await ctx.redis.set(`undo:send:${ctx.userId}:${undoToken}`, JSON.stringify(input), { ex: 10 });
@@ -367,9 +358,7 @@ export const emailRouter = router({
 
   sendConfirmed: protectedProcedure
     .use(createRateLimitMiddleware('sendConfirmed', 20, 3600))
-    .input(z.object({
-      undoToken: z.string().uuid()
-    }))
+    .input(sendConfirmedSchema)
     .mutation(async ({ ctx, input }) => {
       const redisKey = `undo:send:${ctx.userId}:${input.undoToken}`;
       const payloadStr = await ctx.redis.get<string>(redisKey);
@@ -403,18 +392,14 @@ export const emailRouter = router({
     }),
 
   cancelSend: protectedProcedure
-    .input(z.object({
-      undoToken: z.string().uuid()
-    }))
+    .input(cancelSendSchema)
     .mutation(async ({ ctx, input }) => {
       await ctx.redis.del(`undo:send:${ctx.userId}:${input.undoToken}`);
       return { cancelled: true };
     }),
 
   getAutoReplies: protectedProcedure
-    .input(z.object({
-      emailId: z.string().uuid()
-    }))
+    .input(getAutoRepliesSchema)
     .query(async ({ ctx, input }) => {
       // JOIN to verify ownership
       const drafts = await ctx.db

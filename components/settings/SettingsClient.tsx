@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 
 export function SettingsClient({ initialSettings }: { initialSettings: any }) {
   const { data: settings = initialSettings } =
-    trpc.settings.getUserSettings.useQuery(undefined, {
+    trpc.settings.getUserSettings.useQuery({}, {
       initialData: initialSettings,
       staleTime: 60000,
     })

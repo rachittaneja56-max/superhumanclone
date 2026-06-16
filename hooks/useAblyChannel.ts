@@ -16,7 +16,7 @@ export function useAblyChannel(userId: string | undefined) {
     const ably = new Ably.Realtime({
       authCallback: async (_, callback) => {
         try {
-          const tokenRequest = await utils.realtime.getAblyToken.fetch();
+          const tokenRequest = await utils.realtime.getAblyToken.fetch({});
           callback(null, (tokenRequest as unknown) as any);
         } catch (err) {
           callback((err as unknown) as any, null);

@@ -7,9 +7,11 @@ import { smartFillFromThread } from '../../ai/provider';
 import { TRPCError } from '@trpc/server';
 import { createCalendarEvent, getCalendarEvents } from '../../corsair/client';
 
+import { smartFillFromThreadSchema, createEventSchema, getEventsSchema } from '@/lib/schemas';
+
 export const calendarRouter = router({
   smartFillFromThread: protectedProcedure
-    .input(z.object({ threadId: z.string() }))
+    .input(smartFillFromThreadSchema)
     .mutation(async ({ ctx, input }) => {
       // Fetch thread emails
       const threadEmails = await db.query.emails.findMany({
@@ -61,15 +63,7 @@ export const calendarRouter = router({
     }),
 
   createEvent: protectedProcedure
-    .input(
-      z.object({
-        title: z.string().min(1),
-        startTime: z.string().datetime(),
-        endTime: z.string().datetime(),
-        attendees: z.array(z.string().email()),
-        description: z.string().optional(),
-      })
-    )
+    .input(createEventSchema)
     .mutation(async ({ ctx, input }) => {
       const result = await createCalendarEvent(ctx.userId!, {
         title: input.title,
@@ -90,10 +84,7 @@ export const calendarRouter = router({
     }),
 
   getEvents: protectedProcedure
-    .input(z.object({
-      startDate: z.date(),
-      endDate: z.date(),
-    }))
+    .input(getEventsSchema)
     .query(async ({ ctx, input }) => {
       // First try our local DB
       const localEvents = await ctx.db

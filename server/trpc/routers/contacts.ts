@@ -5,10 +5,11 @@ import { contactIntelligence, emails, calendarEvents } from '../../db/schema';
 import { eq, and, desc, or, ilike, gt } from 'drizzle-orm';
 import { redis } from '../../redis';
 import { generateContactSummary } from '../../ai/provider';
+import { getContactIntelSchema } from '@/lib/schemas';
 
 export const contactsRouter = router({
   getContactIntel: protectedProcedure
-    .input(z.object({ contactEmail: z.string().email() }))
+    .input(getContactIntelSchema)
     .query(async ({ ctx, input }) => {
       const cacheKey = `contact:${ctx.userId}:${input.contactEmail}`;
       const cached = await redis.get<string>(cacheKey);

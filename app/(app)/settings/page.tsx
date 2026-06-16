@@ -10,7 +10,7 @@ export default async function SettingsPage() {
   if (!session.userId) redirect('/login')
 
   const trpc = await serverTrpc()
-  const settings = await trpc.settings.getUserSettings()
+  const settings = await trpc.settings.getUserSettings({})
 
   return (
     <div className="flex flex-col h-full overflow-hidden">

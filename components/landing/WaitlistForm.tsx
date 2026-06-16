@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc/client';
+import { joinWaitlistSchema } from '@/lib/schemas';
 
 export function WaitlistForm() {
   const [email, setEmail] = useState('');
@@ -12,8 +13,9 @@ export function WaitlistForm() {
     e.preventDefault();
     setError(null);
     
-    if (!email) {
-      setError('Email is required');
+    const parsed = joinWaitlistSchema.safeParse({ email });
+    if (!parsed.success) {
+      setError(parsed.error.issues[0].message);
       return;
     }
 

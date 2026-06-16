@@ -9,8 +9,11 @@ import { redis } from '../../redis';
 const resolveHitlLimit = createRateLimitMiddleware('hitl_resolve', 60, 60);
 const chatMessageLimit = createRateLimitMiddleware('agent_chat', 50, 3600);
 
+import { getPendingHITLSchema, resolveHITLSchema, chatMessageSchema } from '@/lib/schemas';
+
 export const agentRouter = router({
   getPendingHITL: protectedProcedure
+    .input(getPendingHITLSchema)
     .query(async ({ ctx }) => {
       const pendingAction = await db.query.hitlActions.findFirst({
         where: and(
@@ -24,10 +27,7 @@ export const agentRouter = router({
 
   resolveHITL: protectedProcedure
     .use(resolveHitlLimit)
-    .input(z.object({
-      actionId: z.string().uuid(),
-      decision: z.enum(['approved', 'rejected']),
-    }))
+    .input(resolveHITLSchema)
     .mutation(async ({ ctx, input }) => {
       const row = await db.query.hitlActions.findFirst({
         where: eq(hitlActions.id, input.actionId),
@@ -69,10 +69,7 @@ export const agentRouter = router({
 
   chatMessage: protectedProcedure
     .use(chatMessageLimit)
-    .input(z.object({
-      message: z.string().min(1).max(5000),
-      sessionId: z.string().uuid(),
-    }))
+    .input(chatMessageSchema)
     .mutation(async ({ ctx, input }) => {
       const workerUrl = process.env.RAILWAY_WORKER_URL || 'http://localhost:8080';
       const upstream = await fetch(workerUrl + '/agent/chat', {
