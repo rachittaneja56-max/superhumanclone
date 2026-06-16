@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { getGmailAuthUrl, getCalendarAuthUrl } from '@/server/corsair/client'
-import { ensureTenantProvisioned } from '@/server/corsair/provision'
 import { getCorsairCallbackUrl } from '@/server/corsair/url'
 
 export async function GET(req: NextRequest) {
@@ -16,8 +15,6 @@ export async function GET(req: NextRequest) {
   const redirectUri = getCorsairCallbackUrl(req)
 
   try {
-    await ensureTenantProvisioned(userId)
-
     let authUrl = ''
     if (provider === 'gmail') {
       authUrl = await getGmailAuthUrl(userId, redirectUri)

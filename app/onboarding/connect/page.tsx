@@ -10,7 +10,7 @@ import { continueToDashboard, disconnectAll } from './actions'
 export default async function ConnectPage({
   searchParams
 }: {
-  searchParams: Promise<{ connected?: string; error?: string }>
+  searchParams: Promise<{ connected?: string; error?: string; plugin?: string }>
 }) {
   const resolvedSearchParams = await searchParams;
   const session = await getSession()
@@ -36,10 +36,12 @@ export default async function ConnectPage({
 
   // If Corsair redirected back with ?connected=true
   if (resolvedSearchParams.connected === 'true') {
-    // We assume the callback came from connecting Gmail or Calendar.
-    // We should check live statuses to see which one was connected.
-    const isGmailConnected = await isUserConnected(userId, 'gmail')
-    const isCalendarConnected = await isUserConnected(userId, 'googlecalendar')
+    // Prefer the plugin returned by the OAuth callback, but keep a live check as a fallback.
+    const connectedPlugin = resolvedSearchParams.plugin
+    const isGmailConnected =
+      connectedPlugin === 'gmail' ? true : await isUserConnected(userId, 'gmail')
+    const isCalendarConnected =
+      connectedPlugin === 'googlecalendar' ? true : await isUserConnected(userId, 'googlecalendar')
 
     await db.update(userSettings).set({
       gmailConnected: isGmailConnected,

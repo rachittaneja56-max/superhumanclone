@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return redirect('/onboarding/connect?connected=true')
+    return redirect(`/onboarding/connect?connected=true&plugin=${encodeURIComponent(result.plugin)}`)
   } catch (error: any) {
     console.error('OAuth Callback Error:', error)
     return redirect('/onboarding/connect?error=' + encodeURIComponent(error.message))
