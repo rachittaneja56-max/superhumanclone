@@ -20,6 +20,8 @@ export function useKeyboardShortcuts() {
       }
       if (e.key === "Escape") {
         useUIStore.getState().closePalette();
+        useUIStore.getState().closeCheatsheet();
+        window.dispatchEvent(new CustomEvent("aethra:escape-all"));
         return;
       }
 
@@ -68,20 +70,45 @@ export function useKeyboardShortcuts() {
       // Single keys
       switch (e.key) {
         case "j":
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:thread-next"));
+          break;
         case "k":
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:thread-prev"));
+          break;
         case "e":
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:thread-archive"));
+          break;
         case "r":
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:thread-open"));
+          break;
         case "c":
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:compose-open"));
+          break;
         case "u":
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:thread-toggle-read"));
+          break;
+        case "Enter":
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:thread-open"));
+          break;
+        case "Delete":
+        case "Backspace":
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:thread-trash"));
           break;
         case "/":
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:focus-mail-search"));
           break;
         case "?":
-          // Stub for actions. Real implementation would wire these
-          // to trpc calls, state updates, or the Compose box focus.
-          console.log(`Triggered shortcut: ${e.key}`);
+          e.preventDefault();
+          useUIStore.getState().openCheatsheet();
           break;
       }
     };

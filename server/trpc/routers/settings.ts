@@ -1,18 +1,28 @@
-import { z } from 'zod';
 import { router, protectedProcedure } from '../trpc';
-import { db } from '../../db';
 import { aiConsentRules, userSettings } from '../../db/schema';
 import { eq } from 'drizzle-orm';
-import { redis } from '../../redis';
 import { getUserSettingsSchema, updateSettingSchema, updatePrivacyRulesSchema } from '@/lib/schemas';
+import { cacheTtls, invalidateSettingsCache, settingsCacheKey, settingsVersionKey } from '@/server/cache';
 
 export const settingsRouter = router({
   getUserSettings: protectedProcedure
     .input(getUserSettingsSchema)
     .query(async ({ ctx }) => {
-    return ctx.db.query.userSettings.findFirst({
-      where: eq(userSettings.userId, ctx.userId!),
-    })
+      const version = Number((await ctx.redis.get<string>(settingsVersionKey(ctx.userId!))) ?? '0');
+      const cacheKey = settingsCacheKey(ctx.userId!, version);
+      const cached = await ctx.redis.get<string>(cacheKey);
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {}
+      }
+
+      const settings = await ctx.db.query.userSettings.findFirst({
+        where: eq(userSettings.userId, ctx.userId!),
+      });
+
+      await ctx.redis.set(cacheKey, JSON.stringify(settings), { ex: cacheTtls.settings });
+      return settings;
   }),
 
   updateSetting: protectedProcedure
@@ -21,6 +31,7 @@ export const settingsRouter = router({
       await ctx.db.update(userSettings)
         .set({ [input.key]: input.value })
         .where(eq(userSettings.userId, ctx.userId!))
+      await invalidateSettingsCache(ctx.redis, ctx.userId!)
       return { updated: true }
     }),
 
@@ -48,6 +59,7 @@ export const settingsRouter = router({
       await ctx.db.update(userSettings)
         .set({ privacyConfigured: true })
         .where(eq(userSettings.userId, ctx.userId!))
+      await invalidateSettingsCache(ctx.redis, ctx.userId!)
       return { updated: true, count: input.rules.length }
     }),
 });

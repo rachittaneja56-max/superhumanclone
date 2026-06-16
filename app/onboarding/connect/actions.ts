@@ -7,6 +7,8 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { disconnectIntegration } from '@/server/corsair/client'
 import { eq } from 'drizzle-orm'
+import { invalidateMailCache, invalidateSettingsCache } from '@/server/cache'
+import { redis } from '@/server/redis'
 
 export async function continueToDashboard() {
   const session = await getSession()
@@ -36,19 +38,21 @@ async function disconnectAndRefresh(integration: 'gmail' | 'googlecalendar', red
     })
     .where(eq(userSettings.userId, userId))
 
+  await invalidateSettingsCache(redis, userId).catch(() => null)
+  await invalidateMailCache(redis, userId).catch(() => null)
   await revalidatePath('/onboarding/connect')
   await revalidatePath('/inbox')
   await revalidatePath('/calendar')
 
-  redirect(redirectTo)
+  return { success: true, redirectTo }
 }
 
 export async function disconnectGmail() {
-  await disconnectAndRefresh('gmail', '/onboarding/connect?disconnected=gmail')
+  return disconnectAndRefresh('gmail', '/onboarding/connect?disconnected=gmail')
 }
 
 export async function disconnectCalendar() {
-  await disconnectAndRefresh('googlecalendar', '/onboarding/connect?disconnected=calendar')
+  return disconnectAndRefresh('googlecalendar', '/onboarding/connect?disconnected=calendar')
 }
 
 export async function disconnectAll() {
@@ -66,8 +70,10 @@ export async function disconnectAll() {
     })
     .where(eq(userSettings.userId, userId))
 
+  await invalidateSettingsCache(redis, userId).catch(() => null)
+  await invalidateMailCache(redis, userId).catch(() => null)
   revalidatePath('/onboarding/connect')
   revalidatePath('/inbox')
   revalidatePath('/calendar')
-  redirect('/onboarding/connect?disconnected=all')
+  return { success: true, redirectTo: '/onboarding/connect?disconnected=all' }
 }

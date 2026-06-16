@@ -47,6 +47,36 @@ async function getTenant(userId: string): Promise<CorsairTenant> {
   return corsair.withTenant(userId) as any
 }
 
+function encodeBase64Url(input: string): string {
+  return Buffer.from(input, 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+}
+
+function buildMimeMessage(payload: {
+  to: string[]
+  cc?: string[]
+  bcc?: string[]
+  subject: string
+  body: string
+}): string {
+  const headers = [
+    `To: ${payload.to.join(', ')}`,
+    payload.cc?.length ? `Cc: ${payload.cc.join(', ')}` : null,
+    payload.bcc?.length ? `Bcc: ${payload.bcc.join(', ')}` : null,
+    `Subject: ${payload.subject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    payload.body,
+  ].filter(Boolean)
+
+  return encodeBase64Url(headers.join('\r\n'))
+}
+
 // ── Connection check ─────────────────────────────────────────────
 
 export async function isUserConnected(
@@ -174,7 +204,8 @@ export async function sendEmail(userId: string, payload: {
       ...(payload.bcc?.length ? { bcc: payload.bcc } : {}),
       subject: payload.subject,
       body: payload.body,
-      ...(payload.threadId && { threadId: payload.threadId }),
+      raw: buildMimeMessage(payload),
+      ...(payload.threadId ? { threadId: payload.threadId } : {}),
     })
     return { success: true, data: result, needsConnect: false }
   } catch (err: any) {

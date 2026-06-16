@@ -3,6 +3,8 @@ import 'server-only'
 import { db } from '@/server/db'
 import { userSettings } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
+import { invalidateSettingsCache } from '@/server/cache'
+import { redis } from '@/server/redis'
 
 export async function ensureUserSettings(userId: string): Promise<void> {
   const existing = await db.query.userSettings.findFirst({
@@ -49,6 +51,8 @@ export async function reconcileGoogleConnectionState(userId: string) {
       calendarConnected,
     })
     .where(eq(userSettings.userId, userId))
+
+  await invalidateSettingsCache(redis, userId).catch(() => null)
 
   return { gmailConnected, calendarConnected }
 }

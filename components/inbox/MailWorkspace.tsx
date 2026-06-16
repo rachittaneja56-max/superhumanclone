@@ -72,6 +72,7 @@ export function MailWorkspace({
       refetchOnWindowFocus: false,
     }
   );
+  const unreadCountsQuery = trpc.email.getUnreadCounts.useQuery({});
 
   const selected = useMemo(
     () => threads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || null,
@@ -90,6 +91,10 @@ export function MailWorkspace({
       .join("\n");
   }, [selected]);
   const sendMutation = trpc.email.sendEmail.useMutation();
+  const archiveMutation = trpc.email.archiveEmail.useMutation();
+  const deleteMutation = trpc.email.deleteEmail.useMutation();
+  const markReadMutation = trpc.email.markRead.useMutation();
+  const markUnreadMutation = trpc.email.markUnread.useMutation();
   const { startUndoWindow, countdown, cancel: cancelUndo, isPending: undoPending } = useUndoSend();
 
   useEffect(() => {
@@ -151,6 +156,107 @@ export function MailWorkspace({
     }
     router.push(`/inbox/${threadId}`);
   }, [replaceSearch, router, searchParams]);
+
+  useEffect(() => {
+    const openCompose = () => setComposeOpen(true);
+    const moveThread = (direction: 1 | -1) => {
+      if (!threads.length) return;
+      const currentId = activeThreadId ?? selected?.threadId ?? selected?.id ?? threads[0].threadId ?? threads[0].id;
+      const currentIndex = threads.findIndex((thread) => (thread.threadId || thread.id) === currentId);
+      const startIndex = currentIndex >= 0 ? currentIndex : 0;
+      const nextIndex = Math.min(threads.length - 1, Math.max(0, startIndex + direction));
+      const nextThread = threads[nextIndex];
+      const nextId = nextThread?.threadId || nextThread?.id;
+      if (nextId) {
+        openThread(nextId);
+      }
+    };
+    const openCurrent = () => {
+      const id = activeThreadId ?? selected?.threadId ?? selected?.id ?? threads[0]?.threadId ?? threads[0]?.id;
+      if (id) openThread(id);
+    };
+    const archiveCurrent = async () => {
+      const id = selected?.threadId || selected?.id;
+      if (!id) return;
+      try {
+        await archiveMutation.mutateAsync({ emailId: id });
+        closeThread();
+      } catch {
+        toast.error("Failed to archive mail.");
+      }
+    };
+    const trashCurrent = async () => {
+      const id = selected?.threadId || selected?.id;
+      if (!id) return;
+      try {
+        await deleteMutation.mutateAsync({ emailId: id });
+        closeThread();
+      } catch {
+        toast.error("Failed to trash mail.");
+      }
+    };
+    const toggleReadCurrent = async () => {
+      const id = selected?.threadId || selected?.id;
+      if (!id) return;
+      try {
+        if (selected?.isRead) {
+          await markUnreadMutation.mutateAsync({ emailIds: [id] });
+        } else {
+          await markReadMutation.mutateAsync({ emailIds: [id] });
+        }
+      } catch {
+        toast.error("Failed to update read state.");
+      }
+    };
+    const handleShortcut = (event: Event) => {
+      const key = (event as CustomEvent).type;
+      if (key === "aethra:compose-open") openCompose();
+      if (key === "aethra:thread-next") moveThread(1);
+      if (key === "aethra:thread-prev") moveThread(-1);
+      if (key === "aethra:thread-open") openCurrent();
+      if (key === "aethra:thread-archive") void archiveCurrent();
+      if (key === "aethra:thread-trash") void trashCurrent();
+      if (key === "aethra:thread-toggle-read") void toggleReadCurrent();
+      if (key === "aethra:escape-all") {
+        if (composeOpen) closeCompose();
+        if (selected) closeThread();
+        if (agentPanelOpen) closeAgentPanel();
+      }
+    };
+
+    window.addEventListener("aethra:compose-open", handleShortcut);
+    window.addEventListener("aethra:thread-next", handleShortcut);
+    window.addEventListener("aethra:thread-prev", handleShortcut);
+    window.addEventListener("aethra:thread-open", handleShortcut);
+    window.addEventListener("aethra:thread-archive", handleShortcut);
+    window.addEventListener("aethra:thread-trash", handleShortcut);
+    window.addEventListener("aethra:thread-toggle-read", handleShortcut);
+    window.addEventListener("aethra:escape-all", handleShortcut);
+    return () => {
+      window.removeEventListener("aethra:compose-open", handleShortcut);
+      window.removeEventListener("aethra:thread-next", handleShortcut);
+      window.removeEventListener("aethra:thread-prev", handleShortcut);
+      window.removeEventListener("aethra:thread-open", handleShortcut);
+      window.removeEventListener("aethra:thread-archive", handleShortcut);
+      window.removeEventListener("aethra:thread-trash", handleShortcut);
+      window.removeEventListener("aethra:thread-toggle-read", handleShortcut);
+      window.removeEventListener("aethra:escape-all", handleShortcut);
+    };
+  }, [
+    activeThreadId,
+    archiveMutation,
+    closeCompose,
+    closeThread,
+    composeOpen,
+    deleteMutation,
+    agentPanelOpen,
+    closeAgentPanel,
+    markReadMutation,
+    markUnreadMutation,
+    openThread,
+    selected,
+    threads,
+  ]);
 
   const fetchMore = useCallback(async () => {
     if (isFetchingMore || !hasMore || mailboxQuery.isLoading) return;
@@ -227,6 +333,11 @@ export function MailWorkspace({
                 <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
                   {threads.length}
                 </span>
+                {folder === "inbox" && unreadCountsQuery.data && (
+                  <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground-muted">
+                    {unreadCountsQuery.data.inbox} unread
+                  </span>
+                )}
               </div>
               <p className="mt-1 text-sm text-foreground-muted">
                 {selected

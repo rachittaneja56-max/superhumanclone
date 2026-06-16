@@ -3,6 +3,9 @@ import express from 'express';
 import { runAgentTurn } from '../agents/orchestrator';
 import { processTriageJob } from './triage-worker';
 import { processPurgeJob } from './purge-worker';
+import { processSendJob } from './send-worker';
+import { workerDb } from '../db/worker-index';
+import { redis } from '../redis';
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -48,6 +51,21 @@ app.post('/workers/purge', async (req: any, res: any) => {
     return res.json(result);
   } catch (error) {
     console.error('Purge worker error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.post('/workers/send', async (req: any, res: any) => {
+  if (!verifyWorkerSecret(req, res)) return;
+
+  try {
+    const result = await processSendJob(req.body, { db: workerDb, redis });
+    if (result.status === 400) {
+      return res.status(400).json({ error: result.error });
+    }
+    return res.json(result);
+  } catch (error) {
+    console.error('Send worker error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

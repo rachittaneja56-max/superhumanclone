@@ -18,6 +18,7 @@ import { useTheme } from "next-themes";
 
 export function CommandPalette() {
   const { commandPaletteOpen, closePalette } = useUIStore();
+  const openCheatsheet = useUIStore((state) => state.openCheatsheet);
   const router = useRouter();
   const { setTheme, theme } = useTheme();
   const [query, setQuery] = useState("");
@@ -130,7 +131,7 @@ export function CommandPalette() {
             <Moon className="mr-2 h-4 w-4" />
             <span>Toggle Dark Mode</span>
           </CommandItem>
-          <CommandItem onSelect={() => runCommand(() => console.log("Show shortcuts"))}>
+          <CommandItem onSelect={() => runCommand(() => openCheatsheet())}>
             <Keyboard className="mr-2 h-4 w-4" />
             <span>Keyboard Shortcuts (?)</span>
           </CommandItem>

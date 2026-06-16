@@ -6,20 +6,12 @@ import { isDomainBlocked } from '@/lib/domain-matcher'
 import { mapGmailMessageToEmailRow } from '@/server/corsair/email-mapper'
 import { redis } from '@/server/redis'
 import { Client } from '@upstash/qstash'
+import { invalidateMailCache } from '@/server/cache'
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' })
 
 async function invalidateUserMailCaches(userId: string, threadId?: string | null) {
-  const keys = [
-    `inbox:${userId}:active:50`,
-    `inbox:${userId}:archived:50`,
-    `mailbox:${userId}:inbox:50:`,
-    `mailbox:${userId}:drafts:50:`,
-    `mailbox:${userId}:sent:50:`,
-    `mailbox:${userId}:spam:50:`,
-    `mailbox:${userId}:trash:50:`,
-  ]
-  await Promise.all(keys.map((key) => redis.del(key).catch(() => null)))
+  await invalidateMailCache(redis, userId)
   if (threadId) {
     await redis.del(`thread:${userId}:${threadId}`).catch(() => null)
   }

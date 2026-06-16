@@ -3,7 +3,6 @@ import { emails, auditLogs, calendarEvents, autoReplyDrafts, users } from '@/ser
 import { eq, and, desc, gt, between, inArray, asc, or, ilike, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
-  sendEmail as corsairSendEmail,
   archiveEmail,
   restoreArchivedEmail,
   deleteEmail as corsairDeleteEmail,
@@ -16,13 +15,21 @@ import {
 import { generateDigest, rewriteDraft } from '@/server/ai/provider';
 import { Client } from '@upstash/qstash';
 import { mapEmailForListClient, mapEmailForThreadClient, redactSensitiveForClient } from '@/lib/email-client';
+import {
+  cacheTtls,
+  invalidateMailCache,
+  mailVersionKey,
+  mailboxCacheKey,
+  threadCacheKey,
+  unreadCountsCacheKey,
+} from '@/server/cache';
+import { processSendJob } from '@/server/workers/send-worker';
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' });
-const THREAD_CACHE_TTL = 60;
-const INBOX_CACHE_TTL = 30;
 
 import {
   getThreadsSchema,
+  getUnreadCountsSchema,
   getThreadSchema,
   markReadSchema,
   markUnreadSchema,
@@ -101,19 +108,31 @@ function normalizeSearchPattern(query: string) {
 }
 
 async function invalidateMailCaches(ctx: any, threadId?: string | null) {
-  const keys = [
-    `inbox:${ctx.userId}:active:50`,
-    `inbox:${ctx.userId}:archived:50`,
-    `mailbox:${ctx.userId}:inbox:50:`,
-    `mailbox:${ctx.userId}:drafts:50:`,
-    `mailbox:${ctx.userId}:sent:50:`,
-    `mailbox:${ctx.userId}:spam:50:`,
-    `mailbox:${ctx.userId}:trash:50:`,
-  ];
-  await Promise.all(keys.map((key) => ctx.redis.del(key).catch(() => null)));
+  await invalidateMailCache(ctx.redis, ctx.userId);
   if (threadId) {
     await ctx.redis.del(`thread:${ctx.userId}:${threadId}`).catch(() => null);
   }
+}
+
+async function queueSendJob(ctx: any, undoToken: string) {
+  if (!process.env.QSTASH_TOKEN) return null;
+
+  const baseUrl = process.env.RAILWAY_WORKER_URL || process.env.NEXT_PUBLIC_APP_URL;
+  if (!baseUrl) return null;
+
+  const { messageId } = await qstash.publishJSON({
+    url: `${baseUrl}/workers/send`,
+    body: {
+      userId: ctx.userId,
+      undoToken,
+    },
+    headers: { 'X-Worker-Secret': process.env.WORKER_SECRET || '' },
+    delay: '10s',
+    retries: 3,
+  });
+
+  await ctx.redis.set(`sendjob:${ctx.userId}:${undoToken}`, messageId, { ex: 600 });
+  return messageId;
 }
 
 async function publishMailboxEvent(
@@ -169,7 +188,8 @@ export const emailRouter = router({
     .use(createRateLimitMiddleware('getMailboxThreads', 240, 60))
     .input(mailboxSchema)
     .query(async ({ ctx, input }) => {
-      const cacheKey = `mailbox:${ctx.userId}:${input.folder}:${input.limit}:${input.offset}:${input.query || ''}`;
+      const version = Number((await ctx.redis.get<string>(mailVersionKey(ctx.userId!))) ?? '0');
+      const cacheKey = mailboxCacheKey(ctx.userId!, input.folder, version, input.limit, input.offset, input.query || '');
       const cached = await ctx.redis.get<string>(cacheKey);
       if (cached) {
         try {
@@ -201,7 +221,7 @@ export const emailRouter = router({
           receivedAt: draft.updatedAt || draft.createdAt || null,
           badges: ['Drafts'],
         }));
-        await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: 20 });
+        await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: cacheTtls.mailbox });
         return result;
       }
 
@@ -251,7 +271,7 @@ export const emailRouter = router({
             mailbox: 'sent',
           })
         );
-        await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: 20 });
+        await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: cacheTtls.mailbox });
         return mapped;
       }
 
@@ -296,7 +316,7 @@ export const emailRouter = router({
 
       const mapped = rows.map((r) => mapEmailForListClient({ ...r, mailbox: input.folder }));
 
-      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: 20 });
+      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: cacheTtls.mailbox });
       return mapped;
     }),
 
@@ -304,7 +324,8 @@ export const emailRouter = router({
     .use(createRateLimitMiddleware('getThreads', 200, 60))
     .input(getThreadsSchema)
     .query(async ({ ctx, input }) => {
-      const cacheKey = `inbox:${ctx.userId}:${input.isArchived ? 'archived' : 'active'}:${input.limit}`
+      const version = Number((await ctx.redis.get<string>(mailVersionKey(ctx.userId!))) ?? '0')
+      const cacheKey = `user:${ctx.userId}:threads:v1:${version}:${input.isArchived ? 'archived' : 'active'}:${input.limit}`
       const cached = await ctx.redis.get<string>(cacheKey)
       if (cached) {
         try {
@@ -411,14 +432,79 @@ export const emailRouter = router({
 
       const mapped = results.map((r) => mapEmailForListClient(r))
 
-      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: INBOX_CACHE_TTL })
+      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: cacheTtls.mailbox })
       return mapped;
+    }),
+
+  getUnreadCounts: protectedProcedure
+    .input(getUnreadCountsSchema)
+    .query(async ({ ctx }) => {
+      const version = Number((await ctx.redis.get<string>(mailVersionKey(ctx.userId!))) ?? '0');
+      const cacheKey = unreadCountsCacheKey(ctx.userId!, version);
+      const cached = await ctx.redis.get<string>(cacheKey);
+      if (cached) {
+        try {
+          return JSON.parse(cached) as {
+            inbox: number;
+            drafts: number;
+            sent: number;
+            spam: number;
+            trash: number;
+          };
+        } catch {}
+      }
+
+      const countRows = async (whereClause: any) => {
+        const rows = await ctx.db.select({ count: sql<number>`count(*)` }).from(emails).where(whereClause);
+        return Number(rows[0]?.count ?? 0);
+      };
+
+      const me = await ctx.db.query.users.findFirst({
+        where: eq(users.id, ctx.userId!),
+        columns: { email: true },
+      });
+
+      const [inboxUnread, draftsCount, sentCount, spamCount, trashCount] = await Promise.all([
+        countRows(and(
+          eq(emails.userId, ctx.userId!),
+          eq(emails.is_deleted, false),
+          eq(emails.is_archived, false),
+          eq(emails.is_read, false)
+        )),
+        ctx.redis.scard(`drafts:index:${ctx.userId}`).catch(() => 0),
+        countRows(and(
+          eq(emails.userId, ctx.userId!),
+          eq(emails.is_deleted, false),
+          me?.email ? eq(emails.from_address, me.email) : sql`false`
+        )),
+        countRows(and(
+          eq(emails.userId, ctx.userId!),
+          eq(emails.is_deleted, false),
+          or(eq(emails.tag, 'newsletter'), eq(emails.tag, 'social'))
+        )),
+        countRows(and(
+          eq(emails.userId, ctx.userId!),
+          eq(emails.is_deleted, true)
+        )),
+      ]);
+
+      const result = {
+        inbox: inboxUnread,
+        drafts: draftsCount,
+        sent: sentCount,
+        spam: spamCount,
+        trash: trashCount,
+      };
+
+      await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: cacheTtls.unread });
+      return result;
     }),
 
   getThread: protectedProcedure
     .input(getThreadSchema)
     .query(async ({ ctx, input }) => {
-      const cacheKey = `thread:${ctx.userId}:${input.threadId}`
+      const version = Number((await ctx.redis.get<string>(mailVersionKey(ctx.userId!))) ?? '0');
+      const cacheKey = threadCacheKey(ctx.userId!, input.threadId, version);
       const cached = await ctx.redis.get<string>(cacheKey)
       if (cached) {
         try {
@@ -517,12 +603,12 @@ export const emailRouter = router({
           orderBy: [asc(emails.created_at)]
         });
         const mapped = refreshed.map((email) => mapEmailForThreadClient(email))
-        await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: THREAD_CACHE_TTL })
+        await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: cacheTtls.thread })
         return mapped
       }
 
       const mapped = threadEmails.map((email) => mapEmailForThreadClient(email))
-      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: THREAD_CACHE_TTL })
+      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: cacheTtls.thread })
       return mapped;
     }),
 
@@ -932,6 +1018,7 @@ export const emailRouter = router({
     .mutation(async ({ ctx, input }) => {
       const undoToken = crypto.randomUUID();
       await ctx.redis.set(`undo:send:${ctx.userId}:${undoToken}`, JSON.stringify(input), { ex: 10 });
+      await queueSendJob(ctx, undoToken).catch(() => null);
       return { undoToken, expiresAt: Date.now() + 10000 };
     }),
 
@@ -939,65 +1026,16 @@ export const emailRouter = router({
     .use(createRateLimitMiddleware('sendConfirmed', 20, 3600))
     .input(sendConfirmedSchema)
     .mutation(async ({ ctx, input }) => {
-      const redisKey = `undo:send:${ctx.userId}:${input.undoToken}`;
-      const payloadStr = await ctx.redis.get<string>(redisKey);
-      
-      if (!payloadStr) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Send window expired or invalid token' });
-      }
-
-      const payload = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
-
-      const me = await ctx.db.query.users.findFirst({
-        where: eq(users.id, ctx.userId!),
-        columns: { email: true, name: true },
-      });
-
-      const sendResult = await corsairSendEmail(ctx.userId!, {
-        to: payload.to,
-        cc: payload.cc,
-        bcc: payload.bcc,
-        subject: payload.subject,
-        body: payload.body,
-        threadId: payload.threadId,
-      });
-
-      if (sendResult.needsConnect) {
+      const result = await processSendJob({ userId: ctx.userId!, undoToken: input.undoToken }, { db: ctx.db, redis: ctx.redis });
+      if (result.status === 'needs_connect') {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
       }
-
-      await ctx.redis.del(redisKey);
-      await invalidateMailCaches(ctx, payload.threadId);
-      await publishMailboxEvent(ctx.userId!, 'mail:sent', {
-        mailbox: 'sent',
-        threadId: payload.threadId ?? null,
-        delta: 1,
-      })
-
-      const sentMessageId = sendResult?.data?.id || sendResult?.data?.messageId || crypto.randomUUID();
-      await ctx.db.insert(emails).values({
-        userId: ctx.userId!,
-        corsair_message_id: sentMessageId,
-        thread_id: payload.threadId || sentMessageId,
-        from_address: me?.email || 'me@aethra.local',
-        from_name: me?.name || 'Me',
-        to_address: Array.isArray(payload.to) ? payload.to.join(', ') : payload.to,
-        subject: payload.subject,
-        snippet: redactSensitiveForClient(payload.body).slice(0, 180),
-        body_text: payload.body,
-        body_html: `<pre style="white-space:pre-wrap;font-family:inherit">${payload.body.replace(/[&<>]/g, (ch: string) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || ch))}</pre>`,
-        is_read: true,
-        is_archived: false,
-        is_deleted: false,
-        ai_triage_skipped: true,
-      }).onConflictDoNothing();
-
-      ctx.db.insert(auditLogs).values({
-        userId: ctx.userId!,
-        action: 'email_sent',
-        details: { recipientCount: Array.isArray(payload.to) ? payload.to.length : 1, threadId: payload.threadId ?? null }
-      }).catch(console.error);
-
+      if (result.status === 400) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.error });
+      }
+      if (result.status === 'skipped') {
+        return { success: true, skipped: true, reason: result.reason };
+      }
       return { success: true };
     }),
 
@@ -1048,6 +1086,13 @@ export const emailRouter = router({
     .input(cancelSendSchema)
     .mutation(async ({ ctx, input }) => {
       await ctx.redis.del(`undo:send:${ctx.userId}:${input.undoToken}`);
+      const jobId = await ctx.redis.get<string>(`sendjob:${ctx.userId}:${input.undoToken}`);
+      if (jobId && process.env.QSTASH_TOKEN) {
+        try {
+          await qstash.messages.delete(jobId);
+        } catch {}
+      }
+      await ctx.redis.del(`sendjob:${ctx.userId}:${input.undoToken}`).catch(() => null);
       return { cancelled: true };
     }),
 

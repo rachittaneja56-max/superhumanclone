@@ -7,6 +7,8 @@ export const getThreadsSchema = z.object({
   tag: z.string().optional(),
 });
 
+export const getUnreadCountsSchema = z.object({});
+
 export const getThreadSchema = z.object({
   threadId: z.string().min(1).max(200)
 });

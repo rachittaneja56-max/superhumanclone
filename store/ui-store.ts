@@ -14,6 +14,8 @@ interface UIState {
   clearSelectedEmails: () => void;
   openPalette: () => void;
   closePalette: () => void;
+  openCheatsheet: () => void;
+  closeCheatsheet: () => void;
   toggleCheatsheet: () => void;
   openAgentPanel: () => void;
   closeAgentPanel: () => void;
@@ -42,6 +44,8 @@ export const useUIStore = create<UIState>((set) => ({
   clearSelectedEmails: () => set({ selectedEmailIds: [] }),
   openPalette: () => set({ commandPaletteOpen: true, focusLayer: 1 }),
   closePalette: () => set((state) => ({ commandPaletteOpen: false, focusLayer: Math.max(0, state.focusLayer - 1) })),
+  openCheatsheet: () => set({ cheatsheetOpen: true }),
+  closeCheatsheet: () => set({ cheatsheetOpen: false }),
   toggleCheatsheet: () => set((state) => ({ cheatsheetOpen: !state.cheatsheetOpen })),
   openAgentPanel: () => set({ agentPanelOpen: true }),
   closeAgentPanel: () => set({ agentPanelOpen: false }),
