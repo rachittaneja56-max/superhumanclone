@@ -34,6 +34,8 @@ export function ComposeBox({
   const [rewriteState, setRewriteState] = useState<"idle" | "loading" | "preview">("idle");
   const [subject, setSubject] = useState("");
   const [to, setTo] = useState("");
+  const settingsQuery = trpc.settings.getUserSettings.useQuery({});
+  const aiAllowed = Boolean(settingsQuery.data?.aiEnabled && settingsQuery.data?.draftSuggestionsEnabled && settingsQuery.data?.privacyConfigured);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -76,6 +78,11 @@ export function ComposeBox({
   };
 
   const executeCommand = async (cmdId: typeof COMMANDS[number]["id"]) => {
+    if (!aiAllowed) {
+      toast.error("AI assist is disabled in settings.");
+      return;
+    }
+
     setShowSlashMenu(false);
     // Remove the slash from the draft
     const newDraft = draft.substring(0, slashIndex) + draft.substring(slashIndex + 1);
@@ -150,8 +157,7 @@ export function ComposeBox({
 
   return (
     <div
-      className="p-4 border-t sticky bottom-0 z-20 flex flex-col space-y-3 font-sans"
-      style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)" }}
+      className="sticky bottom-0 z-20 flex flex-col space-y-3 border-t border-border bg-surface p-4 font-sans"
     >
       {/* Basic To / Subject fields for stub compose - would be hidden if just replying */}
       <div className="flex space-x-2 mb-2">
@@ -172,6 +178,26 @@ export function ComposeBox({
       </div>
 
       <div className="relative w-full">
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">AI assist</span>
+          {COMMANDS.map((cmd) => (
+            <button
+              key={cmd.id}
+              type="button"
+              onClick={() => void executeCommand(cmd.id)}
+              disabled={!aiAllowed || rewriteState !== "idle" || isPending}
+              className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              /{cmd.id.replaceAll("_", "-")}
+            </button>
+          ))}
+          {!aiAllowed && (
+            <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-foreground-subtle">
+              AI unavailable
+            </span>
+          )}
+        </div>
+
         {rewriteState === "preview" ? (
           <div className="flex w-full space-x-4">
             <div className="flex-1 p-3 rounded-md border text-sm opacity-60" style={{ borderColor: "var(--border)" }}>

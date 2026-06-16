@@ -42,7 +42,7 @@ export function useUndoSend() {
     setActiveToken(token);
     setCountdown(10);
     
-    toastIdRef.current = toast(`Sending in 10s`, {
+    toastIdRef.current = toast("Email scheduled to send", {
       action: {
         label: 'Undo',
         onClick: cancel,
@@ -68,7 +68,7 @@ export function useUndoSend() {
         }
         
         if (toastIdRef.current) {
-           toast(`Sending in ${next}s`, {
+           toast(`Email scheduled to send in ${next}s`, {
              id: toastIdRef.current,
              action: {
                label: 'Undo',

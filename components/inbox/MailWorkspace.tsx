@@ -22,6 +22,13 @@ const FOLDER_LABELS: Record<Folder, string> = {
 };
 
 const PAGE_SIZE = 30;
+const AI_COMMANDS = [
+  { id: "improve_tone", label: "Improve" },
+  { id: "make_shorter", label: "Shorten" },
+  { id: "make_formal", label: "Formal" },
+  { id: "convert_to_bullets", label: "Bullets" },
+  { id: "translate", label: "Translate" },
+] as const;
 
 export function MailWorkspace({
   initialThreads,
@@ -65,7 +72,7 @@ export function MailWorkspace({
     [threads, activeThreadId]
   );
   const sendMutation = trpc.email.sendEmail.useMutation();
-  const { startUndoWindow } = useUndoSend();
+  const { startUndoWindow, countdown, cancel: cancelUndo, isPending: undoPending } = useUndoSend();
 
   useEffect(() => {
     setComposeOpen(composeFromUrl || initialComposeOpen);
@@ -184,8 +191,9 @@ export function MailWorkspace({
   return (
     <div className="flex h-full min-h-0 min-w-0 bg-background text-foreground">
       <main className="flex min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border bg-surface px-4 py-4 sm:px-5">
-          <div className="min-w-0 flex-1">
+        <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-4 sm:px-5">
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h1 className="truncate text-xl font-semibold sm:text-2xl">{FOLDER_LABELS[folder]}</h1>
               <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
@@ -197,10 +205,20 @@ export function MailWorkspace({
                 ? "Drafts stay saved while you work."
                 : "Click a conversation to open the thread pane."}
             </p>
+            </div>
+
+            <button
+              onClick={() => setComposeOpen(true)}
+              className="hidden shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01] sm:inline-flex"
+              style={{ backgroundColor: "var(--accent)" }}
+            >
+              <SquarePen className="h-4 w-4" />
+              Compose
+            </button>
           </div>
 
-          <div className="flex w-full items-center gap-2 sm:w-auto sm:min-w-[20rem] sm:flex-1 sm:max-w-xl">
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5">
               <Search className="h-4 w-4 shrink-0 text-foreground-subtle" />
               <input
                 value={query}
@@ -211,13 +229,27 @@ export function MailWorkspace({
             </div>
             <button
               onClick={() => setComposeOpen(true)}
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-accent-foreground sm:hidden"
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01] sm:hidden"
               style={{ backgroundColor: "var(--accent)" }}
             >
               <SquarePen className="h-4 w-4" />
               Compose
             </button>
           </div>
+          {undoPending && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent-subtle px-4 py-3 text-sm">
+              <div className="min-w-0">
+                <div className="font-medium text-foreground">Email scheduled to send{typeof countdown === "number" ? ` in ${countdown}s` : ""}</div>
+                <div className="text-xs text-foreground-muted">Undo before it leaves your outbox.</div>
+              </div>
+              <button
+                onClick={cancelUndo}
+                className="shrink-0 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-raised"
+              >
+                Undo
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -353,15 +385,23 @@ function ComposeModal({
 }) {
   const saveDraft = trpc.email.saveDraft.useMutation();
   const deleteDraft = trpc.email.deleteDraft.useMutation();
+  const rewriteMutation = trpc.email.rewriteDraft.useMutation();
+  const settingsQuery = trpc.settings.getUserSettings.useQuery({});
   const [draftId, setDraftId] = useState<string | undefined>(undefined);
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
   const [bcc, setBcc] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [originalBody, setOriginalBody] = useState("");
+  const [rewrittenBody, setRewrittenBody] = useState("");
+  const [rewriteState, setRewriteState] = useState<"idle" | "loading" | "preview">("idle");
   const [showCcBcc, setShowCcBcc] = useState(false);
+  const [showAiTools, setShowAiTools] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const aiAllowed = Boolean(settingsQuery.data?.aiEnabled && settingsQuery.data?.draftSuggestionsEnabled && settingsQuery.data?.privacyConfigured);
 
   const hasContent = [to, cc, bcc, subject, body].some((value) => value.trim().length > 0);
 
@@ -451,6 +491,45 @@ function ComposeModal({
     }
   }, [bcc, body, cc, deleteDraft, draftId, onSend, subject, to]);
 
+  const executeAiCommand = useCallback(async (command: typeof AI_COMMANDS[number]["id"]) => {
+    if (!aiAllowed) {
+      toast.error("AI assist is disabled in settings.");
+      return;
+    }
+
+    if (!body.trim()) {
+      toast.error("Write something first.");
+      return;
+    }
+
+    setShowAiTools(true);
+    setOriginalBody(body);
+    setRewriteState("loading");
+
+    try {
+      const result = await rewriteMutation.mutateAsync({
+        draft: body,
+        instruction: command,
+        translateTo: command === "translate" ? "Spanish" : undefined,
+      });
+      setRewrittenBody(result.rewritten);
+      setRewriteState("preview");
+    } catch {
+      toast.error("Could not rewrite this draft.");
+      setRewriteState("idle");
+    }
+  }, [aiAllowed, body, rewriteMutation]);
+
+  const acceptRewrite = useCallback(() => {
+    setBody(rewrittenBody);
+    setRewriteState("idle");
+  }, [rewrittenBody]);
+
+  const discardRewrite = useCallback(() => {
+    setBody(originalBody);
+    setRewriteState("idle");
+  }, [originalBody]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -491,7 +570,7 @@ function ComposeModal({
             placeholder="To"
             className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none transition-colors focus:border-accent"
           />
-          <div className="flex items-center justify-between text-xs text-foreground-muted">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-foreground-muted">
             <button
               type="button"
               onClick={() => setShowCcBcc((value) => !value)}
@@ -500,10 +579,73 @@ function ComposeModal({
               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showCcBcc ? "rotate-180" : ""}`} />
               Cc / Bcc
             </button>
-            <span>{draftId ? "Draft saved" : "New draft"}</span>
+            <div className="flex items-center gap-2">
+              <span>{draftId ? "Draft saved" : "New draft"}</span>
+              <button
+                type="button"
+                onClick={() => setShowAiTools((value) => !value)}
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-surface-raised"
+              >
+                AI assist
+              </button>
+              {!aiAllowed && (
+                <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-foreground-subtle">
+                  AI unavailable
+                </span>
+              )}
+            </div>
           </div>
 
-          {showCcBcc && (
+          {showAiTools && (
+            <div className="rounded-xl border border-border bg-background p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">AI tools</span>
+                {AI_COMMANDS.map((command) => (
+                  <button
+                    key={command.id}
+                    type="button"
+                    disabled={!aiAllowed || rewriteMutation.isPending || rewriteState === "loading"}
+                    onClick={() => void executeAiCommand(command.id)}
+                    className="rounded-full border border-border px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    /{command.id.replaceAll("_", "-")}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 text-[11px] text-foreground-subtle">
+                Privacy gate and AI settings must allow draft rewrites before these actions run.
+              </div>
+            </div>
+          )}
+
+          {rewriteState === "preview" ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-border bg-background p-3">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">Original</div>
+                <pre className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground-muted">{originalBody}</pre>
+              </div>
+              <div className="rounded-xl border border-accent/30 bg-accent-subtle p-3">
+                <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-accent">Preview</div>
+                <pre className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">{rewrittenBody}</pre>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={acceptRewrite}
+                    className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-foreground"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    onClick={discardRewrite}
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-surface-raised"
+                  >
+                    Discard
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : showCcBcc ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <input
                 value={cc}
@@ -518,20 +660,24 @@ function ComposeModal({
                 className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none transition-colors focus:border-accent"
               />
             </div>
-          )}
+          ) : null}
 
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder="Subject"
-            className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none transition-colors focus:border-accent"
-          />
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Write your message..."
-            className="min-h-[22rem] w-full rounded-xl border border-border bg-background px-3 py-3 text-sm leading-6 outline-none transition-colors focus:border-accent"
-          />
+          {rewriteState !== "preview" && (
+            <>
+              <input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                placeholder="Subject"
+                className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none transition-colors focus:border-accent"
+              />
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Write your message..."
+                className="min-h-[22rem] w-full rounded-xl border border-border bg-background px-3 py-3 text-sm leading-6 outline-none transition-colors focus:border-accent"
+              />
+            </>
+          )}
         </div>
 
         <div className="flex items-center justify-between border-t border-border bg-background/80 px-5 py-4">
