@@ -1,7 +1,7 @@
 import 'server-only'
 import { corsair } from '@/corsair'
 import { db } from '@/server/db'
-import { corsairAccounts } from '@/server/db/schema'
+import { corsairAccounts, corsairIntegrations } from '@/server/db/schema'
 import { eq, and } from 'drizzle-orm'
 
 // Type helper — plugins are dynamically attached, need 'as any'
@@ -43,13 +43,19 @@ export async function isUserConnected(
   userId: string,
   plugin: 'gmail' | 'googlecalendar'
 ): Promise<boolean> {
-  const account = await db.query.corsairAccounts.findFirst({
-    where: and(
-      eq(corsairAccounts.tenantId, userId),
-      eq(corsairAccounts.integrationId, plugin)
+  const result = await db
+    .select()
+    .from(corsairAccounts)
+    .innerJoin(corsairIntegrations, eq(corsairAccounts.integrationId, corsairIntegrations.id))
+    .where(
+      and(
+        eq(corsairAccounts.tenantId, userId),
+        eq(corsairIntegrations.name, plugin)
+      )
     )
-  })
-  return !!account
+    .limit(1)
+
+  return result.length > 0
 }
 
 import { generateOAuthUrl } from 'corsair/oauth'

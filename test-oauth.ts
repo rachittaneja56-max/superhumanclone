@@ -1,10 +1,18 @@
-import { corsair } from './corsair'
+import { corsair } from './corsair.ts';
+import { generateOAuthUrl } from 'corsair/oauth';
 
-async function run() {
-  console.log('manage keys:', Object.keys(corsair.manage))
-  console.log('manage.plugins keys:', Object.keys(corsair.manage.plugins))
-  console.log('manage.tenants keys:', Object.keys(corsair.manage.tenants))
-  console.log('manage.connectionStatus keys:', Object.keys(corsair.manage.connectionStatus))
+async function main() {
+  try {
+    const result = await generateOAuthUrl(corsair, 'gmail', {
+      tenantId: 'test-user',
+      redirectUri: process.env.NEXT_PUBLIC_APP_URL + '/api/corsair/callback',
+    });
+    console.log('Result:', result.url);
+  } catch (error) {
+    console.error('Error:', error);
+  } finally {
+    process.exit(0);
+  }
 }
 
-run()
+main();
