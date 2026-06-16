@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { Archive, CalendarIcon, Forward, MailCheck, MailOpen, Reply, ReplyAll, RotateCcw, Trash2 } from "lucide-react";
-import { ComposeBox } from "./ComposeBox";
+import { Archive, Forward, MailCheck, MailOpen, Reply, ReplyAll, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { EmailThreadClientItem } from "@/lib/email-client";
 
@@ -11,10 +10,19 @@ export function ThreadView({
   threadId,
   compact = false,
   mailbox = "inbox",
+  onReplyCompose,
 }: {
   threadId: string;
   compact?: boolean;
   mailbox?: "inbox" | "drafts" | "sent" | "spam" | "trash";
+  onReplyCompose?: (draft: {
+    to?: string;
+    cc?: string;
+    bcc?: string;
+    subject?: string;
+    body?: string;
+    threadId?: string;
+  }) => void;
 }) {
   const { data: thread, isLoading, isError } = trpc.email.getThread.useQuery({ threadId });
   const markRead = trpc.email.markRead.useMutation();
@@ -34,8 +42,6 @@ export function ThreadView({
     onSuccess: () => toast.success("Restored from trash"),
     onError: () => toast.error("Failed to restore"),
   });
-
-  const [replyMode, setReplyMode] = useState<"reply" | "replyAll" | "forward" | null>(null);
 
   const typedThread = (thread as EmailThreadClientItem[] | undefined) ?? [];
   const firstEmailId = typedThread[0]?.id;
@@ -71,34 +77,59 @@ export function ThreadView({
 
   const subject = typedThread[0]?.subject || "(No Subject)";
   const showTldr = typedThread[0]?.tldr && !typedThread[0]?.aiTriageSkipped;
-  const combinedSnippets = typedThread.map((email) => email.snippet).join(" ");
-  const meetingRegex = /\b(meet|call|sync|chat|zoom|teams|schedule|availability|calendar|invite)\b/i;
-  const hasMeetingIntent = meetingRegex.test(combinedSnippets);
   const primaryEmailId = typedThread[0]?.threadId || typedThread[0]?.id || "";
   const latest = typedThread[typedThread.length - 1];
   const unreadIds = typedThread.filter((email) => !email.isRead).map((email) => email.id);
   const hasUnread = unreadIds.length > 0;
   const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
   const forwardSubject = subject.toLowerCase().startsWith("fwd:") ? subject : `Fwd: ${subject}`;
+  const handleReplyCompose = (mode: "reply" | "replyAll" | "forward") => {
+    if (!onReplyCompose) {
+      toast.error("Compose is unavailable right now.");
+      return;
+    }
+
+    onReplyCompose(
+      mode === "forward"
+        ? {
+            subject: forwardSubject,
+            body: `\n\n--- Forwarded message ---\nFrom: ${latest?.senderName || latest?.senderAddress || ""}\nDate: ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : ""}\nSubject: ${subject}\n`,
+            threadId,
+          }
+        : {
+            to:
+              mode === "replyAll"
+                ? Array.from(
+                    new Set(
+                      typedThread
+                        .flatMap((email) => [email.senderAddress, email.recipientAddress])
+                        .filter(Boolean) as string[]
+                    )
+                  ).join(", ")
+                : latest?.senderAddress || "",
+            subject: replySubject,
+            body: `\n\nOn ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : "a previous date"}, ${latest?.senderName || latest?.senderAddress || "someone"} wrote:\n`,
+            threadId,
+          }
+    );
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface font-sans">
       <div className="shrink-0 border-b border-border bg-surface px-4 py-5 sm:px-6">
         <div className="min-w-0">
-          <h2 className="max-w-[32rem] truncate font-display text-2xl font-semibold tracking-tight text-[var(--text)] sm:text-[1.75rem]">
+          <h2 className="max-w-[40rem] truncate font-display text-2xl font-semibold tracking-tight text-[var(--text)] sm:text-[1.75rem]">
             {subject}
           </h2>
-          <div className="mt-3 flex flex-wrap gap-2 text-sm text-foreground-muted">
-            <span className="rounded-full border border-border bg-background px-3 py-1">{typedThread[0]?.senderName || "Unknown sender"}</span>
-            <span className="rounded-full border border-border bg-background px-3 py-1">{typedThread[0]?.recipientSummary || "Recipients hidden"}</span>
-            <span className="rounded-full border border-border bg-background px-3 py-1">{formatDateLabel(typedThread[0]?.createdAt)}</span>
-          </div>
+          <p className="mt-2 text-sm text-foreground-muted">
+            {typedThread.length} message{typedThread.length === 1 ? "" : "s"} in this thread
+          </p>
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          <ActionButton onClick={() => setReplyMode("reply")} icon={<Reply className="h-4 w-4" />} label="Reply" />
-          <ActionButton onClick={() => setReplyMode("replyAll")} icon={<ReplyAll className="h-4 w-4" />} label="Reply all" />
-          <ActionButton onClick={() => setReplyMode("forward")} icon={<Forward className="h-4 w-4" />} label="Forward" />
+          <ActionButton onClick={() => handleReplyCompose("reply")} icon={<Reply className="h-4 w-4" />} label="Reply" />
+          <ActionButton onClick={() => handleReplyCompose("replyAll")} icon={<ReplyAll className="h-4 w-4" />} label="Reply all" />
+          <ActionButton onClick={() => handleReplyCompose("forward")} icon={<Forward className="h-4 w-4" />} label="Forward" />
           {mailbox === "trash" ? (
             <ActionButton
               onClick={() => restoreMutation.mutate({ emailId: primaryEmailId })}
@@ -141,60 +172,12 @@ export function ThreadView({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-          {typedThread.map((email) => (
-            <EmailMessage key={email.id} email={email} />
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+          {typedThread.map((email, index) => (
+            <EmailMessageCard key={email.id} email={email} showRecipientSummary={index === 0} />
           ))}
         </div>
       </div>
-
-      {replyMode && (
-        <div className="shrink-0 border-t border-border bg-surface px-4 py-4 sm:px-6">
-          <ComposeBox
-            threadId={threadId}
-            replyTo={
-              replyMode === "forward"
-                ? {
-                    subject: forwardSubject,
-                    bodyPrefix: `\n\n--- Forwarded message ---\nFrom: ${latest?.senderName || latest?.senderAddress || ""}\nDate: ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : ""}\nSubject: ${subject}\n`,
-                  }
-                : {
-                    to:
-                      replyMode === "replyAll"
-                        ? Array.from(
-                            new Set(
-                              typedThread
-                                .flatMap((email) => [email.senderAddress, email.recipientAddress])
-                                .filter(Boolean) as string[]
-                            )
-                          ).join(", ")
-                        : latest?.senderAddress || "",
-                    subject: replySubject,
-                    bodyPrefix: `\n\nOn ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : "a previous date"}, ${latest?.senderName || latest?.senderAddress || "someone"} wrote:\n`,
-                  }
-            }
-          />
-          <div className="mt-3 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setReplyMode(null)}
-              className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-raised"
-            >
-              Close composer
-            </button>
-          </div>
-        </div>
-      )}
-
-      {hasMeetingIntent && !compact && (
-        <button
-          onClick={() => toast.message("Calendar smart actions are coming next.")}
-          className="fixed bottom-6 right-8 z-50 flex items-center space-x-2 rounded-full bg-amber-500 px-5 py-3 text-white shadow-lg transition-transform hover:scale-105 hover:bg-amber-600"
-        >
-          <CalendarIcon className="h-5 w-5" />
-          <span className="text-sm font-medium">Schedule from thread</span>
-        </button>
-      )}
     </div>
   );
 }
@@ -261,7 +244,13 @@ function ActionButton({
   );
 }
 
-function EmailMessage({ email }: { email: EmailThreadClientItem }) {
+function EmailMessageCard({
+  email,
+  showRecipientSummary,
+}: {
+  email: EmailThreadClientItem;
+  showRecipientSummary: boolean;
+}) {
   const createdLabel = formatDateLabel(email.createdAt);
 
   return (
@@ -277,10 +266,10 @@ function EmailMessage({ email }: { email: EmailThreadClientItem }) {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="truncate text-base font-semibold text-[var(--text)]">{email.senderName}</div>
-            <div className="mt-2 flex flex-wrap gap-2 text-xs text-foreground-subtle">
-              <span className="rounded-full border border-border bg-background px-2.5 py-1">{email.recipientSummary}</span>
-              <span className="rounded-full border border-border bg-background px-2.5 py-1">{createdLabel}</span>
-            </div>
+            <div className="mt-1 text-xs text-foreground-subtle">{createdLabel}</div>
+            {showRecipientSummary && (
+              <div className="mt-2 text-xs text-foreground-subtle">{email.recipientSummary}</div>
+            )}
           </div>
         </div>
       </div>
@@ -292,7 +281,8 @@ function EmailMessage({ email }: { email: EmailThreadClientItem }) {
             sandbox=""
             referrerPolicy="no-referrer"
             title={`Email from ${email.senderName}`}
-            className="min-h-[28rem] w-full border-0"
+            className="block w-full border-0"
+            style={{ height: "min(72vh, 50rem)" }}
           />
         </div>
       ) : (

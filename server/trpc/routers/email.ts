@@ -1069,7 +1069,9 @@ export const emailRouter = router({
     .input(sendEmailSchema)
     .mutation(async ({ ctx, input }) => {
       const undoToken = crypto.randomUUID();
-      await ctx.redis.set(`undo:send:${ctx.userId}:${undoToken}`, JSON.stringify(input), { ex: 10 });
+      // Keep the payload alive longer than the undo window so the queued job
+      // still has something to send even if QStash fires a little late.
+      await ctx.redis.set(`undo:send:${ctx.userId}:${undoToken}`, JSON.stringify(input), { ex: 300 });
       await queueSendJob(ctx, undoToken).catch(() => null);
       return { undoToken, expiresAt: Date.now() + 10000 };
     }),

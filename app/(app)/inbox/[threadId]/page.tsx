@@ -1,6 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import { ThreadView } from '@/components/inbox/ThreadView'
+import { ThreadPageClient } from '@/components/inbox/ThreadPageClient'
 import Link from 'next/link'
 
 export default async function ThreadViewPage({ params }: { params: { threadId: string } }) {
@@ -18,7 +18,7 @@ export default async function ThreadViewPage({ params }: { params: { threadId: s
         </Link>
       </div>
       <div className="min-h-0 flex-1">
-        <ThreadView threadId={params.threadId} />
+        <ThreadPageClient threadId={params.threadId} />
       </div>
     </div>
   )

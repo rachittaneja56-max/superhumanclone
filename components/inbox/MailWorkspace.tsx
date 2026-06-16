@@ -14,6 +14,14 @@ import { AgentChat } from "@/components/agent/AgentChat";
 import { useUIStore } from "@/store/ui-store";
 
 type Folder = "inbox" | "drafts" | "sent" | "spam" | "trash";
+export type ComposeDraft = {
+  to?: string;
+  cc?: string;
+  bcc?: string;
+  subject?: string;
+  body?: string;
+  threadId?: string;
+};
 
 const FOLDER_LABELS: Record<Folder, string> = {
   inbox: "Inbox",
@@ -52,6 +60,7 @@ export function MailWorkspace({
 
   const [query, setQuery] = useState("");
   const [composeOpen, setComposeOpen] = useState(initialComposeOpen);
+  const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [threads, setThreads] = useState<EmailListClientItem[]>(initialMailboxPage.items);
   const [nextPageToken, setNextPageToken] = useState<string | null>(initialMailboxPage.nextPageToken);
@@ -137,6 +146,7 @@ export function MailWorkspace({
 
   const closeCompose = useCallback(() => {
     setComposeOpen(false);
+    setComposeDraft(null);
     const params = new URLSearchParams(searchParams.toString());
     params.delete("compose");
     replaceSearch(params);
@@ -159,6 +169,14 @@ export function MailWorkspace({
     }
     router.push(`/inbox/${threadId}`);
   }, [replaceSearch, router, searchParams]);
+
+  const openReplyComposer = useCallback((draft: ComposeDraft) => {
+    setComposeDraft(draft);
+    setComposeOpen(true);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("compose", "true");
+    replaceSearch(params);
+  }, [replaceSearch, searchParams]);
 
   useEffect(() => {
     const openCompose = () => setComposeOpen(true);
@@ -392,13 +410,17 @@ export function MailWorkspace({
               </button>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden">
-              {folder === "drafts" ? (
-                <DraftPreviewCard draft={selected} />
-              ) : (
-                <ThreadView threadId={selected.threadId || selected.id} mailbox={folder} />
-              )}
+                {folder === "drafts" ? (
+                  <DraftPreviewCard draft={selected} />
+                ) : (
+                  <ThreadView
+                    threadId={selected.threadId || selected.id}
+                    mailbox={folder}
+                    onReplyCompose={openReplyComposer}
+                  />
+                )}
+              </div>
             </div>
-          </div>
         ) : (
           <div className="flex min-h-0 flex-1 overflow-hidden">
             <section className="min-w-0 flex-1">
@@ -569,14 +591,21 @@ export function MailWorkspace({
         </aside>
       )}
 
-      {composeOpen && <ComposeModal onClose={closeCompose} onSend={handleSend} />}
+      {composeOpen && (
+        <ComposeModal
+          onClose={closeCompose}
+          onSend={handleSend}
+          initialDraft={composeDraft ?? undefined}
+        />
+      )}
     </div>
   );
 }
 
-function ComposeModal({
+export function ComposeModal({
   onClose,
   onSend,
+  initialDraft,
 }: {
   onClose: () => void;
   onSend: (payload: {
@@ -587,6 +616,7 @@ function ComposeModal({
     body: string;
     threadId?: string;
   }) => Promise<void>;
+  initialDraft?: ComposeDraft;
 }) {
   const saveDraft = trpc.email.saveDraft.useMutation();
   const deleteDraft = trpc.email.deleteDraft.useMutation();
@@ -609,6 +639,20 @@ function ComposeModal({
   const aiAllowed = Boolean(settingsQuery.data?.aiEnabled && settingsQuery.data?.draftSuggestionsEnabled && settingsQuery.data?.privacyConfigured);
 
   const hasContent = [to, cc, bcc, subject, body].some((value) => value.trim().length > 0);
+
+  useEffect(() => {
+    if (!initialDraft) return;
+    setDraftId(undefined);
+    setTo(initialDraft.to ?? "");
+    setCc(initialDraft.cc ?? "");
+    setBcc(initialDraft.bcc ?? "");
+    setSubject(initialDraft.subject ?? "");
+    setBody(initialDraft.body ?? "");
+    setShowAiTools(false);
+    setRewriteState("idle");
+    setOriginalBody("");
+    setRewrittenBody("");
+  }, [initialDraft]);
 
   useEffect(() => {
     if (saveTimerRef.current) {
@@ -886,7 +930,7 @@ function ComposeModal({
         </div>
 
         <div className="flex items-center justify-between border-t border-border bg-background/80 px-5 py-4">
-          <div className="text-xs text-foreground-subtle">Press Ctrl/Cmd + Enter to send</div>
+          <div className="text-xs text-foreground-subtle">Type / for AI suggestions.</div>
           <div className="flex gap-2">
             <button
               onClick={() => void closeWithConfirm()}

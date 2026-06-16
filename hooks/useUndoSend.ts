@@ -8,6 +8,7 @@ export function useUndoSend() {
   
   const sendConfirmed = trpc.email.sendConfirmed.useMutation();
   const cancelSend = trpc.email.cancelSend.useMutation();
+  const utils = trpc.useUtils();
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const toastIdRef = useRef<string | number | null>(null);
@@ -56,12 +57,21 @@ export function useUndoSend() {
         const next = prev - 1;
         if (next <= 0) {
           clearTimer();
-          
-          sendConfirmed.mutateAsync({ undoToken: token }).then(() => {
-            toast.success("Message sent");
-          }).catch(() => {
-            toast.error("Failed to send message");
-          });
+
+          void (async () => {
+            try {
+              const result = await sendConfirmed.mutateAsync({ undoToken: token });
+              if (result?.success && !result?.skipped) {
+                await Promise.all([
+                  utils.email.getThreads.invalidate(),
+                  utils.email.getMailboxThreads.invalidate(),
+                ]).catch(() => null);
+                toast.success("Message sent");
+              }
+            } catch {
+              toast.error("Failed to send message");
+            }
+          })();
           
           setActiveToken(null);
           return null;
@@ -81,7 +91,7 @@ export function useUndoSend() {
         return next;
       });
     }, 1000);
-  }, [cancel, clearTimer, sendConfirmed]);
+  }, [cancel, clearTimer, sendConfirmed, utils]);
 
   useEffect(() => {
     return () => clearTimer();
