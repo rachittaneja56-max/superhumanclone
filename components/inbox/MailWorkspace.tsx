@@ -7,6 +7,7 @@ import { CalendarDays, ChevronRight, Search, SquarePen } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
+import type { EmailListClientItem } from "@/lib/email-client";
 
 type Folder = "inbox" | "drafts" | "sent" | "spam" | "trash";
 
@@ -23,7 +24,7 @@ export function MailWorkspace({
   initialFolder,
   initialComposeOpen,
 }: {
-  initialThreads: any[];
+  initialThreads: EmailListClientItem[];
   initialFolder: Folder;
   initialComposeOpen: boolean;
 }) {
@@ -37,17 +38,18 @@ export function MailWorkspace({
   const folder = normalizeFolder(searchParams.get("folder") ?? initialFolder);
   const composeFromUrl = searchParams.get("compose") === "true";
 
-  const { data: threads = initialThreads } = trpc.email.getMailboxThreads.useQuery(
+  const mailboxQuery = trpc.email.getMailboxThreads.useQuery(
     { folder, limit: 50, query },
     {
       initialData: folder === initialFolder && !query ? initialThreads : undefined,
-      placeholderData: (prev: any) => prev,
+      placeholderData: (prev: EmailListClientItem[] | undefined) => prev,
       refetchOnWindowFocus: false,
     }
   );
 
+  const threads = (mailboxQuery.data ?? initialThreads) as EmailListClientItem[];
   const selected = useMemo(
-    () => threads.find((t: any) => (t.threadId || t.id) === activeThreadId) || threads[0],
+    () => threads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || threads[0],
     [threads, activeThreadId]
   );
   const sendMutation = trpc.email.sendEmail.useMutation();
@@ -127,13 +129,27 @@ export function MailWorkspace({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {threads.length === 0 ? (
+          {mailboxQuery.isLoading && threads.length === 0 ? (
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-3 py-3 sm:px-4">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="w-full animate-pulse rounded-2xl border border-border bg-surface px-4 py-4">
+                  <div className="h-4 w-1/3 rounded bg-surface-overlay" />
+                  <div className="mt-3 h-4 w-2/3 rounded bg-surface-overlay" />
+                  <div className="mt-3 h-3 w-full rounded bg-surface-overlay" />
+                </div>
+              ))}
+            </div>
+          ) : mailboxQuery.isError ? (
+            <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
+              We couldn&apos;t load this mailbox right now.
+            </div>
+          ) : threads.length === 0 ? (
             <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
               No mail in this folder yet.
             </div>
           ) : (
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-3 py-3 sm:px-4">
-              {threads.map((thread: any) => {
+              {threads.map((thread) => {
                 const id = thread.threadId || thread.id;
                 const active = id === activeThreadId;
                 return (
@@ -144,7 +160,7 @@ export function MailWorkspace({
                       if (folder !== "drafts") router.push(`/inbox/${id}`);
                     }}
                     className={[
-                      "w-full rounded-2xl border px-4 py-4 text-left transition-colors",
+                      "w-full overflow-hidden rounded-2xl border px-4 py-4 text-left transition-colors",
                       active
                         ? "border-accent/40 bg-accent/8"
                         : "border-border bg-surface hover:bg-surface-overlay",
@@ -153,17 +169,29 @@ export function MailWorkspace({
                     <div className="flex min-w-0 items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-semibold text-foreground">
-                          {thread.fromName || thread.from_name || thread.fromAddress || thread.from_address || "Unknown"}
+                          {thread.senderName || "Unknown sender"}
                         </div>
                         <div className="mt-1 truncate text-sm text-foreground">
                           {thread.subject || "(no subject)"}
                         </div>
-                        <div className="mt-1 line-clamp-2 text-xs leading-5 text-foreground-muted">
-                          {thread.snippet || thread.body || "No preview available."}
+                        <div className="mt-1 line-clamp-2 break-words text-xs leading-5 text-foreground-muted">
+                          {thread.snippet || "No preview available."}
                         </div>
+                        {thread.badges.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {thread.badges.slice(0, 2).map((badge) => (
+                              <span
+                                key={badge}
+                                className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-foreground-subtle"
+                              >
+                                {badge}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="shrink-0 text-right text-xs text-foreground-subtle">
-                        {thread.receivedAt ? formatDistanceToNow(new Date(thread.receivedAt), { addSuffix: true }) : ""}
+                        {thread.receivedAt ? formatDistanceToNow(new Date(thread.receivedAt), { addSuffix: true }) : "Unknown"}
                       </div>
                     </div>
                   </button>
@@ -184,9 +212,9 @@ export function MailWorkspace({
             <div className="space-y-3 rounded-2xl border border-border bg-background/40 p-4">
               <div className="text-sm font-medium">{selected.subject || "(no subject)"}</div>
               <div className="text-sm text-foreground-muted">
-                {selected.fromName || selected.from_name || selected.fromAddress || selected.from_address}
+                {selected.senderName || "Unknown sender"}
               </div>
-              <div className="text-sm leading-6 text-foreground-muted">
+              <div className="line-clamp-6 text-sm leading-6 text-foreground-muted">
                 {selected.snippet || "Open the thread to view the full message."}
               </div>
               <button

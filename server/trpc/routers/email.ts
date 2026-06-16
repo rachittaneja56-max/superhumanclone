@@ -12,6 +12,7 @@ import {
 } from '@/server/corsair/client';
 import { generateDigest, rewriteDraft } from '@/server/ai/provider';
 import { Client } from '@upstash/qstash';
+import { mapEmailForListClient, mapEmailForThreadClient, redactSensitiveForClient } from '@/lib/email-client';
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' });
 const THREAD_CACHE_TTL = 60;
@@ -108,6 +109,29 @@ async function invalidateMailCaches(ctx: any, threadId?: string | null) {
   }
 }
 
+async function resolveEmailActionTarget(
+  ctx: any,
+  identifier: string
+): Promise<{ id: string; corsair_message_id: string; thread_id: string | null } | null> {
+  const row = await ctx.db.query.emails.findFirst({
+    where: and(
+      eq(emails.userId, ctx.userId!),
+      or(
+        eq(emails.corsair_message_id, identifier),
+        eq(emails.id, identifier),
+        eq(emails.thread_id, identifier)
+      )
+    ),
+    columns: {
+      id: true,
+      corsair_message_id: true,
+      thread_id: true,
+    },
+    orderBy: [asc(emails.created_at)],
+  })
+  return row ?? null
+}
+
 export const emailRouter = router({
   getMailboxThreads: protectedProcedure
     .use(createRateLimitMiddleware('getMailboxThreads', 240, 60))
@@ -134,7 +158,17 @@ export const emailRouter = router({
           if (!q) return true;
           return [draft.to, draft.subject, draft.body].join(' ').toLowerCase().includes(q);
         }).sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
-        const result = filtered.slice(0, input.limit);
+        const result = filtered.slice(0, input.limit).map((draft: any) => ({
+          id: draft.id,
+          threadId: draft.threadId || draft.id,
+          mailbox: 'drafts',
+          senderName: 'Draft',
+          subject: redactSensitiveForClient(draft.subject) || '(no subject)',
+          snippet: redactSensitiveForClient(draft.body) || 'Draft in progress.',
+          isRead: true,
+          receivedAt: draft.updatedAt || draft.createdAt || null,
+          badges: ['Drafts'],
+        }));
         await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: 20 });
         return result;
       }
@@ -176,12 +210,14 @@ export const emailRouter = router({
           orderBy: [desc(emails.created_at)],
           limit: input.limit,
         });
-        const mapped = rows.map((r) => ({
-          ...r,
-          mailbox: 'sent',
-          fromName: r.from_name || me?.name || r.from_address,
-          fromAddress: r.from_address,
-        }));
+        const mapped = rows.map((r) =>
+          mapEmailForListClient({
+            ...r,
+            from_name: me?.name || r.from_name || 'Me',
+            from_address: r.from_address,
+            mailbox: 'sent',
+          })
+        );
         await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: 20 });
         return mapped;
       }
@@ -224,14 +260,7 @@ export const emailRouter = router({
         limit: input.limit,
       });
 
-      const mapped = rows.map((r) => ({
-        ...r,
-        mailbox: input.folder,
-        threadId: r.thread_id || r.id,
-        fromAddress: r.from_address,
-        fromName: r.from_name,
-        receivedAt: r.created_at,
-      }));
+      const mapped = rows.map((r) => mapEmailForListClient({ ...r, mailbox: input.folder }));
 
       await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: 20 });
       return mapped;
@@ -346,18 +375,7 @@ export const emailRouter = router({
         }
       }
 
-      const mapped = results.map(r => ({
-        id: r.id,
-        threadId: r.thread_id || r.id,
-        fromAddress: r.from_address,
-        fromName: r.from_name,
-        subject: r.subject,
-        snippet: r.snippet,
-        isRead: r.is_read,
-        aiTriageSkipped: r.ai_triage_skipped,
-        tldr: r.tldr,
-        receivedAt: r.created_at,
-      }))
+      const mapped = results.map((r) => mapEmailForListClient(r))
 
       await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: INBOX_CACHE_TTL })
       return mapped;
@@ -457,17 +475,21 @@ export const emailRouter = router({
       }
 
       if (hydrated) {
-        return ctx.db.query.emails.findMany({
+        const refreshed = await ctx.db.query.emails.findMany({
           where: and(
             eq(emails.thread_id, input.threadId),
             eq(emails.userId, ctx.userId!)
           ),
           orderBy: [asc(emails.created_at)]
         });
+        const mapped = refreshed.map((email) => mapEmailForThreadClient(email))
+        await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: THREAD_CACHE_TTL })
+        return mapped
       }
 
-      await ctx.redis.set(cacheKey, JSON.stringify(threadEmails), { ex: THREAD_CACHE_TTL })
-      return threadEmails;
+      const mapped = threadEmails.map((email) => mapEmailForThreadClient(email))
+      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: THREAD_CACHE_TTL })
+      return mapped;
     }),
 
   markRead: protectedProcedure
@@ -562,7 +584,10 @@ export const emailRouter = router({
     .input(archiveEmailSchema)
     .mutation(async ({ ctx, input }) => {
       // Archive in Corsair/Gmail
-      const archiveResult = await archiveEmail(ctx.userId!, input.emailId)
+      const target = await resolveEmailActionTarget(ctx, input.emailId)
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND' })
+
+      const archiveResult = await archiveEmail(ctx.userId!, target.corsair_message_id)
       if (archiveResult.needsConnect) {
         throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
       }
@@ -570,24 +595,20 @@ export const emailRouter = router({
       // Also update local DB if it exists (for cache/UI purposes)
       const localResult = await ctx.db.update(emails)
         .set({ is_archived: true })
-        .where(and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)))
+        .where(and(eq(emails.corsair_message_id, target.corsair_message_id), eq(emails.userId, ctx.userId!)))
         .returning({ id: emails.id });
 
       await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
-      const thread = await ctx.db.query.emails.findFirst({
-        where: and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)),
-        columns: { thread_id: true },
-      })
-      if (thread?.thread_id) await ctx.redis.del(`thread:${ctx.userId}:${thread.thread_id}`)
+      if (target.thread_id) await ctx.redis.del(`thread:${ctx.userId}:${target.thread_id}`)
 
       // Fire and forget audit log
       ctx.db.insert(auditLogs).values({
         userId: ctx.userId!,
         action: 'email_archived',
-        details: { emailId: input.emailId }
+        details: { emailId: target.thread_id || target.id }
       }).catch(console.error);
 
-      return { success: true, id: localResult[0]?.id || input.emailId };
+      return { success: true, id: localResult[0]?.id || target.id };
     }),
 
   restoreFromArchive: protectedProcedure
@@ -595,28 +616,25 @@ export const emailRouter = router({
     .mutation(async ({ ctx, input }) => {
       // NOTE: Our client currently doesn't implement unarchive via Corsair,
       // but to match previous local behavior:
+      const target = await resolveEmailActionTarget(ctx, input.emailId)
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND' })
+
       const localResult = await ctx.db.update(emails)
         .set({ is_archived: false })
-        .where(and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)))
+        .where(and(eq(emails.corsair_message_id, target.corsair_message_id), eq(emails.userId, ctx.userId!)))
         .returning({ id: emails.id });
 
       await ctx.redis.del(`inbox:${ctx.userId}:archived:50`)
-      const thread = await ctx.db.query.emails.findFirst({
-        where: and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)),
-        columns: { thread_id: true },
-      })
-      if (thread?.thread_id) await ctx.redis.del(`thread:${ctx.userId}:${thread.thread_id}`)
+      if (target.thread_id) await ctx.redis.del(`thread:${ctx.userId}:${target.thread_id}`)
 
-      return { success: true, id: localResult[0]?.id || input.emailId };
+      return { success: true, id: localResult[0]?.id || target.id };
     }),
 
   deleteEmail: protectedProcedure
     .input(deleteEmailSchema)
     .mutation(async ({ ctx, input }) => {
       // 1. Fetch row to verify ownership
-      const email = await ctx.db.query.emails.findFirst({
-        where: and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!))
-      });
+      const email = await resolveEmailActionTarget(ctx, input.emailId);
       if (!email) throw new TRPCError({ code: 'NOT_FOUND' });
 
       // 2. Soft delete
@@ -632,14 +650,14 @@ export const emailRouter = router({
       // 4. QStash purge job
       const { messageId } = await qstash.publishJSON({
         url: `${process.env.RAILWAY_WORKER_URL || ''}/workers/purge`,
-        body: { userId: ctx.userId, emailId: input.emailId, dbId: email.id },
+        body: { userId: ctx.userId, emailId: email.corsair_message_id, dbId: email.id },
         headers: { 'X-Worker-Secret': process.env.WORKER_SECRET || '' },
         delay: '10m',
         retries: 3,
       });
 
       // 5. Store job ID
-      await ctx.redis.set(`deletejob:${ctx.userId}:${input.emailId}`, messageId, { ex: 660 });
+      await ctx.redis.set(`deletejob:${ctx.userId}:${email.corsair_message_id}`, messageId, { ex: 660 });
 
       return { success: true };
     }),
@@ -648,7 +666,9 @@ export const emailRouter = router({
     .input(restoreEmailSchema)
     .mutation(async ({ ctx, input }) => {
       // 1. Redis get
-      const jobId = await ctx.redis.get<string>(`deletejob:${ctx.userId}:${input.emailId}`);
+      const target = await resolveEmailActionTarget(ctx, input.emailId)
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND' })
+      const jobId = await ctx.redis.get<string>(`deletejob:${ctx.userId}:${target.corsair_message_id}`);
       
       // 2. Cancel QStash job
       if (jobId) {
@@ -657,14 +677,14 @@ export const emailRouter = router({
         } catch(e) {
           console.error('Failed to cancel QStash message', e);
         }
-        await ctx.redis.del(`deletejob:${ctx.userId}:${input.emailId}`);
-        await ctx.redis.del(`deleted:${ctx.userId}:${input.emailId}`);
+        await ctx.redis.del(`deletejob:${ctx.userId}:${target.corsair_message_id}`);
+        await ctx.redis.del(`deleted:${ctx.userId}:${target.corsair_message_id}`);
       }
 
       // 3. Restore
       await ctx.db.update(emails)
         .set({ is_deleted: false, deleted_at: null })
-        .where(and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)));
+        .where(and(eq(emails.corsair_message_id, target.corsair_message_id), eq(emails.userId, ctx.userId!)));
 
       await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
 
@@ -842,7 +862,7 @@ export const emailRouter = router({
         from_name: me?.name || 'Me',
         to_address: Array.isArray(payload.to) ? payload.to.join(', ') : payload.to,
         subject: payload.subject,
-        snippet: payload.body.slice(0, 180),
+        snippet: redactSensitiveForClient(payload.body).slice(0, 180),
         body_text: payload.body,
         body_html: `<pre style="white-space:pre-wrap;font-family:inherit">${payload.body.replace(/[&<>]/g, (ch: string) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || ch))}</pre>`,
         is_read: true,

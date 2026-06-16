@@ -26,7 +26,7 @@ export default async function CalendarPage() {
           </div>
           <h2 className="text-xl font-semibold mb-2 text-foreground">Calendar Not Connected</h2>
           <p className="text-foreground-muted mb-6 max-w-sm">
-            You haven't connected your Google Calendar yet. Connect it to view and manage your events.
+            You haven&apos;t connected your Google Calendar yet. Connect it to view and manage your events.
           </p>
           <a href="/onboarding/connect" className="px-6 py-2 bg-accent text-accent-foreground rounded-lg font-medium text-sm hover:opacity-90 transition-opacity">
             Connect Calendar

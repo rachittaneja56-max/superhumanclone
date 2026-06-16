@@ -24,6 +24,7 @@ function parseDate(d: Date | string): Date {
 
 export function CalendarView({ initialEvents }: { initialEvents: CalendarEvent[] }) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [timeAnchor] = useState(() => Date.now())
 
   const monthStart = startOfMonth(currentMonth)
   const monthEnd = endOfMonth(currentMonth)
@@ -32,9 +33,9 @@ export function CalendarView({ initialEvents }: { initialEvents: CalendarEvent[]
 
   // Fetch events for a wide range: 1 year back to 1 year forward, so historical events show
   const queryRange = useMemo(() => ({
-    startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
-    endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-  }), [])
+    startDate: new Date(timeAnchor - 365 * 24 * 60 * 60 * 1000),
+    endDate: new Date(timeAnchor + 365 * 24 * 60 * 60 * 1000),
+  }), [timeAnchor])
 
   const { data: rawEvents = initialEvents } = trpc.calendar.getEvents.useQuery(
     queryRange,
@@ -70,13 +71,13 @@ export function CalendarView({ initialEvents }: { initialEvents: CalendarEvent[]
 
   // Upcoming events: next 90 days from today
   const upcomingEvents = useMemo(() => {
-    const now = new Date()
-    const cutoff = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+    const now = new Date(timeAnchor)
+    const cutoff = new Date(timeAnchor + 90 * 24 * 60 * 60 * 1000)
     return sortedEvents.filter(e => {
       const d = parseDate(e.startTime)
       return d >= now && d <= cutoff
     }).slice(0, 8)
-  }, [sortedEvents])
+  }, [sortedEvents, timeAnchor])
 
   // All events for this month
   const monthEvents = useMemo(() => {

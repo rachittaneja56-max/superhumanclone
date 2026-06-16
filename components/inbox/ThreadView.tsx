@@ -6,25 +6,10 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Archive, CalendarIcon, Reply, ReplyAll, Forward, Trash2 } from "lucide-react";
 import { ComposeBox } from "./ComposeBox";
 import { toast } from "sonner";
-
-type MailMessage = {
-  id: string
-  corsair_message_id?: string
-  from_name?: string | null
-  from_address?: string
-  to_address?: string
-  subject?: string | null
-  snippet?: string | null
-  body_html?: string | null
-  body_text?: string | null
-  is_read?: boolean
-  ai_triage_skipped?: boolean
-  created_at?: string | Date
-  tldr?: string | null
-}
+import type { EmailThreadClientItem } from "@/lib/email-client";
 
 export function ThreadView({ threadId }: { threadId: string }) {
-  const { data: thread, isLoading } = trpc.email.getThread.useQuery({ threadId });
+  const { data: thread, isLoading, isError } = trpc.email.getThread.useQuery({ threadId });
   const markRead = trpc.email.markRead.useMutation();
   const archiveMutation = trpc.email.archiveEmail.useMutation({
     onSuccess: () => toast.success("Archived"),
@@ -39,13 +24,13 @@ export function ThreadView({ threadId }: { threadId: string }) {
   const [replyMode, setReplyMode] = useState<"reply" | "replyAll" | "forward" | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const typedThread = thread as MailMessage[] | undefined;
+  const typedThread = thread as EmailThreadClientItem[] | undefined;
   const firstEmailId = typedThread?.[0]?.id;
 
   // Mark as read on mount
   useEffect(() => {
     if (!typedThread || typedThread.length === 0) return;
-    const unread = typedThread.filter((e: MailMessage) => !e.is_read);
+    const unread = typedThread.filter((e) => !e.isRead);
     if (unread.length > 0) {
       markRead.mutate({ emailIds: unread.map((e) => e.id).slice(0, 50) });
     }
@@ -53,21 +38,22 @@ export function ThreadView({ threadId }: { threadId: string }) {
   }, [firstEmailId]); 
 
   const virtualizer = useVirtualizer({
-    count: thread?.length || 0,
+    count: typedThread?.length || 0,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 150, 
     overscan: 5,
   });
 
   if (isLoading) return <div className="p-4 flex-1 flex items-center justify-center text-sm text-gray-500 font-sans">Loading thread...</div>;
+  if (isError) return <div className="p-4 flex-1 flex items-center justify-center text-sm text-gray-500 font-sans">Could not load this thread right now.</div>;
   if (!thread || thread.length === 0) return <div className="p-4 flex-1 flex items-center justify-center text-sm text-gray-500 font-sans">No emails found.</div>;
 
   const subject = typedThread?.[0]?.subject || "(No Subject)";
-  const showTldr = (thread?.[0] as any)?.tldr && !(thread?.[0] as any)?.ai_triage_skipped;
-  const combinedSnippets = (typedThread ?? []).map((e: MailMessage) => e.snippet).join(" ");
+  const showTldr = typedThread?.[0]?.tldr && !typedThread?.[0]?.aiTriageSkipped;
+  const combinedSnippets = (typedThread ?? []).map((e) => e.snippet).join(" ");
   const meetingRegex = /\b(meet|call|sync|chat|zoom|teams|schedule|availability|calendar|invite)\b/i;
   const hasMeetingIntent = meetingRegex.test(combinedSnippets);
-  const primaryEmailId = typedThread?.[0]?.corsair_message_id || typedThread?.[0]?.id || "";
+  const primaryEmailId = typedThread?.[0]?.threadId || typedThread?.[0]?.id || "";
   const latest = typedThread?.[typedThread.length - 1];
   const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
   const forwardSubject = subject.toLowerCase().startsWith("fwd:") ? subject : `Fwd: ${subject}`;
@@ -131,7 +117,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
               borderLeft: "3px solid var(--accent)",
             }}
           >
-            <strong>TL;DR:</strong> {thread[0].tldr}
+            <strong>TL;DR:</strong> {typedThread?.[0]?.tldr}
           </div>
         )}
       </div>
@@ -163,7 +149,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
             ))}
           </div>
         ) : (
-          typedThread?.map((email: MailMessage) => <EmailMessage key={email.id} email={email} />)
+          typedThread?.map((email) => <EmailMessage key={email.id} email={email} />)
         )}
       </div>
 
@@ -174,7 +160,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
             replyMode === "forward"
               ? {
                   subject: forwardSubject,
-                  bodyPrefix: `\n\n--- Forwarded message ---\nFrom: ${latest?.from_name || latest?.from_address || ""}\nDate: ${latest?.created_at ? new Date(latest.created_at).toLocaleString() : ""}\nSubject: ${subject}\n`,
+                  bodyPrefix: `\n\n--- Forwarded message ---\nFrom: ${latest?.senderName || latest?.senderAddress || ""}\nDate: ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : ""}\nSubject: ${subject}\n`,
                 }
               : replyMode
                 ? {
@@ -183,15 +169,15 @@ export function ThreadView({ threadId }: { threadId: string }) {
                     ? Array.from(
                         new Set(
                           (typedThread ?? [])
-                            .flatMap((email: MailMessage) => [email.from_address, email.to_address])
+                            .flatMap((email) => [email.senderAddress, email.recipientAddress])
                             .filter(Boolean) as string[]
                         )
                       )
-                        .filter((addr) => addr !== latest?.from_address)
+                        .filter((addr) => addr !== latest?.senderAddress)
                         .join(", ")
-                        : latest?.from_address || "",
+                        : latest?.senderAddress || "",
                     subject: replySubject,
-                    bodyPrefix: `\n\nOn ${latest?.created_at ? new Date(latest.created_at).toLocaleString() : "a previous date"}, ${latest?.from_name || latest?.from_address || "someone"} wrote:\n`,
+                    bodyPrefix: `\n\nOn ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : "a previous date"}, ${latest?.senderName || latest?.senderAddress || "someone"} wrote:\n`,
                   }
                 : undefined
           }
@@ -212,7 +198,7 @@ export function ThreadView({ threadId }: { threadId: string }) {
   );
 }
 
-function EmailMessage({ email }: { email: MailMessage }) {
+function EmailMessage({ email }: { email: EmailThreadClientItem }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -244,7 +230,9 @@ function EmailMessage({ email }: { email: MailMessage }) {
         resizeObserver.disconnect();
       }
     };
-  }, [email.body_html]);
+  }, [email.bodyHtml]);
+
+  const createdLabel = email.createdAt ? new Date(email.createdAt).toLocaleString() : "Unknown date";
 
   return (
     <div
@@ -252,28 +240,28 @@ function EmailMessage({ email }: { email: MailMessage }) {
       style={{
         backgroundColor: "var(--surface)",
         border: "1px solid var(--border)",
-        borderLeft: !email.is_read ? "2px solid var(--accent)" : "1px solid var(--border)",
+        borderLeft: !email.isRead ? "2px solid var(--accent)" : "1px solid var(--border)",
       }}
     >
       <div className="flex justify-between items-center mb-4 border-b pb-3" style={{ borderColor: "var(--border)" }}>
-        <div className="font-medium text-[var(--text)]">{email.from_name || email.from_address}</div>
-        <div className="text-xs text-gray-500">{new Date(email.created_at || Date.now()).toLocaleString()}</div>
+        <div className="font-medium text-[var(--text)]">{email.senderName}</div>
+        <div className="text-xs text-gray-500">{createdLabel}</div>
       </div>
       
-      {email.body_html ? (
+      {email.bodyHtml ? (
         <div className="overflow-x-auto w-full">
           <iframe
             ref={iframeRef}
-            srcDoc={email.body_html}
+            srcDoc={email.bodyHtml}
             sandbox="allow-same-origin"
-            title={`Email from ${email.from_name || email.from_address}`}
+            title={`Email from ${email.senderName}`}
             className="w-full border-0 bg-white rounded-md"
             style={{ height: "auto", minHeight: "100px", overflow: "hidden" }}
           />
         </div>
       ) : (
         <pre className="whitespace-pre-wrap font-sans text-sm text-[var(--text)]">
-          {email.snippet || "No content available."}
+          {email.bodyText || email.snippet || "No content available."}
         </pre>
       )}
     </div>

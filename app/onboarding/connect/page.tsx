@@ -65,7 +65,7 @@ export default async function ConnectPage({
           Welcome, <span className="text-accent">{firstName}</span>
         </h1>
         <p className="text-base md:text-lg text-muted-foreground max-w-lg mx-auto">
-          Let's connect your workspace accounts to bootstrap your integrations and prepare your AI workflows.
+          Let&apos;s connect your workspace accounts to bootstrap your integrations and prepare your AI workflows.
         </p>
       </div>
 
