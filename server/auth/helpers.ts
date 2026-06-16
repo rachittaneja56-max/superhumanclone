@@ -32,3 +32,23 @@ export async function expireUserHITLActions(userId: string): Promise<void> {
       )
     )
 }
+
+export async function reconcileGoogleConnectionState(userId: string) {
+  await ensureUserSettings(userId)
+
+  const { isUserConnected } = await import('@/server/corsair/client')
+
+  const [gmailConnected, calendarConnected] = await Promise.all([
+    isUserConnected(userId, 'gmail'),
+    isUserConnected(userId, 'googlecalendar'),
+  ])
+
+  await db.update(userSettings)
+    .set({
+      gmailConnected,
+      calendarConnected,
+    })
+    .where(eq(userSettings.userId, userId))
+
+  return { gmailConnected, calendarConnected }
+}

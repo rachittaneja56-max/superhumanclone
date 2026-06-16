@@ -1,11 +1,11 @@
 import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import { isUserConnected } from '@/server/corsair/client'
 import { db } from '@/server/db'
 import { userSettings, users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { Mail, Calendar, CheckCircle2 } from 'lucide-react'
 import { continueToDashboard, disconnectAll } from './actions'
+import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
 
 export default async function ConnectPage({
   searchParams
@@ -34,24 +34,14 @@ export default async function ConnectPage({
     settings = newSettings
   }
 
-  // If Corsair redirected back with ?connected=true
+  const liveConnections = await reconcileGoogleConnectionState(userId).catch(() => ({
+    gmailConnected: settings.gmailConnected,
+    calendarConnected: settings.calendarConnected,
+  }))
+  settings.gmailConnected = liveConnections.gmailConnected
+  settings.calendarConnected = liveConnections.calendarConnected
+
   if (resolvedSearchParams.connected === 'true') {
-    // Prefer the plugin returned by the OAuth callback, but keep a live check as a fallback.
-    const connectedPlugin = resolvedSearchParams.plugin
-    const isGmailConnected =
-      connectedPlugin === 'gmail' ? true : await isUserConnected(userId, 'gmail')
-    const isCalendarConnected =
-      connectedPlugin === 'googlecalendar' ? true : await isUserConnected(userId, 'googlecalendar')
-
-    await db.update(userSettings).set({
-      gmailConnected: isGmailConnected,
-      calendarConnected: isCalendarConnected
-    }).where(eq(userSettings.userId, userId))
-
-    settings.gmailConnected = isGmailConnected
-    settings.calendarConnected = isCalendarConnected
-
-    // Clean up URL parameters by redirecting without them
     redirect('/onboarding/connect')
   }
 
@@ -81,7 +71,7 @@ export default async function ConnectPage({
 
       {(resolvedSearchParams.error || connectError) && (
         <div className="mb-6 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm max-w-2xl w-full text-center">
-          Connection failed: {resolvedSearchParams.error || connectError || 'Please try again.'}
+          Connection failed: Please try again.
         </div>
       )}
 

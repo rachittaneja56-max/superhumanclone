@@ -2,10 +2,7 @@ import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { serverTrpc } from '@/lib/trpc/server'
 import { CalendarView } from '@/components/calendar/CalendarView'
-import { isUserConnected } from '@/server/corsair/client'
-import { db } from '@/server/db'
-import { userSettings } from '@/server/db/schema'
-import { eq } from 'drizzle-orm'
+import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
 
 export default async function CalendarPage() {
   const session = await getSession()
@@ -13,26 +10,9 @@ export default async function CalendarPage() {
 
   let events: any[] = []
 
-  // Check live Corsair connection status (more reliable than the DB flag)
-  let calendarConnected = false
-  try {
-    calendarConnected = await isUserConnected(session.userId, 'googlecalendar')
-
-    // Sync the DB flag if it's out of date
-    if (calendarConnected) {
-      await db.update(userSettings)
-        .set({ calendarConnected: true })
-        .where(eq(userSettings.userId, session.userId))
-        .catch(() => {}) // best-effort, don't block render
-    }
-  } catch (err) {
-    // If Corsair check itself fails, fall back to DB flag
-    const settings = await db.query.userSettings.findFirst({
-      where: eq(userSettings.userId, session.userId),
-      columns: { calendarConnected: true }
-    }).catch(() => null)
-    calendarConnected = settings?.calendarConnected ?? false
-  }
+  const { calendarConnected } = await reconcileGoogleConnectionState(session.userId).catch(() => ({
+    calendarConnected: false,
+  }))
 
   if (!calendarConnected) {
     return (

@@ -7,6 +7,13 @@ import { users } from "@/server/db/schema";
 import { setSession } from "@/lib/auth";
 import { eq } from "drizzle-orm";
 
+function normalizeCallbackUrl(callbackUrl: string | null) {
+  if (!callbackUrl || !callbackUrl.startsWith("/") || callbackUrl.startsWith("//")) {
+    return "/inbox";
+  }
+  return callbackUrl;
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
@@ -16,7 +23,7 @@ export async function GET(request: Request) {
   const storedState = cookieStore.get("google_oauth_state")?.value ?? null;
   const storedCodeVerifier = cookieStore.get("google_code_verifier")?.value ?? null;
   const callbackUrlCookie = cookieStore.get("google_auth_callback");
-  const callbackUrl = callbackUrlCookie ? callbackUrlCookie.value : "/inbox";
+  const callbackUrl = normalizeCallbackUrl(callbackUrlCookie ? callbackUrlCookie.value : "/inbox");
 
   if (!code || !state || !storedState || state !== storedState || !storedCodeVerifier) {
     return new Response(null, {
@@ -25,9 +32,6 @@ export async function GET(request: Request) {
   }
 
   try {
-    const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/google/callback`;
-    
-    // Validate authorization code
     const tokens: any = await googleOAuthClient.validateAuthorizationCode(
       code,
       {
@@ -82,8 +86,10 @@ export async function GET(request: Request) {
     }
 
     await setSession(existingUser.id);
+    cookieStore.delete("google_oauth_state");
+    cookieStore.delete("google_code_verifier");
+    cookieStore.delete("google_auth_callback");
     
-    // Redirect to callbackUrl on success
     return NextResponse.redirect(new URL(callbackUrl, request.url));
   } catch (e) {
     if (e instanceof OAuth2RequestError) {
@@ -91,7 +97,7 @@ export async function GET(request: Request) {
         status: 400
       });
     }
-    console.error(e);
+    console.error("[Auth] Google callback failed");
     return new Response(null, {
       status: 500
     });

@@ -8,6 +8,7 @@ import { db } from '@/server/db'
 import { userSettings, users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { getSession } from '@/lib/auth'
+import { signOutAction } from '@/app/actions/auth'
 
 // Nav items — defined server-side (static, no state needed)
 const NAV_ITEMS = [
@@ -88,7 +89,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <span className="text-xs font-medium text-foreground-subtle">Theme</span>
               <ThemeToggle />
             </div>
-            <form action="/api/auth/logout" method="POST" className="w-full">
+            <form action={signOutAction} className="w-full">
               <button
                 type="submit"
                 className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-red-500/90 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"

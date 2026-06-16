@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { signOutAction } from '@/app/actions/auth';
 
 import { LogOut } from 'lucide-react';
 
@@ -57,7 +58,7 @@ export function MarketingNav({ userEmail, userName }: { userEmail?: string | nul
                     {userEmail}
                   </p>
                 </div>
-                <form action="/api/auth/logout" method="POST" className="w-full">
+                <form action={signOutAction} className="w-full">
                   <button
                     type="submit"
                     className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-red-500/90 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"

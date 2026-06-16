@@ -4,6 +4,7 @@ import { serverTrpc } from '@/lib/trpc/server'
 import { SettingsClient } from '@/components/settings/SettingsClient'
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
+import { signOutAction } from '@/app/actions/auth'
 
 export default async function SettingsPage() {
   const session = await getSession()
@@ -74,7 +75,7 @@ export default async function SettingsPage() {
 
           {/* Sign out */}
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
-            <form action="/api/auth/logout" method="POST">
+            <form action={signOutAction}>
               <button type="submit" className="w-full flex items-center px-4 py-3 hover:bg-surface-overlay transition-colors text-destructive">
                 <p className="text-sm font-medium">Sign out</p>
               </button>

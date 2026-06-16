@@ -26,9 +26,9 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.redirect(authUrl)
   } catch (err: any) {
-    console.error('Failed to generate OAuth URL:', err)
+    console.error('Failed to generate OAuth URL')
     return NextResponse.redirect(
-      new URL(`/onboarding/connect?error=${encodeURIComponent(err.message || 'auth_url_failed')}`, req.url)
+      new URL('/onboarding/connect?error=connect_failed', req.url)
     )
   }
 }
