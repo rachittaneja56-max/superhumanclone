@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url)
   const provider = url.searchParams.get('provider')
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || url.origin
   const redirectUri = `${baseUrl.replace(/\/$/, '')}/api/corsair/callback`
 
   try {

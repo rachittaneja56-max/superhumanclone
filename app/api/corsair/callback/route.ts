@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     return redirect('/onboarding/connect?error=missing_params')
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin
   const redirectUri = `${baseUrl.replace(/\/$/, '')}/api/corsair/callback`
 
   try {
