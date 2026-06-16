@@ -11,7 +11,20 @@ const pool = new Pool({
 })
 
 export const corsair = createCorsair({
-  plugins: [gmail(), googlecalendar()],
+  plugins: [
+    gmail({
+      credentials: {
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      },
+    }),
+    googlecalendar({
+      credentials: {
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      },
+    }),
+  ],
   database: pool,
   kek: process.env.CORSAIR_KEK!,
   multiTenancy: true,
