@@ -1,8 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import {
-  Mail, Calendar, Bot, Search, Settings, LogOut
-} from 'lucide-react'
+import { LogOut } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { AppClientShell } from '@/components/app-client-shell'
 import { NavItem } from '@/components/NavItem'
@@ -13,11 +11,11 @@ import { getSession } from '@/lib/auth'
 
 // Nav items — defined server-side (static, no state needed)
 const NAV_ITEMS = [
-  { href: '/inbox',    icon: Mail,     label: 'Inbox' },
-  { href: '/calendar', icon: Calendar, label: 'Calendar' },
-  { href: '/agent',    icon: Bot,      label: 'Agent' },
-  { href: '/search',   icon: Search,   label: 'Search' },
-  { href: '/settings', icon: Settings, label: 'Settings' },
+  { href: '/inbox',    iconName: 'Mail' as const,     label: 'Inbox' },
+  { href: '/calendar', iconName: 'Calendar' as const, label: 'Calendar' },
+  { href: '/agent',    iconName: 'Bot' as const,      label: 'Agent' },
+  { href: '/search',   iconName: 'Search' as const,   label: 'Search' },
+  { href: '/settings', iconName: 'Settings' as const, label: 'Settings' },
 ]
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {

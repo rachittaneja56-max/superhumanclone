@@ -1,18 +1,28 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { LucideIcon } from 'lucide-react'
+import { Mail, Calendar, Bot, Search, Settings } from 'lucide-react'
+
+const ICON_MAP = {
+  Mail,
+  Calendar,
+  Bot,
+  Search,
+  Settings,
+} as const
 
 interface NavItemProps {
   href: string
-  icon: LucideIcon
+  iconName: keyof typeof ICON_MAP
   label: string
 }
 
-export function NavItem({ href, icon: Icon, label }: NavItemProps) {
+export function NavItem({ href, iconName, label }: NavItemProps) {
   const pathname = usePathname()
   const isActive = pathname === href ||
     (href !== '/inbox' && pathname.startsWith(href))
+
+  const Icon = ICON_MAP[iconName]
 
   return (
     <Link
