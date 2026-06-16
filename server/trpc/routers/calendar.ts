@@ -115,9 +115,34 @@ export const calendarRouter = router({
         }))
       }
 
-      // Fall back to Corsair if local DB is empty for this date range
+      // If the date range returned nothing, broaden to all events in DB (no date filter)
+      // This handles historical events that were seeded before webhooks were active
       try {
-        const result = await getCalendarEvents(ctx.userId!, { limit: 50 })
+        const allLocalEvents = await ctx.db
+          .select()
+          .from(calendarEvents)
+          .where(eq(calendarEvents.userId, ctx.userId!))
+          .orderBy(asc(calendarEvents.start_time))
+
+        if (allLocalEvents.length > 0) {
+          return allLocalEvents.map(e => ({
+            id: e.id,
+            userId: e.userId,
+            corsair_event_id: e.corsair_event_id,
+            title: e.title,
+            description: e.description,
+            startTime: e.start_time,
+            endTime: e.end_time,
+            location: e.location,
+            is_all_day: e.is_all_day,
+            status: e.status,
+          }))
+        }
+      } catch (_) { /* fall through to Corsair */ }
+
+      // Last resort: Corsair API/DB layer
+      try {
+        const result = await getCalendarEvents(ctx.userId!, { limit: 100 })
         if (!result.success || !result.data) return []
 
         return (result.data as any[]).map((e: any) => ({
@@ -129,7 +154,7 @@ export const calendarRouter = router({
           startTime: new Date(e.start?.dateTime || e.start?.date || e.startTime || Date.now()),
           endTime: new Date(e.end?.dateTime || e.end?.date || e.endTime || Date.now()),
           location: e.location || null,
-          is_all_day: !!(e.start?.date),
+          is_all_day: !!(e.start?.date && !e.start?.dateTime),
           status: e.status || 'confirmed',
         }))
       } catch (err) {

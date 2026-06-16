@@ -9,9 +9,13 @@ type CorsairTenant = {
     api: {
       messages: {
         list: (params: any) => Promise<any>
+        get: (params: any) => Promise<any>
         send: (params: any) => Promise<any>
         modify: (params: any) => Promise<any>
         trash: (params: any) => Promise<any>
+      }
+      threads: {
+        get: (params: any) => Promise<any>
       }
     }
     db: {
@@ -22,8 +26,14 @@ type CorsairTenant = {
   googlecalendar: {
     api: {
       events: {
-        list: (params: any) => Promise<any>
-        insert: (params: any) => Promise<any>
+        getMany: (params: any) => Promise<any>
+        get: (params: any) => Promise<any>
+        create: (params: any) => Promise<any>
+        update: (params: any) => Promise<any>
+        delete: (params: any) => Promise<any>
+      }
+      calendar: {
+        getAvailability: (params: any) => Promise<any>
       }
     }
     db: {
@@ -97,10 +107,30 @@ export async function getThreads(userId: string, params?: { limit?: number; offs
 export async function getMessages(userId: string, params?: { limit?: number }) {
   const t = await getTenant(userId)
   try {
-    const result = await t.gmail.db.messages.list({
-      limit: params?.limit ?? 50,
+    const listResult = await t.gmail.api.messages.list({
+      maxResults: params?.limit ?? 50,
     })
-    return { success: true, data: result, needsConnect: false }
+    const messages = listResult.messages || []
+    const detailedMessages = []
+    
+    // Fetch details of each message in parallel (up to 15 to avoid latency/rate limit)
+    const toFetch = messages.slice(0, 15)
+    const details = await Promise.all(
+      toFetch.map(async (m: any) => {
+        try {
+          return await t.gmail.api.messages.get({ id: m.id })
+        } catch (err) {
+          console.warn('[getMessages] Failed to fetch message detail for', m.id, err)
+          return null
+        }
+      })
+    )
+    
+    for (const d of details) {
+      if (d) detailedMessages.push(d)
+    }
+    
+    return { success: true, data: detailedMessages, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, data: null, needsConnect: true }
     throw err
@@ -110,7 +140,8 @@ export async function getMessages(userId: string, params?: { limit?: number }) {
 export async function getThreadMessages(userId: string, threadId: string) {
   const t = await getTenant(userId)
   try {
-    const result = await t.gmail.db.messages.list({ threadId })
+    // Corsair Gmail SDK: threads are accessed via api.threads.get
+    const result = await (t as any).gmail.api.threads.get({ id: threadId })
     return { success: true, data: result, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, data: null, needsConnect: true }
@@ -195,26 +226,36 @@ export async function syncInbox(userId: string) {
 
 // ── Calendar — Cached DB reads ────────────────────────────────────
 
-export async function getCalendarEvents(userId: string, params?: { limit?: number }) {
+export async function getCalendarEvents(
+  userId: string,
+  params?: { limit?: number; timeMin?: string; timeMax?: string }
+) {
   const t = await getTenant(userId)
   try {
-    let result
-    try {
-      result = await t.googlecalendar.db.events.list({
-        limit: params?.limit ?? 50,
-      })
-    } catch (zodErr: any) {
-      if (zodErr?.name === 'ZodError') {
-        console.warn('[Calendar] ZodError on eventType — using raw data')
-        result = zodErr.data ?? []
-      } else {
-        throw zodErr
-      }
-    }
-    return { success: true, data: result, needsConnect: false }
+    // Prefer the Corsair DB layer (synced corsair_entities) — much faster, no API quota
+    const dbResult = await t.googlecalendar.db.events.list({
+      limit: params?.limit ?? 100,
+      offset: 0,
+    })
+    const items: any[] = Array.isArray(dbResult) ? dbResult : (dbResult?.items ?? dbResult?.data ?? [])
+    return { success: true, data: items, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, data: null, needsConnect: true }
-    throw err
+    // Fall back to live API if DB layer fails
+    try {
+      const result = await t.googlecalendar.api.events.getMany({
+        calendarId: 'primary',
+        singleEvents: true,
+        orderBy: 'startTime',
+        maxResults: params?.limit ?? 50,
+        ...(params?.timeMin && { timeMin: params.timeMin }),
+        ...(params?.timeMax && { timeMax: params.timeMax }),
+      })
+      return { success: true, data: result.items || [], needsConnect: false }
+    } catch (err2: any) {
+      if (isAuthError(err2)) return { success: false, data: null, needsConnect: true }
+      throw err2
+    }
   }
 }
 
@@ -230,7 +271,7 @@ export async function createCalendarEvent(userId: string, event: {
 }) {
   const t = await getTenant(userId)
   try {
-    const payload: any = {
+    const eventPayload: any = {
       summary: event.title,
       start: { dateTime: event.startTime },
       end: { dateTime: event.endTime },
@@ -238,17 +279,20 @@ export async function createCalendarEvent(userId: string, event: {
       ...(event.description && { description: event.description }),
     }
 
+    const createParams: any = { event: eventPayload, calendarId: 'primary' }
+
     if (event.addMeetLink) {
-      payload.conferenceData = {
+      createParams.conferenceDataVersion = 1
+      eventPayload.conferenceData = {
         createRequest: {
           requestId: crypto.randomUUID(),
           conferenceSolutionKey: { type: 'hangoutsMeet' },
         },
       }
-      payload.conferenceDataVersion = 1
     }
 
-    const result = await t.googlecalendar.api.events.insert(payload)
+    // Corsair SDK uses events.create (not events.insert)
+    const result = await t.googlecalendar.api.events.create(createParams)
 
     const meetLink = result?.conferenceData?.entryPoints
       ?.find((e: any) => e.entryPointType === 'video')?.uri ?? null

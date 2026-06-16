@@ -59,8 +59,8 @@ export default async function CalendarPage() {
   try {
     const trpc = await serverTrpc()
     const result = await trpc.calendar.getEvents({
-      startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
+      endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
     })
     events = result ?? []
   } catch (err) {

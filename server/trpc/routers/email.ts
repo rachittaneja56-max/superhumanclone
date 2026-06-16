@@ -31,6 +31,40 @@ import {
   cancelSendSchema,
   getAutoRepliesSchema
 } from '@/lib/schemas';
+function getHeader(headers: any[] | undefined, name: string): string {
+  if (!headers) return '';
+  return headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
+}
+
+function parseEmailBody(payload: any): { text: string; html: string } {
+  let text = '';
+  let html = '';
+
+  function decode(data: string) {
+    return Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8');
+  }
+
+  function traverse(part: any) {
+    if (!part) return;
+    if (part.body?.data) {
+      const decoded = decode(part.body.data);
+      if (part.mimeType === 'text/plain') {
+        text = decoded;
+      } else if (part.mimeType === 'text/html') {
+        html = decoded;
+      }
+    }
+    if (part.parts) {
+      for (const p of part.parts) {
+        traverse(p);
+      }
+    }
+  }
+
+  traverse(payload);
+  return { text, html };
+}
+
 export const emailRouter = router({
   getThreads: protectedProcedure
     .use(createRateLimitMiddleware('getThreads', 200, 60))
@@ -65,23 +99,42 @@ export const emailRouter = router({
           if (corsairResult.success && Array.isArray(corsairResult.data) && corsairResult.data.length > 0) {
             // Seed local DB with the fetched messages
             for (const msg of corsairResult.data) {
-              const msgId = msg.id ?? msg.corsair_message_id;
+              const msgId = msg.id;
               if (!msgId) continue;
+
+              const headers = msg.payload?.headers || [];
+              const fromVal = getHeader(headers, 'From');
+              const toVal = getHeader(headers, 'To');
+              const subjectVal = getHeader(headers, 'Subject') || '(no subject)';
+              const { text: bodyText, html: bodyHtml } = parseEmailBody(msg.payload);
+
+              // Extract sender name and address
+              let fromName: string | null = null;
+              let fromAddress = '';
+              const match = fromVal.match(/^(.*?)\s*<([^>]+)>/);
+              if (match) {
+                fromName = match[1].replace(/['"]/g, '').trim();
+                fromAddress = match[2].trim();
+              } else {
+                fromAddress = fromVal.trim();
+              }
+
               await ctx.db.insert(emails).values({
                 userId: ctx.userId!,
                 corsair_message_id: msgId,
-                thread_id: msg.threadId ?? msg.thread_id ?? msgId,
-                from_address: msg.from ?? msg.from_address ?? '',
-                from_name: msg.fromName ?? msg.from_name ?? null,
-                to_address: msg.to ?? msg.to_address ?? '',
-                subject: msg.subject ?? null,
+                thread_id: msg.threadId || msgId,
+                from_address: fromAddress,
+                from_name: fromName,
+                to_address: toVal,
+                subject: subjectVal,
                 snippet: msg.snippet ?? null,
-                body_text: msg.bodyText ?? msg.body_text ?? null,
-                body_html: msg.bodyHtml ?? msg.body_html ?? null,
-                is_read: msg.isRead ?? msg.is_read ?? false,
+                body_text: bodyText || null,
+                body_html: bodyHtml || null,
+                is_read: !msg.labelIds?.includes('UNREAD'),
                 is_archived: false,
                 is_deleted: false,
                 ai_triage_skipped: true,
+                created_at: msg.internalDate ? new Date(Number(msg.internalDate)) : new Date(),
               }).onConflictDoNothing();
             }
             // Re-fetch after seed
@@ -146,10 +199,11 @@ export const emailRouter = router({
           if (result.needsConnect) {
             throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
           }
-          if (result.data && Array.isArray(result.data)) {
-            for (const msg of result.data) {
+          if (result.data && Array.isArray(result.data.messages)) {
+            for (const msg of result.data.messages) {
+              const { text: bodyText, html: bodyHtml } = parseEmailBody(msg.payload);
               await ctx.db.update(emails)
-                .set({ body_text: msg.bodyText || msg.body_text, body_html: msg.bodyHtml || msg.body_html })
+                .set({ body_text: bodyText || null, body_html: bodyHtml || null })
                 .where(and(eq(emails.corsair_message_id, msg.id), eq(emails.userId, ctx.userId!)));
             }
           }
