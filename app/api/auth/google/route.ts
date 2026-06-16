@@ -1,3 +1,4 @@
+
 import { generateState, generateCodeVerifier } from "oslo/oauth2";
 import { googleOAuthClient } from "@/lib/oauth";
 import { cookies } from "next/headers";
@@ -5,7 +6,7 @@ import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const callbackUrl = url.searchParams.get("callbackUrl") || "/inbox";
+  const callbackUrl = url.searchParams.get("callbackUrl") || "/";
 
   const state = generateState();
   const codeVerifier = generateCodeVerifier();

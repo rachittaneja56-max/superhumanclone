@@ -78,8 +78,8 @@ export async function GET(request: Request) {
 
     await setSession(existingUser.id);
     
-    // Redirect to inbox on success
-    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL}/inbox`);
+    // Redirect to callbackUrl on success
+    return NextResponse.redirect(new URL(callbackUrl, request.url));
   } catch (e) {
     if (e instanceof OAuth2RequestError) {
       return new Response(null, {
