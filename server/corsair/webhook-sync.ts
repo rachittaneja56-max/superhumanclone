@@ -9,6 +9,22 @@ import { Client } from '@upstash/qstash'
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' })
 
+async function invalidateUserMailCaches(userId: string, threadId?: string | null) {
+  const keys = [
+    `inbox:${userId}:active:50`,
+    `inbox:${userId}:archived:50`,
+    `mailbox:${userId}:inbox:50:`,
+    `mailbox:${userId}:drafts:50:`,
+    `mailbox:${userId}:sent:50:`,
+    `mailbox:${userId}:spam:50:`,
+    `mailbox:${userId}:trash:50:`,
+  ]
+  await Promise.all(keys.map((key) => redis.del(key).catch(() => null)))
+  if (threadId) {
+    await redis.del(`thread:${userId}:${threadId}`).catch(() => null)
+  }
+}
+
 type GmailWebhookResult =
   | { type: 'messageReceived'; emailAddress: string; message: { id?: string } & Record<string, unknown> }
   | { type: 'messageDeleted'; emailAddress: string; message: { id?: string } & Record<string, unknown> }
@@ -145,6 +161,7 @@ export async function handleGmailWebhook(ctx: Record<string, unknown>, result: G
       .onConflictDoNothing()
       .returning({ id: emails.id })
 
+    await invalidateUserMailCaches(userId, row.thread_id)
     await publishAblyEvent(userId, 'webhook:email')
 
     if (inserted && !aiTriageSkipped) {
@@ -166,6 +183,7 @@ export async function handleGmailWebhook(ctx: Record<string, unknown>, result: G
       .update(emails)
       .set({ is_deleted: true, deleted_at: new Date() })
       .where(eq(emails.corsair_message_id, messageId))
+    await invalidateUserMailCaches(userId)
     await publishAblyEvent(userId, 'webhook:email')
     return
   }
@@ -183,6 +201,11 @@ export async function handleGmailWebhook(ctx: Record<string, unknown>, result: G
       })
       .where(eq(emails.corsair_message_id, messageId))
 
+    const row = await db.query.emails.findFirst({
+      where: eq(emails.corsair_message_id, messageId),
+      columns: { thread_id: true },
+    })
+    await invalidateUserMailCaches(userId, row?.thread_id)
     if (labelsRemoved.includes('INBOX') || labelsAdded.includes('TRASH')) {
       await publishAblyEvent(userId, 'webhook:email')
     }

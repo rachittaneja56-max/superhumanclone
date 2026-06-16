@@ -645,7 +645,7 @@ export const emailRouter = router({
       await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
 
       // 3. Redis buffer
-      await ctx.redis.set(`deleted:${ctx.userId}:${input.emailId}`, 'true', { ex: 600 });
+      await ctx.redis.set(`deleted:${ctx.userId}:${email.corsair_message_id}`, 'true', { ex: 600 });
 
       // 4. QStash purge job
       const { messageId } = await qstash.publishJSON({
@@ -899,6 +899,7 @@ export const emailRouter = router({
       await ctx.redis.sadd(`drafts:index:${ctx.userId}`, key);
       await ctx.redis.expire(`drafts:index:${ctx.userId}`, 60 * 60 * 24 * 14);
       await ctx.redis.del(`mailbox:${ctx.userId}:drafts:50`).catch(() => null);
+      await invalidateMailCaches(ctx, input.threadId);
       return draft;
     }),
 
@@ -909,6 +910,7 @@ export const emailRouter = router({
       await ctx.redis.del(key);
       await ctx.redis.srem(`drafts:index:${ctx.userId}`, key);
       await ctx.redis.del(`mailbox:${ctx.userId}:drafts:50`).catch(() => null);
+      await invalidateMailCaches(ctx);
       return { success: true };
     }),
 

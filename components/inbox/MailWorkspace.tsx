@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, ChevronRight, Search, SquarePen } from "lucide-react";
+import { Search, SquarePen } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
 import type { EmailListClientItem } from "@/lib/email-client";
+import { ThreadEmptyState, ThreadView } from "./ThreadView";
 
 type Folder = "inbox" | "drafts" | "sent" | "spam" | "trash";
 
@@ -37,6 +38,7 @@ export function MailWorkspace({
 
   const folder = normalizeFolder(searchParams.get("folder") ?? initialFolder);
   const composeFromUrl = searchParams.get("compose") === "true";
+  const selectedThreadFromUrl = searchParams.get("thread");
 
   const mailboxQuery = trpc.email.getMailboxThreads.useQuery(
     { folder, limit: 50, query },
@@ -49,7 +51,7 @@ export function MailWorkspace({
 
   const threads = (mailboxQuery.data ?? initialThreads) as EmailListClientItem[];
   const selected = useMemo(
-    () => threads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || threads[0],
+    () => threads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || null,
     [threads, activeThreadId]
   );
   const sendMutation = trpc.email.sendEmail.useMutation();
@@ -64,15 +66,36 @@ export function MailWorkspace({
       setActiveThreadId(null);
       return;
     }
-    setActiveThreadId(threads[0].threadId || threads[0].id);
-  }, [folder, threads]);
+
+    const threadFromUrl =
+      selectedThreadFromUrl && threads.some((thread) => thread.threadId === selectedThreadFromUrl)
+        ? selectedThreadFromUrl
+        : null;
+
+    setActiveThreadId(threadFromUrl || threads[0].threadId || threads[0].id);
+  }, [folder, selectedThreadFromUrl, threads]);
+
+  const replaceSearch = (params: URLSearchParams) => {
+    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+    router.replace(target);
+  };
 
   const closeCompose = () => {
     setComposeOpen(false);
     const params = new URLSearchParams(searchParams.toString());
     params.delete("compose");
-    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname;
-    router.replace(target);
+    replaceSearch(params);
+  };
+
+  const openThread = (threadId: string) => {
+    setActiveThreadId(threadId);
+    if (window.matchMedia("(min-width: 1280px)").matches) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("thread", threadId);
+      replaceSearch(params);
+      return;
+    }
+    router.push(`/inbox/${threadId}`);
   };
 
   const handleSend = async (payload: { to: string; subject: string; body: string; threadId?: string }) => {
@@ -156,8 +179,11 @@ export function MailWorkspace({
                   <button
                     key={id}
                     onClick={() => {
-                      setActiveThreadId(id);
-                      if (folder !== "drafts") router.push(`/inbox/${id}`);
+                      if (folder === "drafts") {
+                        setActiveThreadId(id);
+                        return;
+                      }
+                      openThread(id);
                     }}
                     className={[
                       "w-full overflow-hidden rounded-2xl border px-4 py-4 text-left transition-colors",
@@ -202,33 +228,23 @@ export function MailWorkspace({
         </div>
       </main>
 
-      <aside className="hidden w-[22rem] shrink-0 border-l border-border bg-surface xl:block">
-        <div className="flex h-full flex-col p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-medium uppercase tracking-wide text-foreground-muted">Details</h2>
-            <CalendarDays className="h-4 w-4 text-foreground-muted" />
-          </div>
+      <aside className="hidden w-[32rem] shrink-0 border-l border-border bg-surface xl:block">
+        <div className="h-full min-h-0">
           {selected ? (
-            <div className="space-y-3 rounded-2xl border border-border bg-background/40 p-4">
-              <div className="text-sm font-medium">{selected.subject || "(no subject)"}</div>
-              <div className="text-sm text-foreground-muted">
-                {selected.senderName || "Unknown sender"}
+            folder === "drafts" ? (
+              <div className="flex h-full items-center justify-center px-6">
+                <div className="max-w-sm rounded-2xl border border-dashed border-border bg-background/40 p-8 text-center">
+                  <div className="text-sm font-medium text-foreground">Draft preview</div>
+                  <p className="mt-2 text-sm leading-6 text-foreground-muted">
+                    Drafts stay compact in this view. Use compose to finish and send them.
+                  </p>
+                </div>
               </div>
-              <div className="line-clamp-6 text-sm leading-6 text-foreground-muted">
-                {selected.snippet || "Open the thread to view the full message."}
-              </div>
-              <button
-                onClick={() => router.push(`/inbox/${selected.threadId || selected.id}`)}
-                className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
-              >
-                Open thread
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+            ) : (
+              <ThreadView threadId={selected.threadId || selected.id} compact />
+            )
           ) : (
-            <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-foreground-muted">
-              Pick a thread and we&apos;ll show the useful bits here.
-            </div>
+            <ThreadEmptyState />
           )}
         </div>
       </aside>

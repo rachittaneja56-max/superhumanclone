@@ -18,6 +18,7 @@ export type EmailThreadClientItem = {
   senderName: string
   senderAddress?: string | null
   recipientAddress?: string | null
+  recipientSummary: string
   subject: string
   snippet: string
   bodyHtml?: string | null
@@ -84,6 +85,41 @@ export function redactSensitiveForClient(value: string | null | undefined): stri
     .trim()
 }
 
+export function summariseRecipients(value: string | null | undefined): string {
+  const raw = value ?? ''
+  if (!raw.trim()) return 'Recipients hidden'
+
+  const recipients = raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const nameMatch = part.match(/^(.*?)\s*<([^>]+)>$/)
+      if (nameMatch) {
+        return safeDisplayName(nameMatch[1], nameMatch[2])
+      }
+      return safeDisplayName('', part)
+    })
+
+  if (recipients.length === 0) return 'Recipients hidden'
+  if (recipients.length === 1) return recipients[0]
+  return `${recipients[0]} +${recipients.length - 1}`
+}
+
+export function sanitiseEmailHtml(value: string | null | undefined): string | null {
+  if (!value) return null
+
+  const withoutScripts = value
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, '')
+    .replace(/<base[\s\S]*?>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/\son\w+='[^']*'/gi, '')
+    .replace(/\sjavascript:/gi, ' ')
+
+  return withoutScripts.trim() || null
+}
+
 export function mapEmailForListClient(row: {
   id?: string | null
   thread_id?: string | null
@@ -137,9 +173,10 @@ export function mapEmailForThreadClient(row: {
     senderName: safeDisplayName(row.from_name, row.from_address),
     senderAddress: row.from_address ?? null,
     recipientAddress: row.to_address ?? null,
+    recipientSummary: summariseRecipients(row.to_address),
     subject: redactSensitiveForClient(row.subject) || '(no subject)',
     snippet: redactSensitiveForClient(row.snippet) || 'No preview available.',
-    bodyHtml: row.body_html ?? null,
+    bodyHtml: sanitiseEmailHtml(row.body_html),
     bodyText: row.body_text ? decodeHtmlEntities(row.body_text).trim() : null,
     isRead: Boolean(row.is_read),
     aiTriageSkipped: Boolean(row.ai_triage_skipped),
