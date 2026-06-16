@@ -85,9 +85,9 @@ export default async function ConnectPage({
         </p>
       </div>
 
-      {resolvedSearchParams.error && (
+      {(resolvedSearchParams.error || connectError) && (
         <div className="mb-6 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm max-w-2xl w-full text-center">
-          Connection failed. Please try again.
+          Connection failed: {connectError || 'Please try again.'}
         </div>
       )}
 
