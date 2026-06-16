@@ -47,6 +47,7 @@ const bulkActionSchema = z.object({
 const mailboxSchema = z.object({
   folder: z.enum(['inbox', 'drafts', 'sent', 'spam', 'trash']),
   limit: z.number().int().min(1).max(100).default(50),
+  offset: z.number().int().min(0).default(0),
   query: z.string().trim().optional().default(''),
 });
 
@@ -168,7 +169,7 @@ export const emailRouter = router({
     .use(createRateLimitMiddleware('getMailboxThreads', 240, 60))
     .input(mailboxSchema)
     .query(async ({ ctx, input }) => {
-      const cacheKey = `mailbox:${ctx.userId}:${input.folder}:${input.limit}:${input.query || ''}`;
+      const cacheKey = `mailbox:${ctx.userId}:${input.folder}:${input.limit}:${input.offset}:${input.query || ''}`;
       const cached = await ctx.redis.get<string>(cacheKey);
       if (cached) {
         try {
@@ -189,7 +190,7 @@ export const emailRouter = router({
           if (!q) return true;
           return [draft.to, draft.cc, draft.bcc, draft.subject, draft.body].join(' ').toLowerCase().includes(q);
         }).sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
-        const result = filtered.slice(0, input.limit).map((draft: any) => ({
+        const result = filtered.slice(input.offset, input.offset + input.limit).map((draft: any) => ({
           id: draft.id,
           threadId: draft.threadId || draft.id,
           mailbox: 'drafts',
@@ -240,6 +241,7 @@ export const emailRouter = router({
           },
           orderBy: [desc(emails.created_at)],
           limit: input.limit,
+          offset: input.offset,
         });
         const mapped = rows.map((r) =>
           mapEmailForListClient({
@@ -288,8 +290,9 @@ export const emailRouter = router({
           is_deleted: true,
         },
         orderBy: [desc(emails.created_at)],
-        limit: input.limit,
-      });
+          limit: input.limit,
+          offset: input.offset,
+        });
 
       const mapped = rows.map((r) => mapEmailForListClient({ ...r, mailbox: input.folder }));
 

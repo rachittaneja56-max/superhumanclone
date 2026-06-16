@@ -100,7 +100,12 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
   };
 
   return (
-    <div className="flex flex-col h-full w-full max-w-3xl mx-auto px-4 py-6">
+    <div className="flex h-full w-full flex-col rounded-2xl border border-border bg-surface shadow-sm">
+      <div className="border-b border-border px-5 py-4">
+        <div className="text-base font-semibold text-foreground">AI Assistant</div>
+        <p className="mt-1 text-sm text-foreground-muted">Ask Aethra about mail, schedules, and follow-ups.</p>
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-5">
       
       {!hasStarted && messages.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center space-y-8 animate-in fade-in zoom-in-95 duration-500">
@@ -114,7 +119,7 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
               <button
                 key={i}
                 onClick={() => sendMessage(prompt)}
-                className="p-4 text-left border border-border bg-surface hover:bg-muted/50 rounded-xl text-sm text-foreground transition-colors"
+                className="rounded-xl border border-border bg-background p-4 text-left text-sm text-foreground transition-colors hover:bg-surface-raised"
               >
                 {prompt}
               </button>
@@ -133,7 +138,7 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
                 "max-w-[85%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed",
                 msg.role === "user" 
                   ? "ml-auto bg-accent/10 text-foreground rounded-br-sm" 
-                  : "mr-auto bg-surface border border-border text-foreground rounded-bl-sm"
+                  : "mr-auto border border-border bg-background text-foreground rounded-bl-sm"
               )}
             >
               <span className="whitespace-pre-wrap">{msg.content}</span>
@@ -144,7 +149,7 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
           ))}
           {/* Tool indicator */}
           {isStreaming && messages[messages.length - 1]?.role === "user" && (
-            <div className="mr-auto flex items-center space-x-2 text-muted-foreground bg-surface border border-border rounded-full px-4 py-2 text-sm">
+            <div className="mr-auto flex items-center space-x-2 rounded-full border border-border bg-background px-4 py-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" />
               <span>Thinking...</span>
             </div>
@@ -161,7 +166,7 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
           </div>
         )}
 
-        <div className="relative flex items-end w-full border border-border bg-surface rounded-2xl overflow-hidden focus-within:ring-2 focus-within:ring-accent transition-shadow">
+        <div className="relative flex items-end w-full overflow-hidden rounded-2xl border border-border bg-background transition-shadow focus-within:ring-2 focus-within:ring-accent">
           <textarea
             className="w-full max-h-48 min-h-[56px] resize-none bg-transparent px-4 py-4 text-sm focus:outline-none disabled:opacity-50"
             placeholder={activeHITLAction ? "Awaiting your approval..." : "Ask Aethra AI..."}
@@ -187,6 +192,7 @@ export function AgentChat({ sessionId }: { sessionId: string }) {
             </Button>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );

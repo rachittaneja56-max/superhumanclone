@@ -82,54 +82,54 @@ export function ThreadView({
   const forwardSubject = subject.toLowerCase().startsWith("fwd:") ? subject : `Fwd: ${subject}`;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--surface)] font-sans">
-      <div className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h2 className="truncate font-display text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl">
-              {subject}
-            </h2>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-foreground-muted">
-              <span>{typedThread[0]?.senderName || "Unknown sender"}</span>
-              <span>{typedThread[0]?.recipientSummary || "Recipients hidden"}</span>
-              <span>{formatDateLabel(typedThread[0]?.createdAt)}</span>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <ActionButton onClick={() => setReplyMode("reply")} icon={<Reply className="h-4 w-4" />} label="Reply" />
-            <ActionButton onClick={() => setReplyMode("replyAll")} icon={<ReplyAll className="h-4 w-4" />} label="Reply all" />
-            <ActionButton onClick={() => setReplyMode("forward")} icon={<Forward className="h-4 w-4" />} label="Forward" />
-            {mailbox === "trash" ? (
-              <ActionButton
-                onClick={() => restoreMutation.mutate({ emailId: primaryEmailId })}
-                icon={<RotateCcw className="h-4 w-4" />}
-                label="Restore"
-              />
-            ) : (
-              <>
-                <ActionButton
-                  onClick={() =>
-                    hasUnread
-                      ? markRead.mutate({ emailIds: unreadIds.slice(0, 50) })
-                      : markUnread.mutate({ emailIds: [latest.id] })
-                  }
-                  icon={hasUnread ? <MailCheck className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
-                  label={hasUnread ? "Mark read" : "Mark unread"}
-                />
-                <ActionButton onClick={() => archiveMutation.mutate({ emailId: primaryEmailId })} icon={<Archive className="h-4 w-4" />} label="Archive" />
-                <ActionButton
-                  onClick={() => deleteMutation.mutate({ emailId: primaryEmailId })}
-                  icon={<Trash2 className="h-4 w-4" />}
-                  label="Trash"
-                  destructive
-                />
-              </>
-            )}
+    <div className="flex h-full min-h-0 flex-col bg-surface font-sans">
+      <div className="shrink-0 border-b border-border bg-surface px-4 py-4 sm:px-6">
+        <div className="min-w-0">
+          <h2 className="truncate font-display text-xl font-semibold tracking-tight text-[var(--text)] sm:text-2xl">
+            {subject}
+          </h2>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-foreground-muted">
+            <span>{typedThread[0]?.senderName || "Unknown sender"}</span>
+            <span>{typedThread[0]?.recipientSummary || "Recipients hidden"}</span>
+            <span>{formatDateLabel(typedThread[0]?.createdAt)}</span>
           </div>
         </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <ActionButton onClick={() => setReplyMode("reply")} icon={<Reply className="h-4 w-4" />} label="Reply" />
+          <ActionButton onClick={() => setReplyMode("replyAll")} icon={<ReplyAll className="h-4 w-4" />} label="Reply all" />
+          <ActionButton onClick={() => setReplyMode("forward")} icon={<Forward className="h-4 w-4" />} label="Forward" />
+          {mailbox === "trash" ? (
+            <ActionButton
+              onClick={() => restoreMutation.mutate({ emailId: primaryEmailId })}
+              icon={<RotateCcw className="h-4 w-4" />}
+              label="Restore"
+            />
+          ) : (
+            <>
+              <ActionButton
+                onClick={() =>
+                  hasUnread
+                    ? markRead.mutate({ emailIds: unreadIds.slice(0, 50) })
+                    : markUnread.mutate({ emailIds: [latest.id] })
+                }
+                icon={hasUnread ? <MailCheck className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
+                label={hasUnread ? "Mark read" : "Mark unread"}
+              />
+              <ActionButton onClick={() => archiveMutation.mutate({ emailId: primaryEmailId })} icon={<Archive className="h-4 w-4" />} label="Archive" />
+              <ActionButton
+                onClick={() => deleteMutation.mutate({ emailId: primaryEmailId })}
+                icon={<Trash2 className="h-4 w-4" />}
+                label="Trash"
+                destructive
+              />
+            </>
+          )}
+        </div>
+
         {showTldr && (
           <div
-            className="mt-4 rounded-r-md p-4 text-sm text-[var(--text)]"
+            className="mt-4 rounded-xl p-4 text-sm text-[var(--text)]"
             style={{
               backgroundColor: "var(--accent-subtle)",
               borderLeft: "3px solid var(--accent)",
@@ -148,7 +148,7 @@ export function ThreadView({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-border">
+      <div className="shrink-0 border-t border-border bg-surface">
         <ComposeBox
           threadId={threadId}
           replyTo={
@@ -240,8 +240,8 @@ function ActionButton({
       className={[
         "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
         destructive
-          ? "border-border text-red-600 hover:bg-red-500/10"
-          : "border-border hover:bg-black/5 dark:hover:bg-white/5",
+          ? "border-border bg-background text-red-500 hover:bg-red-500/10"
+          : "border-border bg-background text-foreground hover:bg-surface-raised",
       ].join(" ")}
     >
       {icon}
