@@ -18,6 +18,9 @@ export const corsair = createCorsair({
   database: pool,
   kek: process.env.CORSAIR_KEK!,
   multiTenancy: true,
+  connect: {
+    redirectUri: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/corsair/callback`,
+  },
 })
 
 // Validate critical env vars at startup
