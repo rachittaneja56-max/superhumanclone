@@ -120,7 +120,7 @@ export async function getMessages(userId: string, params?: { limit?: number }) {
     })
     const messages = listResult.messages || []
     const detailedMessages = []
-    
+
     // Fetch details of each message in parallel (up to 15 to avoid latency/rate limit)
     const toFetch = messages.slice(0, 15)
     const details = await Promise.all(
@@ -133,11 +133,11 @@ export async function getMessages(userId: string, params?: { limit?: number }) {
         }
       })
     )
-    
+
     for (const d of details) {
       if (d) detailedMessages.push(d)
     }
-    
+
     return { success: true, data: detailedMessages, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, data: null, needsConnect: true }

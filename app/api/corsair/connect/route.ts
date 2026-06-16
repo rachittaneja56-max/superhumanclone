@@ -12,7 +12,10 @@ export async function GET(req: NextRequest) {
 
   const url = new URL(req.url)
   const provider = url.searchParams.get('provider')
-  const redirectUri = getCorsairCallbackUrl(req)
+  const flow = url.searchParams.get('flow')
+  const redirectUri = flow
+    ? `${getCorsairCallbackUrl(req)}?flow=${encodeURIComponent(flow)}`
+    : getCorsairCallbackUrl(req)
 
   try {
     let authUrl = ''
