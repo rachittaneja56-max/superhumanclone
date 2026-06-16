@@ -67,6 +67,11 @@ export async function GET(request: Request) {
         emailVerified: googleUser.email_verified ? new Date() : null,
       }).returning();
       existingUser = newUser;
+
+      const { ensureTenantProvisioned } = await import('@/server/corsair/provision')
+      await ensureTenantProvisioned(existingUser.id).catch((err) =>
+        console.error('[Auth] Corsair tenant provisioning failed:', err)
+      )
     } else {
       // Update missing details if needed
       await db.update(users).set({

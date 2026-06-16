@@ -71,6 +71,8 @@ export async function isUserConnected(
 import { generateOAuthUrl } from 'corsair/oauth'
 
 export async function getGmailAuthUrl(userId: string, redirectUri?: string): Promise<string> {
+  const { ensureIntegrationCredentials } = await import('@/server/corsair/provision')
+  await ensureIntegrationCredentials()
   const { corsair } = await import('@/corsair')
   const rUri = redirectUri || (process.env.NEXT_PUBLIC_APP_URL + '/api/corsair/callback')
   const result = await generateOAuthUrl(corsair, 'gmail', {
@@ -81,6 +83,8 @@ export async function getGmailAuthUrl(userId: string, redirectUri?: string): Pro
 }
 
 export async function getCalendarAuthUrl(userId: string, redirectUri?: string): Promise<string> {
+  const { ensureIntegrationCredentials } = await import('@/server/corsair/provision')
+  await ensureIntegrationCredentials()
   const { corsair } = await import('@/corsair')
   const rUri = redirectUri || (process.env.NEXT_PUBLIC_APP_URL + '/api/corsair/callback')
   const result = await generateOAuthUrl(corsair, 'googlecalendar', {

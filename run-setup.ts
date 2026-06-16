@@ -5,22 +5,27 @@ import { setupCorsair } from 'corsair'
 async function run() {
   console.log('Running Corsair DB migrations and setup...')
   const { corsair } = await import('./corsair')
-  
+
+  const topicId = process.env.GMAIL_PUBSUB_TOPIC
+  if (!topicId) {
+    console.warn('GMAIL_PUBSUB_TOPIC is not set — Gmail push webhooks will not work until configured')
+  }
+
   const result = await setupCorsair(corsair, {
     caller: 'script',
     credentials: {
       gmail: {
         client_id: process.env.GOOGLE_CLIENT_ID!,
         client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-        topic_id: 'dummy-topic'
+        ...(topicId && { topic_id: topicId }),
       },
       googlecalendar: {
         client_id: process.env.GOOGLE_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET!
-      }
-    }
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      },
+    },
   })
-  
+
   console.log(result)
   process.exit(0)
 }

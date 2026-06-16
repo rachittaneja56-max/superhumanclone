@@ -2,6 +2,8 @@ import { createCorsair } from 'corsair'
 import { gmail } from '@corsair-dev/gmail'
 import { googlecalendar } from '@corsair-dev/googlecalendar'
 import pg from 'pg'
+import { gmailWebhookHooks, googleCalendarWebhookHooks } from '@/server/corsair/webhook-hooks'
+
 const { Pool } = pg
 
 // DATABASE_URL_UNPOOLED for persistent TCP connection
@@ -12,8 +14,14 @@ const pool = new Pool({
 
 export const corsair = createCorsair({
   plugins: [
-    gmail(),
-    googlecalendar(),
+    gmail({
+      authType: 'oauth_2',
+      webhookHooks: gmailWebhookHooks,
+    }),
+    googlecalendar({
+      authType: 'oauth_2',
+      webhookHooks: googleCalendarWebhookHooks,
+    }),
   ],
   database: pool,
   kek: process.env.CORSAIR_KEK!,

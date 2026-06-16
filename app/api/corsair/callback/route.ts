@@ -2,25 +2,40 @@ import { processOAuthCallback } from 'corsair/oauth'
 import { corsair } from '@/corsair'
 import { redirect } from 'next/navigation'
 import { NextRequest } from 'next/server'
+import { ensureTenantProvisioned } from '@/server/corsair/provision'
+import { syncInboxIfEmpty } from '@/server/corsair/sync'
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')
   const state = req.nextUrl.searchParams.get('state')
-  
+
   if (!code || !state) {
     return redirect('/onboarding/connect?error=missing_params')
   }
 
-  const redirectUri = new URL('/api/corsair/callback', req.url).toString()
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const redirectUri = `${baseUrl.replace(/\/$/, '')}/api/corsair/callback`
 
   try {
-    await processOAuthCallback(corsair, {
+    const result = await processOAuthCallback(corsair, {
       code,
       state,
-      redirectUri
+      redirectUri,
     })
-    
-    // Successfully connected! Redirect back to onboarding
+
+    // tenantId is embedded in the signed OAuth state
+    const userId = result.tenantId
+    if (userId) {
+      await ensureTenantProvisioned(userId)
+
+      if (result.plugin === 'gmail') {
+        // Seed local emails table on first connect
+        await syncInboxIfEmpty(userId).catch((err) =>
+          console.error('[OAuth] Initial inbox sync failed:', err)
+        )
+      }
+    }
+
     return redirect('/onboarding/connect?connected=true')
   } catch (error: any) {
     console.error('OAuth Callback Error:', error)
