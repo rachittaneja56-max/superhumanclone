@@ -1,8 +1,8 @@
 import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { serverTrpc } from '@/lib/trpc/server'
-import { ThreadList } from '@/components/inbox/ThreadList'
 import { MorningDigestBanner } from '@/components/inbox/MorningDigestBanner'
+import { MailWorkspace } from '@/components/inbox/MailWorkspace'
 
 export default async function InboxPage() {
   const session = await getSession()
@@ -12,9 +12,10 @@ export default async function InboxPage() {
   let initialThreads: any[] = []
   try {
     const trpc = await serverTrpc()
-    const rawThreads = await trpc.email.getThreads({
+    const rawThreads = await trpc.email.getMailboxThreads({
+      folder: 'inbox',
       limit: 50,
-      isArchived: false,
+      query: '',
     })
     initialThreads = JSON.parse(JSON.stringify(rawThreads))
   } catch (err) {
@@ -24,9 +25,8 @@ export default async function InboxPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <MorningDigestBanner />
-
-      <div className="flex-1 overflow-y-auto">
-        <ThreadList initialData={initialThreads} />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <MailWorkspace initialThreads={initialThreads} />
       </div>
     </div>
   )

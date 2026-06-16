@@ -34,10 +34,12 @@ export function useAblyChannel(userId: string | undefined) {
 
     channel.subscribe("email:triaged", () => {
       utils.email.getThreads.invalidate();
+      utils.email.getMailboxThreads.invalidate();
     });
 
     channel.subscribe("webhook:email", () => {
       utils.email.getThreads.invalidate();
+      utils.email.getMailboxThreads.invalidate();
     });
 
     return () => {

@@ -1,6 +1,6 @@
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
-import { emails, auditLogs, calendarEvents, autoReplyDrafts } from '@/server/db/schema';
-import { eq, and, desc, gt, between, inArray, asc } from 'drizzle-orm';
+import { emails, auditLogs, calendarEvents, autoReplyDrafts, users } from '@/server/db/schema';
+import { eq, and, desc, gt, between, inArray, asc, or, ilike, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import {
   sendEmail as corsairSendEmail,
@@ -38,6 +38,20 @@ import { z } from 'zod';
 const bulkActionSchema = z.object({
   emailIds: z.array(z.string()).min(1).max(100),
 });
+
+const mailboxSchema = z.object({
+  folder: z.enum(['inbox', 'drafts', 'sent', 'spam', 'trash']),
+  limit: z.number().int().min(1).max(100).default(50),
+  query: z.string().trim().optional().default(''),
+});
+
+const draftSchema = z.object({
+  id: z.string().optional(),
+  to: z.string().trim().default(''),
+  subject: z.string().trim().default(''),
+  body: z.string().default(''),
+  threadId: z.string().optional(),
+});
 function getHeader(headers: any[] | undefined, name: string): string {
   if (!headers) return '';
   return headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
@@ -72,7 +86,157 @@ function parseEmailBody(payload: any): { text: string; html: string } {
   return { text, html };
 }
 
+function normalizeSearchPattern(query: string) {
+  const trimmed = query.trim();
+  if (!trimmed) return '';
+  return `%${trimmed.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+}
+
+async function invalidateMailCaches(ctx: any, threadId?: string | null) {
+  const keys = [
+    `inbox:${ctx.userId}:active:50`,
+    `inbox:${ctx.userId}:archived:50`,
+    `mailbox:${ctx.userId}:inbox:50:`,
+    `mailbox:${ctx.userId}:drafts:50:`,
+    `mailbox:${ctx.userId}:sent:50:`,
+    `mailbox:${ctx.userId}:spam:50:`,
+    `mailbox:${ctx.userId}:trash:50:`,
+  ];
+  await Promise.all(keys.map((key) => ctx.redis.del(key).catch(() => null)));
+  if (threadId) {
+    await ctx.redis.del(`thread:${ctx.userId}:${threadId}`).catch(() => null);
+  }
+}
+
 export const emailRouter = router({
+  getMailboxThreads: protectedProcedure
+    .use(createRateLimitMiddleware('getMailboxThreads', 240, 60))
+    .input(mailboxSchema)
+    .query(async ({ ctx, input }) => {
+      const cacheKey = `mailbox:${ctx.userId}:${input.folder}:${input.limit}:${input.query || ''}`;
+      const cached = await ctx.redis.get<string>(cacheKey);
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {}
+      }
+
+      if (input.folder === 'drafts') {
+        const draftKeys = await ctx.redis.smembers(`drafts:index:${ctx.userId}`).catch(() => []);
+        const drafts = await Promise.all(
+          draftKeys.map(async (key) => {
+            const raw = await ctx.redis.get<string>(key).catch(() => null);
+            return raw ? JSON.parse(raw) : null;
+          })
+        );
+        const filtered = drafts.filter(Boolean).filter((draft: any) => {
+          const q = input.query.trim().toLowerCase();
+          if (!q) return true;
+          return [draft.to, draft.subject, draft.body].join(' ').toLowerCase().includes(q);
+        }).sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+        const result = filtered.slice(0, input.limit);
+        await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: 20 });
+        return result;
+      }
+
+      if (input.folder === 'sent') {
+        const me = await ctx.db.query.users.findFirst({
+          where: eq(users.id, ctx.userId!),
+          columns: { email: true, name: true },
+        });
+        const pattern = normalizeSearchPattern(input.query);
+        const rows = await ctx.db.query.emails.findMany({
+          where: and(
+            eq(emails.userId, ctx.userId!),
+            eq(emails.is_deleted, false),
+            or(
+              eq(emails.is_archived, false),
+              eq(emails.is_archived, true)
+            ),
+            me?.email ? eq(emails.from_address, me.email) : sql`true`,
+            pattern
+              ? or(
+                  ilike(emails.subject, pattern),
+                  ilike(emails.to_address, pattern),
+                  ilike(emails.snippet, pattern)
+                )
+              : sql`true`
+          ),
+          columns: {
+            id: true,
+            thread_id: true,
+            from_name: true,
+            from_address: true,
+            to_address: true,
+            subject: true,
+            snippet: true,
+            is_read: true,
+            created_at: true,
+          },
+          orderBy: [desc(emails.created_at)],
+          limit: input.limit,
+        });
+        const mapped = rows.map((r) => ({
+          ...r,
+          mailbox: 'sent',
+          fromName: r.from_name || me?.name || r.from_address,
+          fromAddress: r.from_address,
+        }));
+        await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: 20 });
+        return mapped;
+      }
+
+      const isSpam = input.folder === 'spam';
+      const rows = await ctx.db.query.emails.findMany({
+        where: and(
+          eq(emails.userId, ctx.userId!),
+          input.folder === 'trash' ? eq(emails.is_deleted, true) : eq(emails.is_deleted, false),
+          input.folder === 'inbox' ? eq(emails.is_archived, false) : sql`true`,
+          isSpam
+            ? or(
+                eq(emails.tag, 'newsletter'),
+                eq(emails.tag, 'social')
+              )
+            : sql`true`,
+          input.query.trim()
+            ? or(
+                ilike(emails.subject, normalizeSearchPattern(input.query)),
+                ilike(emails.from_address, normalizeSearchPattern(input.query)),
+                ilike(emails.snippet, normalizeSearchPattern(input.query))
+              )
+            : sql`true`
+        ),
+        columns: {
+          id: true,
+          thread_id: true,
+          from_name: true,
+          from_address: true,
+          subject: true,
+          snippet: true,
+          is_read: true,
+          tldr: true,
+          ai_triage_skipped: true,
+          created_at: true,
+          is_archived: true,
+          is_deleted: true,
+        },
+        orderBy: [desc(emails.created_at)],
+        limit: input.limit,
+      });
+
+      const mapped = rows.map((r) => ({
+        ...r,
+        mailbox: input.folder,
+        threadId: r.thread_id || r.id,
+        fromAddress: r.from_address,
+        fromName: r.from_name,
+        receivedAt: r.created_at,
+      }));
+
+      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: 20 });
+      return mapped;
+    }),
+
   getThreads: protectedProcedure
     .use(createRateLimitMiddleware('getThreads', 200, 60))
     .input(getThreadsSchema)
@@ -650,6 +814,11 @@ export const emailRouter = router({
 
       const payload = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
 
+      const me = await ctx.db.query.users.findFirst({
+        where: eq(users.id, ctx.userId!),
+        columns: { email: true, name: true },
+      });
+
       const sendResult = await corsairSendEmail(ctx.userId!, {
         to: payload.to,
         subject: payload.subject,
@@ -662,9 +831,25 @@ export const emailRouter = router({
       }
 
       await ctx.redis.del(redisKey);
-      if (payload.threadId) {
-        await ctx.redis.del(`thread:${ctx.userId}:${payload.threadId}`)
-      }
+      await invalidateMailCaches(ctx, payload.threadId);
+
+      const sentMessageId = sendResult?.data?.id || sendResult?.data?.messageId || crypto.randomUUID();
+      await ctx.db.insert(emails).values({
+        userId: ctx.userId!,
+        corsair_message_id: sentMessageId,
+        thread_id: payload.threadId || sentMessageId,
+        from_address: me?.email || 'me@aethra.local',
+        from_name: me?.name || 'Me',
+        to_address: Array.isArray(payload.to) ? payload.to.join(', ') : payload.to,
+        subject: payload.subject,
+        snippet: payload.body.slice(0, 180),
+        body_text: payload.body,
+        body_html: `<pre style="white-space:pre-wrap;font-family:inherit">${payload.body.replace(/[&<>]/g, (ch: string) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] || ch))}</pre>`,
+        is_read: true,
+        is_archived: false,
+        is_deleted: false,
+        ai_triage_skipped: true,
+      }).onConflictDoNothing();
 
       ctx.db.insert(auditLogs).values({
         userId: ctx.userId!,
@@ -672,6 +857,38 @@ export const emailRouter = router({
         details: { to: payload.to, subject: payload.subject }
       }).catch(console.error);
 
+      return { success: true };
+    }),
+
+  saveDraft: protectedProcedure
+    .use(createRateLimitMiddleware('saveDraft', 120, 60))
+    .input(draftSchema)
+    .mutation(async ({ ctx, input }) => {
+      const id = input.id || crypto.randomUUID();
+      const draft = {
+        id,
+        to: input.to,
+        subject: input.subject,
+        body: input.body,
+        threadId: input.threadId || null,
+        updatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      };
+      const key = `draft:${ctx.userId}:${id}`;
+      await ctx.redis.set(key, JSON.stringify(draft), { ex: 60 * 60 * 24 * 14 });
+      await ctx.redis.sadd(`drafts:index:${ctx.userId}`, key);
+      await ctx.redis.expire(`drafts:index:${ctx.userId}`, 60 * 60 * 24 * 14);
+      await ctx.redis.del(`mailbox:${ctx.userId}:drafts:50`).catch(() => null);
+      return draft;
+    }),
+
+  deleteDraft: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const key = `draft:${ctx.userId}:${input.id}`;
+      await ctx.redis.del(key);
+      await ctx.redis.srem(`drafts:index:${ctx.userId}`, key);
+      await ctx.redis.del(`mailbox:${ctx.userId}:drafts:50`).catch(() => null);
       return { success: true };
     }),
 
