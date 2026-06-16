@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { Archive, CalendarIcon, Forward, Reply, ReplyAll, Trash2 } from "lucide-react";
+import { Archive, CalendarIcon, Forward, MailCheck, MailOpen, Reply, ReplyAll, RotateCcw, Trash2 } from "lucide-react";
 import { ComposeBox } from "./ComposeBox";
 import { toast } from "sonner";
 import type { EmailThreadClientItem } from "@/lib/email-client";
@@ -10,12 +10,18 @@ import type { EmailThreadClientItem } from "@/lib/email-client";
 export function ThreadView({
   threadId,
   compact = false,
+  mailbox = "inbox",
 }: {
   threadId: string;
   compact?: boolean;
+  mailbox?: "inbox" | "drafts" | "sent" | "spam" | "trash";
 }) {
   const { data: thread, isLoading, isError } = trpc.email.getThread.useQuery({ threadId });
   const markRead = trpc.email.markRead.useMutation();
+  const markUnread = trpc.email.markUnread.useMutation({
+    onSuccess: () => toast.success("Marked unread"),
+    onError: () => toast.error("Failed to update read state"),
+  });
   const archiveMutation = trpc.email.archiveEmail.useMutation({
     onSuccess: () => toast.success("Archived"),
     onError: () => toast.error("Failed to archive"),
@@ -24,8 +30,11 @@ export function ThreadView({
     onSuccess: () => toast.success("Moved to trash"),
     onError: () => toast.error("Failed to delete"),
   });
+  const restoreMutation = trpc.email.restoreEmail.useMutation({
+    onSuccess: () => toast.success("Restored from trash"),
+    onError: () => toast.error("Failed to restore"),
+  });
 
-  const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [replyMode, setReplyMode] = useState<"reply" | "replyAll" | "forward" | null>(null);
 
   const typedThread = (thread as EmailThreadClientItem[] | undefined) ?? [];
@@ -67,6 +76,8 @@ export function ThreadView({
   const hasMeetingIntent = meetingRegex.test(combinedSnippets);
   const primaryEmailId = typedThread[0]?.threadId || typedThread[0]?.id || "";
   const latest = typedThread[typedThread.length - 1];
+  const unreadIds = typedThread.filter((email) => !email.isRead).map((email) => email.id);
+  const hasUnread = unreadIds.length > 0;
   const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
   const forwardSubject = subject.toLowerCase().startsWith("fwd:") ? subject : `Fwd: ${subject}`;
 
@@ -88,13 +99,32 @@ export function ThreadView({
             <ActionButton onClick={() => setReplyMode("reply")} icon={<Reply className="h-4 w-4" />} label="Reply" />
             <ActionButton onClick={() => setReplyMode("replyAll")} icon={<ReplyAll className="h-4 w-4" />} label="Reply all" />
             <ActionButton onClick={() => setReplyMode("forward")} icon={<Forward className="h-4 w-4" />} label="Forward" />
-            <ActionButton onClick={() => archiveMutation.mutate({ emailId: primaryEmailId })} icon={<Archive className="h-4 w-4" />} label="Archive" />
-            <ActionButton
-              onClick={() => deleteMutation.mutate({ emailId: primaryEmailId })}
-              icon={<Trash2 className="h-4 w-4" />}
-              label="Trash"
-              destructive
-            />
+            {mailbox === "trash" ? (
+              <ActionButton
+                onClick={() => restoreMutation.mutate({ emailId: primaryEmailId })}
+                icon={<RotateCcw className="h-4 w-4" />}
+                label="Restore"
+              />
+            ) : (
+              <>
+                <ActionButton
+                  onClick={() =>
+                    hasUnread
+                      ? markRead.mutate({ emailIds: unreadIds.slice(0, 50) })
+                      : markUnread.mutate({ emailIds: [latest.id] })
+                  }
+                  icon={hasUnread ? <MailCheck className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
+                  label={hasUnread ? "Mark read" : "Mark unread"}
+                />
+                <ActionButton onClick={() => archiveMutation.mutate({ emailId: primaryEmailId })} icon={<Archive className="h-4 w-4" />} label="Archive" />
+                <ActionButton
+                  onClick={() => deleteMutation.mutate({ emailId: primaryEmailId })}
+                  icon={<Trash2 className="h-4 w-4" />}
+                  label="Trash"
+                  destructive
+                />
+              </>
+            )}
           </div>
         </div>
         {showTldr && (
@@ -138,7 +168,6 @@ export function ThreadView({
                                 .filter(Boolean) as string[]
                             )
                           )
-                            .filter((addr) => addr !== latest?.senderAddress)
                             .join(", ")
                         : latest?.senderAddress || "",
                     subject: replySubject,
@@ -151,7 +180,7 @@ export function ThreadView({
 
       {hasMeetingIntent && !compact && (
         <button
-          onClick={() => setSchedulerOpen(true)}
+          onClick={() => toast.message("Calendar smart actions are coming next.")}
           className="fixed bottom-6 right-8 z-50 flex items-center space-x-2 rounded-full bg-amber-500 px-5 py-3 text-white shadow-lg transition-transform hover:scale-105 hover:bg-amber-600"
         >
           <CalendarIcon className="h-5 w-5" />

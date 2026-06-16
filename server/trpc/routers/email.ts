@@ -5,9 +5,12 @@ import { TRPCError } from '@trpc/server';
 import {
   sendEmail as corsairSendEmail,
   archiveEmail,
+  restoreArchivedEmail,
   deleteEmail as corsairDeleteEmail,
+  restoreEmailFromTrash,
   getThreadMessages as corsairGetThread,
   markEmailRead,
+  markEmailUnread,
   getMessages as corsairGetMessages,
 } from '@/server/corsair/client';
 import { generateDigest, rewriteDraft } from '@/server/ai/provider';
@@ -22,6 +25,7 @@ import {
   getThreadsSchema,
   getThreadSchema,
   markReadSchema,
+  markUnreadSchema,
   archiveEmailSchema,
   restoreFromArchiveSchema,
   deleteEmailSchema,
@@ -49,6 +53,8 @@ const mailboxSchema = z.object({
 const draftSchema = z.object({
   id: z.string().optional(),
   to: z.string().trim().default(''),
+  cc: z.string().trim().default(''),
+  bcc: z.string().trim().default(''),
   subject: z.string().trim().default(''),
   body: z.string().default(''),
   threadId: z.string().optional(),
@@ -109,6 +115,31 @@ async function invalidateMailCaches(ctx: any, threadId?: string | null) {
   }
 }
 
+async function publishMailboxEvent(
+  userId: string,
+  eventName: string,
+  data: { mailbox?: 'inbox' | 'drafts' | 'sent' | 'spam' | 'trash'; threadId?: string | null; delta?: number } = {}
+) {
+  const ablyKey = process.env.ABLY_API_KEY
+  if (!ablyKey) return
+
+  await fetch(`https://rest.ably.io/channels/private:user-${userId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Basic ' + Buffer.from(ablyKey).toString('base64'),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: eventName,
+      data: {
+        mailbox: data.mailbox ?? 'inbox',
+        threadId: data.threadId ?? null,
+        delta: data.delta ?? 0,
+      },
+    }),
+  }).catch(() => null)
+}
+
 async function resolveEmailActionTarget(
   ctx: any,
   identifier: string
@@ -156,7 +187,7 @@ export const emailRouter = router({
         const filtered = drafts.filter(Boolean).filter((draft: any) => {
           const q = input.query.trim().toLowerCase();
           if (!q) return true;
-          return [draft.to, draft.subject, draft.body].join(' ').toLowerCase().includes(q);
+          return [draft.to, draft.cc, draft.bcc, draft.subject, draft.body].join(' ').toLowerCase().includes(q);
         }).sort((a: any, b: any) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
         const result = filtered.slice(0, input.limit).map((draft: any) => ({
           id: draft.id,
@@ -495,29 +526,56 @@ export const emailRouter = router({
   markRead: protectedProcedure
     .input(markReadSchema)
     .mutation(async ({ ctx, input }) => {
+      const toUpdate = await ctx.db.query.emails.findMany({
+        where: and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)),
+        columns: { corsair_message_id: true, thread_id: true }
+      });
+
+      const results = await Promise.all(
+        toUpdate.map((email) => markEmailRead(ctx.userId!, email.corsair_message_id))
+      );
+      if (results.some((result) => result.needsConnect)) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
+
       await ctx.db.update(emails)
         .set({ is_read: true })
         .where(and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)));
 
+      const firstThreadId = toUpdate[0]?.thread_id ?? null
+      await invalidateMailCaches(ctx, firstThreadId)
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'inbox',
+        threadId: firstThreadId,
+      })
+
+      return { success: true };
+    }),
+
+  markUnread: protectedProcedure
+    .input(markUnreadSchema)
+    .mutation(async ({ ctx, input }) => {
       const toUpdate = await ctx.db.query.emails.findMany({
         where: and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)),
-        columns: { corsair_message_id: true }
-      });
-      
-      toUpdate.forEach(e => {
-        markEmailRead(ctx.userId!, e.corsair_message_id).catch(console.error);
+        columns: { corsair_message_id: true, thread_id: true }
       });
 
-      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
-      for (const emailId of input.emailIds) {
-        const thread = await ctx.db.query.emails.findFirst({
-          where: and(eq(emails.id, emailId), eq(emails.userId, ctx.userId!)),
-          columns: { thread_id: true },
-        })
-        if (thread?.thread_id) {
-          await ctx.redis.del(`thread:${ctx.userId}:${thread.thread_id}`)
-        }
+      const results = await Promise.all(
+        toUpdate.map((email) => markEmailUnread(ctx.userId!, email.corsair_message_id))
+      );
+      if (results.some((result) => result.needsConnect)) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
       }
+
+      await ctx.db.update(emails)
+        .set({ is_read: false })
+        .where(and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)));
+
+      await invalidateMailCaches(ctx, toUpdate[0]?.thread_id);
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'inbox',
+        threadId: toUpdate[0]?.thread_id,
+      });
 
       return { success: true };
     }),
@@ -525,18 +583,24 @@ export const emailRouter = router({
   bulkMarkRead: protectedProcedure
     .input(bulkActionSchema)
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.update(emails)
-        .set({ is_read: true })
-        .where(and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)));
-
       const toUpdate = await ctx.db.query.emails.findMany({
         where: and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)),
         columns: { corsair_message_id: true, thread_id: true }
       });
 
-      await Promise.all(toUpdate.map((email) => markEmailRead(ctx.userId!, email.corsair_message_id).catch(console.error)));
-      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
-      await Promise.all(toUpdate.map((email) => email.thread_id ? ctx.redis.del(`thread:${ctx.userId}:${email.thread_id}`) : Promise.resolve()))
+      const results = await Promise.all(toUpdate.map((email) => markEmailRead(ctx.userId!, email.corsair_message_id)));
+      if (results.some((result) => result.needsConnect)) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
+
+      await ctx.db.update(emails)
+        .set({ is_read: true })
+        .where(and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)));
+      await invalidateMailCaches(ctx, toUpdate[0]?.thread_id)
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'inbox',
+        threadId: toUpdate[0]?.thread_id,
+      })
 
       return { success: true, count: toUpdate.length };
     }),
@@ -549,12 +613,18 @@ export const emailRouter = router({
         columns: { corsair_message_id: true, thread_id: true }
       });
 
-      await Promise.all(rows.map((email) => archiveEmail(ctx.userId!, email.corsair_message_id).catch(console.error)));
+      const results = await Promise.all(rows.map((email) => archiveEmail(ctx.userId!, email.corsair_message_id)));
+      if (results.some((result) => result.needsConnect)) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
       await ctx.db.update(emails)
         .set({ is_archived: true })
         .where(and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)));
-      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
-      await Promise.all(rows.map((email) => email.thread_id ? ctx.redis.del(`thread:${ctx.userId}:${email.thread_id}`) : Promise.resolve()))
+      await invalidateMailCaches(ctx, rows[0]?.thread_id)
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'inbox',
+        threadId: rows[0]?.thread_id,
+      })
 
       return { success: true, count: rows.length };
     }),
@@ -567,15 +637,20 @@ export const emailRouter = router({
         columns: { id: true, corsair_message_id: true, thread_id: true }
       });
 
-      await Promise.all(rows.map(async (email) => {
-        await ctx.db.update(emails)
-          .set({ is_deleted: true, deleted_at: new Date() })
-          .where(eq(emails.id, email.id));
-        await corsairDeleteEmail(ctx.userId!, email.corsair_message_id).catch(console.error);
-      }));
+      const results = await Promise.all(rows.map((email) => corsairDeleteEmail(ctx.userId!, email.corsair_message_id)));
+      if (results.some((result) => result.needsConnect)) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
 
-      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
-      await Promise.all(rows.map((email) => email.thread_id ? ctx.redis.del(`thread:${ctx.userId}:${email.thread_id}`) : Promise.resolve()))
+      await ctx.db.update(emails)
+        .set({ is_deleted: true, deleted_at: new Date() })
+        .where(and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)));
+
+      await invalidateMailCaches(ctx, rows[0]?.thread_id)
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'trash',
+        threadId: rows[0]?.thread_id,
+      })
       return { success: true, count: rows.length };
     }),
 
@@ -598,8 +673,11 @@ export const emailRouter = router({
         .where(and(eq(emails.corsair_message_id, target.corsair_message_id), eq(emails.userId, ctx.userId!)))
         .returning({ id: emails.id });
 
-      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
-      if (target.thread_id) await ctx.redis.del(`thread:${ctx.userId}:${target.thread_id}`)
+      await invalidateMailCaches(ctx, target.thread_id)
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'inbox',
+        threadId: target.thread_id,
+      })
 
       // Fire and forget audit log
       ctx.db.insert(auditLogs).values({
@@ -614,18 +692,24 @@ export const emailRouter = router({
   restoreFromArchive: protectedProcedure
     .input(restoreFromArchiveSchema)
     .mutation(async ({ ctx, input }) => {
-      // NOTE: Our client currently doesn't implement unarchive via Corsair,
-      // but to match previous local behavior:
       const target = await resolveEmailActionTarget(ctx, input.emailId)
       if (!target) throw new TRPCError({ code: 'NOT_FOUND' })
+
+      const restoreResult = await restoreArchivedEmail(ctx.userId!, target.corsair_message_id)
+      if (restoreResult.needsConnect) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
 
       const localResult = await ctx.db.update(emails)
         .set({ is_archived: false })
         .where(and(eq(emails.corsair_message_id, target.corsair_message_id), eq(emails.userId, ctx.userId!)))
         .returning({ id: emails.id });
 
-      await ctx.redis.del(`inbox:${ctx.userId}:archived:50`)
-      if (target.thread_id) await ctx.redis.del(`thread:${ctx.userId}:${target.thread_id}`)
+      await invalidateMailCaches(ctx, target.thread_id)
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'inbox',
+        threadId: target.thread_id,
+      })
 
       return { success: true, id: localResult[0]?.id || target.id };
     }),
@@ -637,27 +721,38 @@ export const emailRouter = router({
       const email = await resolveEmailActionTarget(ctx, input.emailId);
       if (!email) throw new TRPCError({ code: 'NOT_FOUND' });
 
-      // 2. Soft delete
+      const deleteResult = await corsairDeleteEmail(ctx.userId!, email.corsair_message_id)
+      if (deleteResult.needsConnect) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
+
+      // 2. Soft delete locally after upstream trash succeeds
       await ctx.db.update(emails)
         .set({ is_deleted: true, deleted_at: new Date() })
         .where(eq(emails.id, email.id));
 
-      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
+      await invalidateMailCaches(ctx, email.thread_id)
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'trash',
+        threadId: email.thread_id,
+      })
 
       // 3. Redis buffer
       await ctx.redis.set(`deleted:${ctx.userId}:${email.corsair_message_id}`, 'true', { ex: 600 });
 
       // 4. QStash purge job
-      const { messageId } = await qstash.publishJSON({
-        url: `${process.env.RAILWAY_WORKER_URL || ''}/workers/purge`,
-        body: { userId: ctx.userId, emailId: email.corsair_message_id, dbId: email.id },
-        headers: { 'X-Worker-Secret': process.env.WORKER_SECRET || '' },
-        delay: '10m',
-        retries: 3,
-      });
+      if (process.env.QSTASH_TOKEN && process.env.RAILWAY_WORKER_URL && process.env.WORKER_SECRET) {
+        const { messageId } = await qstash.publishJSON({
+          url: `${process.env.RAILWAY_WORKER_URL}/workers/purge`,
+          body: { userId: ctx.userId, emailId: email.corsair_message_id, dbId: email.id },
+          headers: { 'X-Worker-Secret': process.env.WORKER_SECRET },
+          delay: '10m',
+          retries: 3,
+        });
 
-      // 5. Store job ID
-      await ctx.redis.set(`deletejob:${ctx.userId}:${email.corsair_message_id}`, messageId, { ex: 660 });
+        // 5. Store job ID
+        await ctx.redis.set(`deletejob:${ctx.userId}:${email.corsair_message_id}`, messageId, { ex: 660 });
+      }
 
       return { success: true };
     }),
@@ -681,12 +776,21 @@ export const emailRouter = router({
         await ctx.redis.del(`deleted:${ctx.userId}:${target.corsair_message_id}`);
       }
 
+      const restoreResult = await restoreEmailFromTrash(ctx.userId!, target.corsair_message_id)
+      if (restoreResult.needsConnect) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
+
       // 3. Restore
       await ctx.db.update(emails)
         .set({ is_deleted: false, deleted_at: null })
         .where(and(eq(emails.corsair_message_id, target.corsair_message_id), eq(emails.userId, ctx.userId!)));
 
-      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
+      await invalidateMailCaches(ctx, target.thread_id)
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'trash',
+        threadId: target.thread_id,
+      })
 
       return { success: true };
     }),
@@ -700,13 +804,20 @@ export const emailRouter = router({
         columns: { id: true, corsair_message_id: true }
       });
 
-      for (const t of trashed) {
-        await corsairDeleteEmail(ctx.userId!, t.corsair_message_id);
-      }
+        const results = await Promise.all(trashed.map((email) => corsairDeleteEmail(ctx.userId!, email.corsair_message_id)));
+        if (results.some((result) => result.needsConnect)) {
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+        }
 
       await ctx.db.update(emails)
         .set({ body_text: null })
         .where(and(eq(emails.userId, ctx.userId!), eq(emails.is_deleted, true)));
+
+      await invalidateMailCaches(ctx)
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'trash',
+        delta: -trashed.length,
+      })
 
       return { success: true, count: trashed.length };
     }),
@@ -841,6 +952,8 @@ export const emailRouter = router({
 
       const sendResult = await corsairSendEmail(ctx.userId!, {
         to: payload.to,
+        cc: payload.cc,
+        bcc: payload.bcc,
         subject: payload.subject,
         body: payload.body,
         threadId: payload.threadId,
@@ -852,6 +965,11 @@ export const emailRouter = router({
 
       await ctx.redis.del(redisKey);
       await invalidateMailCaches(ctx, payload.threadId);
+      await publishMailboxEvent(ctx.userId!, 'mail:sent', {
+        mailbox: 'sent',
+        threadId: payload.threadId ?? null,
+        delta: 1,
+      })
 
       const sentMessageId = sendResult?.data?.id || sendResult?.data?.messageId || crypto.randomUUID();
       await ctx.db.insert(emails).values({
@@ -874,7 +992,7 @@ export const emailRouter = router({
       ctx.db.insert(auditLogs).values({
         userId: ctx.userId!,
         action: 'email_sent',
-        details: { to: payload.to, subject: payload.subject }
+        details: { recipientCount: Array.isArray(payload.to) ? payload.to.length : 1, threadId: payload.threadId ?? null }
       }).catch(console.error);
 
       return { success: true };
@@ -888,6 +1006,8 @@ export const emailRouter = router({
       const draft = {
         id,
         to: input.to,
+        cc: input.cc,
+        bcc: input.bcc,
         subject: input.subject,
         body: input.body,
         threadId: input.threadId || null,
@@ -900,6 +1020,10 @@ export const emailRouter = router({
       await ctx.redis.expire(`drafts:index:${ctx.userId}`, 60 * 60 * 24 * 14);
       await ctx.redis.del(`mailbox:${ctx.userId}:drafts:50`).catch(() => null);
       await invalidateMailCaches(ctx, input.threadId);
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'drafts',
+        threadId: input.threadId ?? null,
+      })
       return draft;
     }),
 
@@ -911,6 +1035,9 @@ export const emailRouter = router({
       await ctx.redis.srem(`drafts:index:${ctx.userId}`, key);
       await ctx.redis.del(`mailbox:${ctx.userId}:drafts:50`).catch(() => null);
       await invalidateMailCaches(ctx);
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {
+        mailbox: 'drafts',
+      })
       return { success: true };
     }),
 

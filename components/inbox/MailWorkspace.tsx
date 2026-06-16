@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Search, SquarePen } from "lucide-react";
+import { ChevronDown, Search, SquarePen } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
 import type { EmailListClientItem } from "@/lib/email-client";
+import { sendEmailSchema } from "@/lib/schemas";
 import { ThreadEmptyState, ThreadView } from "./ThreadView";
 
 type Folder = "inbox" | "drafts" | "sent" | "spam" | "trash";
@@ -98,14 +99,16 @@ export function MailWorkspace({
     router.push(`/inbox/${threadId}`);
   };
 
-  const handleSend = async (payload: { to: string; subject: string; body: string; threadId?: string }) => {
+  const handleSend = async (payload: {
+    to: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject: string;
+    body: string;
+    threadId?: string;
+  }) => {
     try {
-      const res = await sendMutation.mutateAsync({
-        to: [payload.to],
-        subject: payload.subject,
-        body: payload.body,
-        threadId: payload.threadId,
-      });
+      const res = await sendMutation.mutateAsync(payload);
       startUndoWindow(res.undoToken);
       closeCompose();
       toast.success("Queued for send");
@@ -241,7 +244,7 @@ export function MailWorkspace({
                 </div>
               </div>
             ) : (
-              <ThreadView threadId={selected.threadId || selected.id} compact />
+              <ThreadView threadId={selected.threadId || selected.id} compact mailbox={folder} />
             )
           ) : (
             <ThreadEmptyState />
@@ -259,36 +262,174 @@ function ComposeModal({
   onSend,
 }: {
   onClose: () => void;
-  onSend: (payload: { to: string; subject: string; body: string; threadId?: string }) => Promise<void>;
+  onSend: (payload: {
+    to: string[];
+    cc?: string[];
+    bcc?: string[];
+    subject: string;
+    body: string;
+    threadId?: string;
+  }) => Promise<void>;
 }) {
+  const saveDraft = trpc.email.saveDraft.useMutation();
+  const deleteDraft = trpc.email.deleteDraft.useMutation();
+  const [draftId, setDraftId] = useState<string | undefined>(undefined);
   const [to, setTo] = useState("");
+  const [cc, setCc] = useState("");
+  const [bcc, setBcc] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [showCcBcc, setShowCcBcc] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const hasContent = [to, cc, bcc, subject, body].some((value) => value.trim().length > 0);
+
+  useEffect(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    if (!hasContent) {
+      return;
+    }
+
+    saveTimerRef.current = setTimeout(() => {
+      saveDraft.mutate(
+        {
+          id: draftId,
+          to,
+          cc,
+          bcc,
+          subject,
+          body,
+        },
+        {
+          onSuccess: (draft) => {
+            if (!draftId) {
+              setDraftId(draft.id);
+            }
+          },
+        }
+      );
+    }, 1200);
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [bcc, body, cc, draftId, hasContent, saveDraft, subject, to]);
+
+  const closeWithConfirm = useCallback(async () => {
+    if (!hasContent) {
+      onClose();
+      return;
+    }
+
+    if (!window.confirm("Discard this draft?")) {
+      return;
+    }
+
+    if (draftId) {
+      await deleteDraft.mutateAsync({ id: draftId }).catch(() => null);
+    }
+    onClose();
+  }, [deleteDraft, draftId, hasContent, onClose]);
+
+  const handleSend = useCallback(async () => {
+    const parsed = sendEmailSchema.safeParse({
+      to: splitRecipients(to),
+      cc: splitRecipients(cc),
+      bcc: splitRecipients(bcc),
+      subject: subject.trim() || "No Subject",
+      body,
+    });
+
+    if (!parsed.success) {
+      toast.error("Enter valid recipients, a subject, and a message.");
+      return;
+    }
+
+    try {
+      setIsSending(true);
+      await onSend(parsed.data);
+      if (draftId) {
+        await deleteDraft.mutateAsync({ id: draftId }).catch(() => null);
+      }
+      setDraftId(undefined);
+      setTo("");
+      setCc("");
+      setBcc("");
+      setSubject("");
+      setBody("");
+    } catch {
+      toast.error("We could not queue this email.");
+    } finally {
+      setIsSending(false);
+    }
+  }, [bcc, body, cc, deleteDraft, draftId, onSend, subject, to]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        void handleSend();
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        void closeWithConfirm();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closeWithConfirm, handleSend]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-end bg-black/20 p-4">
       <div className="w-full max-w-2xl rounded-2xl border border-border bg-[var(--surface)] shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="font-medium">Compose</div>
-          <button onClick={onClose} className="rounded-md px-2 py-1 text-sm hover:bg-black/5 dark:hover:bg-white/5">
+          <button onClick={() => void closeWithConfirm()} className="rounded-md px-2 py-1 text-sm hover:bg-black/5 dark:hover:bg-white/5">
             Close
           </button>
         </div>
         <div className="space-y-3 p-4">
           <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="To" className="w-full rounded-lg border border-border bg-transparent px-3 py-2 outline-none" />
+          <div className="flex items-center justify-between text-xs text-foreground-muted">
+            <button
+              type="button"
+              onClick={() => setShowCcBcc((value) => !value)}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showCcBcc ? "rotate-180" : ""}`} />
+              Cc / Bcc
+            </button>
+            <span>Drafts auto-save while you type.</span>
+          </div>
+          {showCcBcc && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <input value={cc} onChange={(e) => setCc(e.target.value)} placeholder="Cc" className="w-full rounded-lg border border-border bg-transparent px-3 py-2 outline-none" />
+              <input value={bcc} onChange={(e) => setBcc(e.target.value)} placeholder="Bcc" className="w-full rounded-lg border border-border bg-transparent px-3 py-2 outline-none" />
+            </div>
+          )}
           <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" className="w-full rounded-lg border border-border bg-transparent px-3 py-2 outline-none" />
           <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write your message..." className="min-h-56 w-full rounded-lg border border-border bg-transparent px-3 py-2 outline-none" />
         </div>
         <div className="flex justify-end gap-2 border-t border-border px-4 py-3">
-          <button onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5">
+          <button onClick={() => void closeWithConfirm()} className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5">
             Cancel
           </button>
           <button
-            onClick={() => onSend({ to, subject, body })}
+            onClick={() => void handleSend()}
+            disabled={isSending}
             className="rounded-lg px-4 py-2 text-sm font-medium"
             style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}
           >
-            Send
+            {isSending ? "Queueing..." : "Send"}
           </button>
         </div>
       </div>
@@ -301,4 +442,13 @@ function normalizeFolder(value: string | null): Folder {
     return value;
   }
   return "inbox";
+}
+
+function splitRecipients(value: string) {
+  const recipients = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  return recipients.length > 0 ? recipients : undefined;
 }

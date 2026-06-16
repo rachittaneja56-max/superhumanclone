@@ -33,8 +33,7 @@ export function useUndoSend() {
     try {
       await cancelSend.mutateAsync({ undoToken: token });
       toast.success("Send cancelled");
-    } catch (e) {
-      console.error(e);
+    } catch {
       toast.error("Failed to cancel send");
     }
   }, [activeToken, cancelSend, clearTimer]);
@@ -60,8 +59,8 @@ export function useUndoSend() {
           
           sendConfirmed.mutateAsync({ undoToken: token }).then(() => {
             toast.success("Message sent");
-          }).catch((err) => {
-            toast.error("Failed to send message: " + (err.message || 'Unknown error'));
+          }).catch(() => {
+            toast.error("Failed to send message");
           });
           
           setActiveToken(null);

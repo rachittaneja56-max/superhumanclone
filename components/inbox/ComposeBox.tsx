@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useUndoSend } from "@/hooks/useUndoSend";
 import { Send, X, Check } from "lucide-react";
 import { toast } from "sonner";
+import { sendEmailSchema } from "@/lib/schemas";
 
 const COMMANDS = [
   { id: "improve_tone", label: "Improve Tone" },
@@ -118,18 +119,21 @@ export function ComposeBox({
   };
 
   const handleSend = async () => {
-    if (!to || !draft) {
-      toast.error("To and Body are required.");
+    const toList = splitRecipients(to);
+    const parsed = sendEmailSchema.safeParse({
+      to: toList,
+      subject: subject.trim() || "No Subject",
+      body: draft,
+      threadId,
+    });
+
+    if (!parsed.success) {
+      toast.error("Enter a valid recipient and message before sending.");
       return;
     }
 
     try {
-      const res = await sendMutation.mutateAsync({
-        to: [to],
-        subject: subject || "No Subject",
-        body: draft,
-        threadId,
-      });
+      const res = await sendMutation.mutateAsync(parsed.data);
       
       setDraft("");
       setSubject("");
@@ -139,7 +143,7 @@ export function ComposeBox({
       }
 
       startUndoWindow(res.undoToken);
-    } catch (e) {
+    } catch {
       toast.error("Failed to schedule send");
     }
   };
@@ -202,6 +206,12 @@ export function ComposeBox({
               ref={textareaRef}
               value={draft}
               onChange={handleTextChange}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  void handleSend();
+                }
+              }}
               placeholder={replyTo ? "Write your reply here..." : "Write your email here..."}
               className="w-full min-h-[80px] p-3 rounded-md border bg-transparent text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[var(--accent)] transition-all"
               style={{
@@ -252,4 +262,11 @@ export function ComposeBox({
       </div>
     </div>
   );
+}
+
+function splitRecipients(value: string) {
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }

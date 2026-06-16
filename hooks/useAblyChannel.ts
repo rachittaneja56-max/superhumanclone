@@ -42,6 +42,16 @@ export function useAblyChannel(userId: string | undefined) {
       utils.email.getMailboxThreads.invalidate();
     });
 
+    channel.subscribe("mailbox:refresh", () => {
+      utils.email.getThreads.invalidate();
+      utils.email.getMailboxThreads.invalidate();
+    });
+
+    channel.subscribe("mail:sent", () => {
+      utils.email.getThreads.invalidate();
+      utils.email.getMailboxThreads.invalidate();
+    });
+
     return () => {
       channel.unsubscribe();
       ably.close();

@@ -160,6 +160,8 @@ export async function getThreadMessages(userId: string, threadId: string) {
 
 export async function sendEmail(userId: string, payload: {
   to: string[]
+  cc?: string[]
+  bcc?: string[]
   subject: string
   body: string
   threadId?: string
@@ -168,6 +170,8 @@ export async function sendEmail(userId: string, payload: {
   try {
     const result = await t.gmail.api.messages.send({
       to: payload.to,
+      ...(payload.cc?.length ? { cc: payload.cc } : {}),
+      ...(payload.bcc?.length ? { bcc: payload.bcc } : {}),
       subject: payload.subject,
       body: payload.body,
       ...(payload.threadId && { threadId: payload.threadId }),
@@ -193,6 +197,20 @@ export async function archiveEmail(userId: string, messageId: string) {
   }
 }
 
+export async function restoreArchivedEmail(userId: string, messageId: string) {
+  const t = await getTenant(userId)
+  try {
+    await t.gmail.api.messages.modify({
+      id: messageId,
+      addLabelIds: ['INBOX'],
+    })
+    return { success: true, needsConnect: false }
+  } catch (err: any) {
+    if (isAuthError(err)) return { success: false, needsConnect: true }
+    throw err
+  }
+}
+
 export async function markEmailRead(userId: string, messageId: string) {
   const t = await getTenant(userId)
   try {
@@ -207,10 +225,39 @@ export async function markEmailRead(userId: string, messageId: string) {
   }
 }
 
+export async function markEmailUnread(userId: string, messageId: string) {
+  const t = await getTenant(userId)
+  try {
+    await t.gmail.api.messages.modify({
+      id: messageId,
+      addLabelIds: ['UNREAD'],
+    })
+    return { success: true, needsConnect: false }
+  } catch (err: any) {
+    if (isAuthError(err)) return { success: false, needsConnect: true }
+    throw err
+  }
+}
+
 export async function deleteEmail(userId: string, messageId: string) {
   const t = await getTenant(userId)
   try {
     await t.gmail.api.messages.trash({ id: messageId })
+    return { success: true, needsConnect: false }
+  } catch (err: any) {
+    if (isAuthError(err)) return { success: false, needsConnect: true }
+    throw err
+  }
+}
+
+export async function restoreEmailFromTrash(userId: string, messageId: string) {
+  const t = await getTenant(userId)
+  try {
+    await t.gmail.api.messages.modify({
+      id: messageId,
+      removeLabelIds: ['TRASH'],
+      addLabelIds: ['INBOX'],
+    })
     return { success: true, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, needsConnect: true }

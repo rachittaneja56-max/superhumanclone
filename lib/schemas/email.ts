@@ -14,6 +14,10 @@ export const markReadSchema = z.object({
   emailIds: z.array(z.string().uuid()).max(50)
 });
 
+export const markUnreadSchema = z.object({
+  emailIds: z.array(z.string().uuid()).max(50)
+});
+
 export const archiveEmailSchema = z.object({
   emailId: z.string(),
 });
@@ -41,10 +45,11 @@ export const rewriteDraftSchema = z.object({
 });
 
 export const sendEmailSchema = z.object({
-  to: z.array(z.string().email()),
+  to: z.array(z.string().email()).min(1),
   cc: z.array(z.string().email()).optional(),
+  bcc: z.array(z.string().email()).optional(),
   subject: z.string().min(1),
-  body: z.string(),
+  body: z.string().trim().min(1),
   threadId: z.string().optional()
 });
 
