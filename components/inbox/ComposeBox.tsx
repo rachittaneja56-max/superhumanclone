@@ -31,6 +31,8 @@ export function ComposeBox({
   const [rewrittenDraft, setRewrittenDraft] = useState("");
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashIndex, setSlashIndex] = useState(-1);
+  const [slashLength, setSlashLength] = useState(0);
+  const [slashQuery, setSlashQuery] = useState("");
   const [rewriteState, setRewriteState] = useState<"idle" | "loading" | "preview">("idle");
   const [subject, setSubject] = useState("");
   const [to, setTo] = useState("");
@@ -68,12 +70,18 @@ export function ComposeBox({
     const lastNewline = val.lastIndexOf("\n", cursor - 1);
     const lineStart = lastNewline === -1 ? 0 : lastNewline + 1;
     const currentLine = val.substring(lineStart, cursor);
+    const commandMatch = currentLine.match(/^\/([a-z-]*)$/i);
 
-    if (currentLine === "/") {
+    if (commandMatch) {
       setShowSlashMenu(true);
       setSlashIndex(lineStart);
+      setSlashLength(currentLine.length);
+      setSlashQuery(commandMatch[1].toLowerCase());
     } else if (showSlashMenu) {
       setShowSlashMenu(false);
+      setSlashIndex(-1);
+      setSlashLength(0);
+      setSlashQuery("");
     }
   };
 
@@ -84,8 +92,10 @@ export function ComposeBox({
     }
 
     setShowSlashMenu(false);
-    // Remove the slash from the draft
-    const newDraft = draft.substring(0, slashIndex) + draft.substring(slashIndex + 1);
+    const hasInlineCommand = slashIndex >= 0 && slashLength > 0;
+    const newDraft = hasInlineCommand
+      ? draft.substring(0, slashIndex) + draft.substring(slashIndex + slashLength)
+      : draft;
     setDraft(newDraft);
     setOriginalDraft(newDraft);
 
@@ -178,6 +188,9 @@ export function ComposeBox({
       </div>
 
       <div className="relative w-full">
+        <div className="mb-2 text-[11px] text-foreground-subtle">
+          Try typing <span className="font-medium text-foreground">/</span> for AI suggestions.
+        </div>
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
           <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">AI assist</span>
           {COMMANDS.map((cmd) => (
@@ -257,7 +270,7 @@ export function ComposeBox({
                 style={{ borderColor: "var(--border)" }}
               >
                 <div className="text-xs font-medium px-2 py-1 mb-1 opacity-50 uppercase tracking-wider">AI Commands</div>
-                {COMMANDS.map((cmd) => (
+                {COMMANDS.filter((cmd) => cmd.id.replaceAll("_", "-").includes(slashQuery)).map((cmd) => (
                   <button
                     key={cmd.id}
                     onClick={() => executeCommand(cmd.id)}
@@ -274,7 +287,7 @@ export function ComposeBox({
 
       <div className="flex items-center justify-between">
         <span className="text-[12px] opacity-60">
-          Type &quot;/&quot; on a new line for AI commands
+          Try typing &quot;/&quot; for AI suggestions
         </span>
         <button
           onClick={handleSend}

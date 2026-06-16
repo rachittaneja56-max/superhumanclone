@@ -10,7 +10,6 @@ import { useUndoSend } from "@/hooks/useUndoSend";
 import type { EmailListClientItem } from "@/lib/email-client";
 import { sendEmailSchema } from "@/lib/schemas";
 import { ThreadView } from "./ThreadView";
-import { ThreadEmptyState } from "./ThreadView";
 import { AgentChat } from "@/components/agent/AgentChat";
 import { useUIStore } from "@/store/ui-store";
 
@@ -57,6 +56,7 @@ export function MailWorkspace({
   const [approvedThreadContext, setApprovedThreadContext] = useState<string | null>(null);
 
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const deferredQuery = useDeferredValue(query.trim());
   const { agentPanelOpen, closeAgentPanel } = useUIStore();
 
@@ -95,6 +95,12 @@ export function MailWorkspace({
   useEffect(() => {
     setComposeOpen(composeFromUrl || initialComposeOpen);
   }, [composeFromUrl, initialComposeOpen]);
+
+  useEffect(() => {
+    const focusSearch = () => searchInputRef.current?.focus();
+    window.addEventListener("aethra:focus-mail-search", focusSearch as EventListener);
+    return () => window.removeEventListener("aethra:focus-mail-search", focusSearch as EventListener);
+  }, []);
 
   useEffect(() => {
     setApprovedThreadContext(null);
@@ -214,54 +220,51 @@ export function MailWorkspace({
     <div className="flex h-full min-h-0 min-w-0 bg-background text-foreground">
       <main className="flex min-w-0 flex-1 flex-col">
         <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-4 sm:px-5">
-          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-xl font-semibold sm:text-2xl">{FOLDER_LABELS[folder]}</h1>
-              <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                {threads.length}
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-foreground-muted">
-              {folder === "drafts"
-                ? "Drafts stay saved while you work."
-                : "Click a conversation to open the thread pane."}
-            </p>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="truncate text-xl font-semibold sm:text-2xl">{FOLDER_LABELS[folder]}</h1>
+                <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                  {threads.length}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-foreground-muted">
+                {selected
+                  ? "Reading mode: the thread fills the workspace."
+                  : folder === "drafts"
+                    ? "Drafts stay saved while you work."
+                    : "Click a conversation to open the thread view."}
+              </p>
             </div>
 
-            <button
-              onClick={() => setComposeOpen(true)}
-              className="hidden shrink-0 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01] sm:inline-flex"
-              style={{ backgroundColor: "var(--accent)" }}
-            >
-              <SquarePen className="h-4 w-4" />
-              Compose
-            </button>
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 sm:max-w-xl">
+                <Search className="h-4 w-4 shrink-0 text-foreground-subtle" />
+                <input
+                  ref={searchInputRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search mail"
+                  className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-foreground-subtle"
+                />
+              </div>
+              <button
+                onClick={() => setComposeOpen(true)}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01]"
+                style={{ backgroundColor: "var(--accent)" }}
+              >
+                <SquarePen className="h-4 w-4" />
+                Compose
+              </button>
+            </div>
           </div>
 
-          <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5">
-              <Search className="h-4 w-4 shrink-0 text-foreground-subtle" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search mail"
-                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-foreground-subtle"
-              />
-            </div>
-            <button
-              onClick={() => setComposeOpen(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01] sm:hidden"
-              style={{ backgroundColor: "var(--accent)" }}
-            >
-              <SquarePen className="h-4 w-4" />
-              Compose
-            </button>
-          </div>
           {undoPending && (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent-subtle px-4 py-3 text-sm">
               <div className="min-w-0">
-                <div className="font-medium text-foreground">Email scheduled to send{typeof countdown === "number" ? ` in ${countdown}s` : ""}</div>
+                <div className="font-medium text-foreground">
+                  Email scheduled to send{typeof countdown === "number" ? ` in ${countdown}s` : ""}
+                </div>
                 <div className="text-xs text-foreground-muted">Undo before it leaves your outbox.</div>
               </div>
               <button
@@ -274,128 +277,118 @@ export function MailWorkspace({
           )}
         </div>
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <section className={selected ? "min-w-0 flex-1 border-r border-border" : "min-w-0 flex-1"}>
-            <div className="h-full overflow-y-auto">
-              {mailboxQuery.isLoading && threads.length === 0 ? (
-                <MailboxLoading />
-              ) : mailboxQuery.isError ? (
-                <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
-                  We couldn&apos;t load this mailbox right now.
-                </div>
-              ) : threads.length === 0 ? (
-                <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
-                  No mail in this folder yet.
-                </div>
-              ) : (
-                <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-3 py-3 sm:px-4">
-                  {threads.map((thread) => {
-                    const id = thread.threadId || thread.id;
-                    const active = id === activeThreadId;
-
-                    return (
-                      <button
-                        key={id}
-                        onClick={() => {
-                          if (folder === "drafts") {
-                            setActiveThreadId(id);
-                            return;
-                          }
-                          openThread(id);
-                        }}
-                        className={[
-                          "w-full overflow-hidden rounded-2xl border px-4 py-4 text-left transition-all",
-                          active
-                            ? "border-accent/40 bg-accent-subtle shadow-sm"
-                            : "border-border bg-surface hover:border-border-strong hover:bg-surface-raised",
-                        ].join(" ")}
-                      >
-                        <div className="flex min-w-0 items-start justify-between gap-4">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <div className={thread.isRead ? "h-2 w-2 shrink-0 rounded-full bg-transparent" : "h-2 w-2 shrink-0 rounded-full bg-accent"} />
-                              <div className="truncate text-sm font-semibold text-foreground">
-                                {thread.senderName || "Unknown sender"}
-                              </div>
-                            </div>
-                            <div className="mt-1 truncate text-sm text-foreground">
-                              {thread.subject || "(no subject)"}
-                            </div>
-                            <div className="mt-1 line-clamp-2 break-words text-xs leading-5 text-foreground-muted">
-                              {thread.snippet || "No preview available."}
-                            </div>
-                            {thread.badges.length > 0 && (
-                              <div className="mt-2 flex flex-wrap gap-1">
-                                {thread.badges.slice(0, 3).map((badge) => (
-                                  <span
-                                    key={badge}
-                                    className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground-subtle"
-                                  >
-                                    {badge}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="shrink-0 text-right text-xs text-foreground-subtle">
-                            {thread.receivedAt ? formatDistanceToNow(new Date(thread.receivedAt), { addSuffix: true }) : "Unknown"}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                  <div ref={loadMoreRef} className="flex min-h-12 items-center justify-center py-3">
-                    {isFetchingMore ? (
-                      <div className="inline-flex items-center gap-2 text-xs text-foreground-muted">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading more mail
-                      </div>
-                    ) : hasMore ? (
-                      <span className="text-xs text-foreground-subtle">Scroll to load more</span>
-                    ) : (
-                      <span className="text-xs text-foreground-subtle">You&apos;re caught up.</span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <aside className="hidden w-[34rem] shrink-0 border-l border-border bg-surface xl:flex xl:flex-col">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-foreground">{selected ? "Thread" : "Conversation"}</div>
-                <div className="text-xs text-foreground-subtle">
-                  {selected ? "Read the message in a calmer layout." : "Select a message to open the thread pane."}
-                </div>
-              </div>
-              {selected && (
-                <button
-                  onClick={closeThread}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground"
-                  aria-label="Close thread pane"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+        {selected ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="shrink-0 border-b border-border bg-surface px-4 py-3 sm:px-5">
+              <button
+                onClick={closeThread}
+                className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-raised"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Back to Inbox
+              </button>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden">
-              {selected ? (
-                folder === "drafts" ? (
-                  <DraftPreviewCard draft={selected} />
-                ) : (
-                  <ThreadView threadId={selected.threadId || selected.id} compact mailbox={folder} />
-                )
+              {folder === "drafts" ? (
+                <DraftPreviewCard draft={selected} />
               ) : (
-                <ThreadEmptyState />
+                <ThreadView threadId={selected.threadId || selected.id} mailbox={folder} />
               )}
             </div>
-          </aside>
-        </div>
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <section className="min-w-0 flex-1">
+              <div className="h-full overflow-y-auto">
+                {mailboxQuery.isLoading && threads.length === 0 ? (
+                  <MailboxLoading />
+                ) : mailboxQuery.isError ? (
+                  <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
+                    We couldn&apos;t load this mailbox right now.
+                  </div>
+                ) : threads.length === 0 ? (
+                  <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
+                    No mail in this folder yet.
+                  </div>
+                ) : (
+                  <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-3 py-3 sm:px-4">
+                    {threads.map((thread) => {
+                      const id = thread.threadId || thread.id;
+                      const active = id === activeThreadId;
+
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => {
+                            if (folder === "drafts") {
+                              setActiveThreadId(id);
+                              return;
+                            }
+                            openThread(id);
+                          }}
+                          className={[
+                            "w-full overflow-hidden rounded-2xl border px-4 py-4 text-left transition-all",
+                            active
+                              ? "border-accent/40 bg-accent-subtle shadow-sm"
+                              : "border-border bg-surface hover:border-border-strong hover:bg-surface-raised",
+                          ].join(" ")}
+                        >
+                          <div className="flex min-w-0 items-start justify-between gap-4">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <div className={thread.isRead ? "h-2 w-2 shrink-0 rounded-full bg-transparent" : "h-2 w-2 shrink-0 rounded-full bg-accent"} />
+                                <div className="truncate text-sm font-semibold text-foreground">
+                                  {thread.senderName || "Unknown sender"}
+                                </div>
+                              </div>
+                              <div className="mt-1 truncate text-sm text-foreground">
+                                {thread.subject || "(no subject)"}
+                              </div>
+                              <div className="mt-1 line-clamp-2 break-words text-xs leading-5 text-foreground-muted">
+                                {thread.snippet || "No preview available."}
+                              </div>
+                              {thread.badges.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {thread.badges.slice(0, 3).map((badge) => (
+                                    <span
+                                      key={badge}
+                                      className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground-subtle"
+                                    >
+                                      {badge}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div className="shrink-0 text-right text-xs text-foreground-subtle">
+                              {thread.receivedAt ? formatDistanceToNow(new Date(thread.receivedAt), { addSuffix: true }) : "Unknown"}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    <div ref={loadMoreRef} className="flex min-h-12 items-center justify-center py-3">
+                      {isFetchingMore ? (
+                        <div className="inline-flex items-center gap-2 text-xs text-foreground-muted">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Loading more mail
+                        </div>
+                      ) : hasMore ? (
+                        <span className="text-xs text-foreground-subtle">Scroll to load more</span>
+                      ) : (
+                        <span className="text-xs text-foreground-subtle">You&apos;re caught up.</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
       </main>
 
-      {agentPanelOpen && (
+      {agentPanelOpen && !composeOpen && (
         <aside className="fixed inset-y-4 right-4 z-40 hidden w-[24rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_24px_80px_rgba(0,0,0,0.45)] xl:flex">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="min-w-0">

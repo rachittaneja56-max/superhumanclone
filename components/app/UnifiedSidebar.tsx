@@ -3,7 +3,7 @@
 import type { ComponentType } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Bot, Calendar, DraftingCompass, Inbox, Search, Send, Settings, ShieldAlert, SquarePen, Trash2, LogOut } from 'lucide-react'
+import { Bot, Calendar, DraftingCompass, Inbox, Search, Send, Settings, ShieldAlert, Trash2, LogOut } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { signOutAction } from '@/app/actions/auth'
 import { useUIStore } from '@/store/ui-store'
@@ -51,15 +51,6 @@ export function UnifiedSidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
-        <Link
-          href="/inbox?compose=true"
-          className="mb-4 inline-flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-accent-foreground shadow-sm"
-          style={{ backgroundColor: 'var(--accent)' }}
-        >
-          <SquarePen className="h-4 w-4" />
-          Compose
-        </Link>
-
         <div className="space-y-1">
           <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">
             Mail

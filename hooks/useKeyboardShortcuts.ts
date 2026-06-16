@@ -73,7 +73,11 @@ export function useKeyboardShortcuts() {
         case "r":
         case "c":
         case "u":
+          break;
         case "/":
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:focus-mail-search"));
+          break;
         case "?":
           // Stub for actions. Real implementation would wire these
           // to trpc calls, state updates, or the Compose box focus.
