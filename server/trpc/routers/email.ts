@@ -45,6 +45,18 @@ export const emailRouter = router({
           eq(emails.is_archived, input.isArchived),
           eq(emails.is_deleted, false)
         ),
+        columns: {
+          id: true,
+          thread_id: true,
+          from_name: true,
+          from_address: true,
+          subject: true,
+          snippet: true,
+          is_read: true,
+          tldr: true,
+          ai_triage_skipped: true,
+          created_at: true,
+        },
         orderBy: [desc(emails.created_at)],
         limit: input.limit
       });
@@ -66,32 +78,31 @@ export const emailRouter = router({
 
           return {
             id: m.id,
-            userId: ctx.userId!,
-            corsair_message_id: m.id,
-            thread_id: m.threadId || m.id,
-            from_address: fromAddress || 'unknown@example.com',
-            from_name: fromName || null,
-            to_address: m.to || 'me',
+            threadId: m.threadId || m.id,
+            fromAddress: fromAddress || 'unknown@example.com',
+            fromName: fromName || null,
             subject: m.subject || '(No Subject)',
             snippet: m.snippet || '',
-            body_text: null,
-            body_html: null,
-            is_read: !((m.labelIds || []).includes('UNREAD')),
-            is_archived: false,
-            is_deleted: false,
-            deleted_at: null,
-            ai_triage_skipped: true,
-            priority: 'medium',
-            tag: 'other',
+            isRead: !((m.labelIds || []).includes('UNREAD')),
+            aiTriageSkipped: true,
             tldr: null,
-            confidence: null,
-            embedding: null,
-            created_at: new Date(m.internalDate ? parseInt(m.internalDate) : Date.now()),
+            receivedAt: new Date(m.internalDate ? parseInt(m.internalDate) : Date.now()),
           };
         });
       }
 
-      return results;
+      return results.map(r => ({
+        id: r.id,
+        threadId: r.thread_id || r.id,
+        fromAddress: r.from_address,
+        fromName: r.from_name,
+        subject: r.subject,
+        snippet: r.snippet,
+        isRead: r.is_read,
+        aiTriageSkipped: r.ai_triage_skipped,
+        tldr: r.tldr,
+        receivedAt: r.created_at,
+      }));
     }),
 
   getThread: protectedProcedure

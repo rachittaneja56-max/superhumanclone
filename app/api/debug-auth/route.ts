@@ -6,7 +6,7 @@ export async function GET(req: Request) {
   try {
     const session = await getSession()
     const userId = session.userId
-    
+
     let dbUser = null
     if (userId) {
       dbUser = await db.query.users.findFirst({
