@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { auth } from '@clerk/nextjs/server'
+import { getSession } from '@/lib/auth'
 import { db } from '@/server/db'
 import { aiConsentRules } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
@@ -30,7 +30,8 @@ export default async function PrivacyPage({
 }: {
   searchParams: Promise<{ mode?: string }>
 }) {
-  const { userId } = await auth()
+  const session = await getSession()
+  const userId = session.userId
   if (!userId) redirect('/login')
 
   const params = await searchParams

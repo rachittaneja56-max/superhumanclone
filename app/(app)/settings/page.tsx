@@ -1,14 +1,13 @@
-import { auth } from '@clerk/nextjs/server'
+import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { serverTrpc } from '@/lib/trpc/server'
 import { SettingsClient } from '@/components/settings/SettingsClient'
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
-import { SignOutButton } from '@clerk/nextjs'
 
 export default async function SettingsPage() {
-  const { userId } = await auth()
-  if (!userId) redirect('/login')
+  const session = await getSession()
+  if (!session.userId) redirect('/login')
 
   const trpc = await serverTrpc()
   const settings = await trpc.settings.getUserSettings()
@@ -75,11 +74,11 @@ export default async function SettingsPage() {
 
           {/* Sign out */}
           <div className="bg-surface border border-border rounded-xl overflow-hidden">
-            <SignOutButton>
-              <button className="w-full flex items-center px-4 py-3 hover:bg-surface-overlay transition-colors text-destructive">
+            <form action="/api/auth/logout" method="POST">
+              <button type="submit" className="w-full flex items-center px-4 py-3 hover:bg-surface-overlay transition-colors text-destructive">
                 <p className="text-sm font-medium">Sign out</p>
               </button>
-            </SignOutButton>
+            </form>
           </div>
 
         </div>

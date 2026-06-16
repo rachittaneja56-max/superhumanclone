@@ -1,4 +1,3 @@
-import { auth, currentUser } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -7,10 +6,10 @@ import {
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { AppClientShell } from '@/components/app-client-shell'
 import { NavItem } from '@/components/NavItem'
-import { SignOutButton } from '@clerk/nextjs'
 import { db } from '@/server/db'
 import { userSettings, users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
+import { getSession } from '@/lib/auth'
 
 // Nav items — defined server-side (static, no state needed)
 const NAV_ITEMS = [
@@ -22,34 +21,17 @@ const NAV_ITEMS = [
 ]
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { userId } = await auth()
+  const session = await getSession()
+  const userId = session.userId
+
   if (!userId) redirect('/login')
 
-  // Attempt to read from local DB first to avoid slow network request to Clerk
-  let localUser = await db.query.users.findFirst({
+  const localUser = await db.query.users.findFirst({
     where: eq(users.id, userId)
   })
 
-  // If missing locally (e.g. webhook race condition), fetch from Clerk and sync
   if (!localUser) {
-    const clerkUser = await currentUser()
-    if (!clerkUser) redirect('/login')
-    
-    localUser = {
-      id: userId,
-      email: clerkUser.primaryEmailAddress?.emailAddress ?? '',
-      name: clerkUser.fullName ?? 'User',
-      image: clerkUser.imageUrl,
-      createdAt: new Date(),
-      emailVerified: new Date(),
-    }
-
-    await db.insert(users).values({
-      id: localUser.id,
-      email: localUser.email,
-      name: localUser.name,
-      image: localUser.image,
-    }).onConflictDoNothing()
+    redirect('/login')
   }
 
   const settings = await db.query.userSettings.findFirst({
@@ -63,9 +45,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!settings.gmailConnected) {
     redirect('/onboarding/connect')
   }
-
-
-
 
   const email = localUser.email ?? ''
   const name = localUser.name ?? 'User'
@@ -115,14 +94,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <span className="text-xs font-medium text-foreground-subtle">Theme</span>
               <ThemeToggle />
             </div>
-            <SignOutButton signOutOptions={{ redirectUrl: '/logout' }}>
+            <form action="/api/auth/logout" method="POST" className="w-full">
               <button
+                type="submit"
                 className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-red-500/90 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
                 title="Sign out">
                 <LogOut className="w-3.5 h-3.5" />
                 Sign out
               </button>
-            </SignOutButton>
+            </form>
           </div>
         </div>
       </aside>

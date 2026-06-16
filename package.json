@@ -15,7 +15,6 @@
     "@ai-sdk/google": "^3.0.80",
     "@ai-sdk/openai": "^3.0.69",
     "@base-ui/react": "^1.5.0",
-    "@clerk/nextjs": "^7.5.2",
     "@corsair-dev/gmail": "^0.1.4",
     "@corsair-dev/googlecalendar": "^0.1.4",
     "@edge-csrf/nextjs": "^2.5.2",

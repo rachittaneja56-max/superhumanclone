@@ -1,11 +1,11 @@
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { getSession } from '@/lib/auth'
 import { db } from '@/server/db'
 import { NextResponse } from 'next/server'
 
 export async function GET(req: Request) {
   try {
-    const { userId } = await auth()
-    const user = await currentUser()
+    const session = await getSession()
+    const userId = session.userId
     
     let dbUser = null
     if (userId) {
@@ -17,7 +17,6 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       userId,
-      user,
       dbUserExists: !!dbUser,
       dbUser: dbUser,
       env: {

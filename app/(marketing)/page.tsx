@@ -7,10 +7,11 @@ export const metadata = {
   description: 'Privacy-first, agent-powered, keyboard-native email client built on Corsair.',
 };
 
-import { auth } from '@clerk/nextjs/server';
+import { getSession } from '@/lib/auth';
 
 export default async function MarketingPage() {
-  const { userId } = await auth();
+  const session = await getSession();
+  const userId = session.userId;
 
   return (
     <>

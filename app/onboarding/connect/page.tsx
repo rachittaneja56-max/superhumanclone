@@ -1,4 +1,4 @@
-import { auth, currentUser } from '@clerk/nextjs/server'
+import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getGmailAuthUrl, getCalendarAuthUrl, isUserConnected } from '@/server/corsair/client'
@@ -12,16 +12,9 @@ export default async function ConnectPage({
   searchParams: Promise<{ connected?: string; error?: string }>
 }) {
   const resolvedSearchParams = await searchParams;
-  const user = await currentUser()
-  const userId = user?.id
-  if (!userId || !user) redirect('/login')
-
-  await db.insert(users).values({
-    id: userId,
-    email: user.primaryEmailAddress?.emailAddress ?? '',
-    name: user.fullName,
-    image: user.imageUrl,
-  }).onConflictDoNothing()
+  const session = await getSession()
+  const userId = session.userId
+  if (!userId) redirect('/login')
 
   // If Corsair redirected back with ?connected=true
   if (resolvedSearchParams.connected === 'true') {

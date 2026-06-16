@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server'
+import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { serverTrpc } from '@/lib/trpc/server'
 import { format } from 'date-fns'
@@ -19,8 +19,8 @@ const ACTION_LABELS: Record<string, string> = {
 }
 
 export default async function AuditPage() {
-  const { userId } = await auth()
-  if (!userId) redirect('/login')
+  const session = await getSession()
+  if (!session.userId) redirect('/login')
 
   let logs: any[] = []
   try {

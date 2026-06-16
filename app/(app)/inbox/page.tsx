@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server'
+import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { serverTrpc } from '@/lib/trpc/server'
 import { ThreadList } from '@/components/inbox/ThreadList'
@@ -6,12 +6,12 @@ import { MorningDigestBanner } from '@/components/inbox/MorningDigestBanner'
 import { syncInboxIfEmpty } from '@/server/corsair/sync'
 
 export default async function InboxPage() {
-  const { userId } = await auth()
-  if (!userId) redirect('/login')
+  const session = await getSession()
+  if (!session.userId) redirect('/login')
 
   // Trigger initial sync if inbox is empty
   // This is async and non-blocking — page renders while sync happens
-  void syncInboxIfEmpty(userId)
+  void syncInboxIfEmpty(session.userId)
 
   // Fetch from our local DB (fast — no Corsair API call)
   let initialThreads: any[] = []

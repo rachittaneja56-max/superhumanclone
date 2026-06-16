@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { createCsrfMiddleware } from '@edge-csrf/nextjs'
+import { getIronSession } from 'iron-session'
+import { sessionOptions, type SessionData } from '@/lib/auth'
 
 const csrfProtect = createCsrfMiddleware({
   cookie: {
@@ -16,21 +17,18 @@ const csrfProtect = createCsrfMiddleware({
   ],
 })
 
-const isAppRoute = createRouteMatcher([
-  '/inbox(.*)',
-  '/calendar(.*)',
-  '/agent(.*)',
-  '/search(.*)',
-  '/settings(.*)',
-])
+function isProtectedPath(pathname: string) {
+  return (
+    pathname.startsWith('/inbox') ||
+    pathname.startsWith('/calendar') ||
+    pathname.startsWith('/agent') ||
+    pathname.startsWith('/search') ||
+    pathname.startsWith('/settings') ||
+    pathname.startsWith('/onboarding')
+  )
+}
 
-const isOnboardingRoute = createRouteMatcher([
-  '/onboarding(.*)',
-])
-
-export default clerkMiddleware(async (auth, req) => {
-  const { userId } = await auth()
-
+export default async function middleware(req: NextRequest) {
   let csrfResponse;
   if (!req.headers.has('next-action')) {
     csrfResponse = await csrfProtect(req)
@@ -41,16 +39,21 @@ export default clerkMiddleware(async (auth, req) => {
     csrfResponse = await csrfProtect(req)
   }
 
+  const res = NextResponse.next()
+  
+  const session = await getIronSession<SessionData>(req, res, sessionOptions)
+  const userId = session.userId
+
   const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
   const csp = `
     default-src 'self';
     script-src 'self' 'unsafe-inline' 'unsafe-eval' https:;
     worker-src 'self' blob:;
     style-src 'self' 'unsafe-inline';
-    img-src 'self' data: blob: https: clerk.com *.clerk.com;
+    img-src 'self' data: blob: https: *.googleusercontent.com;
     font-src 'self' https://fonts.gstatic.com;
-    connect-src 'self' wss://*.ably.io https://*.ably.io https://*.railway.app clerk.com *.clerk.com *.clerk.accounts.dev https://clerk-telemetry.com;
-    frame-src 'self' blob: https://challenges.cloudflare.com clerk.com *.clerk.com *.clerk.accounts.dev;
+    connect-src 'self' wss://*.ably.io https://*.ably.io https://*.railway.app;
+    frame-src 'self' blob: https://challenges.cloudflare.com;
     object-src 'none';
     base-uri 'self';
     form-action 'self';
@@ -62,9 +65,10 @@ export default clerkMiddleware(async (auth, req) => {
     requestHeaders.set('Content-Security-Policy', csp)
   }
 
-  if (isAppRoute(req) || isOnboardingRoute(req)) {
+  if (isProtectedPath(req.nextUrl.pathname)) {
     if (!userId) {
-      await auth.protect()
+      const loginUrl = new URL('/login', req.url)
+      return NextResponse.redirect(loginUrl)
     }
   }
 
@@ -77,11 +81,17 @@ export default clerkMiddleware(async (auth, req) => {
     response.headers.append('set-cookie', csrfCookie)
   }
 
+  // Copy session cookie to the response if it was modified
+  const sessionCookie = res.headers.get('set-cookie')
+  if (sessionCookie) {
+    response.headers.append('set-cookie', sessionCookie)
+  }
+
   if (process.env.NODE_ENV === 'production') {
     response.headers.set('Content-Security-Policy', csp)
   }
   return response
-})
+}
 
 export const config = {
   matcher: [
@@ -89,4 +99,3 @@ export const config = {
     '/(api|trpc)(.*)',
   ],
 }
-    
