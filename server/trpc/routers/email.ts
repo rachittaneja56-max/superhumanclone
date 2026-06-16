@@ -14,6 +14,8 @@ import { generateDigest, rewriteDraft } from '@/server/ai/provider';
 import { Client } from '@upstash/qstash';
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' });
+const THREAD_CACHE_TTL = 60;
+const INBOX_CACHE_TTL = 30;
 
 import {
   getThreadsSchema,
@@ -31,6 +33,11 @@ import {
   cancelSendSchema,
   getAutoRepliesSchema
 } from '@/lib/schemas';
+import { z } from 'zod';
+
+const bulkActionSchema = z.object({
+  emailIds: z.array(z.string()).min(1).max(100),
+});
 function getHeader(headers: any[] | undefined, name: string): string {
   if (!headers) return '';
   return headers.find((h: any) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
@@ -70,6 +77,14 @@ export const emailRouter = router({
     .use(createRateLimitMiddleware('getThreads', 200, 60))
     .input(getThreadsSchema)
     .query(async ({ ctx, input }) => {
+      const cacheKey = `inbox:${ctx.userId}:${input.isArchived ? 'archived' : 'active'}:${input.limit}`
+      const cached = await ctx.redis.get<string>(cacheKey)
+      if (cached) {
+        try {
+          return JSON.parse(cached)
+        } catch {}
+      }
+
       let results = await ctx.db.query.emails.findMany({
         where: and(
           eq(emails.userId, ctx.userId!),
@@ -167,7 +182,7 @@ export const emailRouter = router({
         }
       }
 
-      return results.map(r => ({
+      const mapped = results.map(r => ({
         id: r.id,
         threadId: r.thread_id || r.id,
         fromAddress: r.from_address,
@@ -178,12 +193,23 @@ export const emailRouter = router({
         aiTriageSkipped: r.ai_triage_skipped,
         tldr: r.tldr,
         receivedAt: r.created_at,
-      }));
+      }))
+
+      await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: INBOX_CACHE_TTL })
+      return mapped;
     }),
 
   getThread: protectedProcedure
     .input(getThreadSchema)
     .query(async ({ ctx, input }) => {
+      const cacheKey = `thread:${ctx.userId}:${input.threadId}`
+      const cached = await ctx.redis.get<string>(cacheKey)
+      if (cached) {
+        try {
+          return JSON.parse(cached)
+        } catch {}
+      }
+
       let threadEmails = await ctx.db.query.emails.findMany({
         where: and(
           eq(emails.thread_id, input.threadId),
@@ -276,6 +302,7 @@ export const emailRouter = router({
         });
       }
 
+      await ctx.redis.set(cacheKey, JSON.stringify(threadEmails), { ex: THREAD_CACHE_TTL })
       return threadEmails;
     }),
 
@@ -295,7 +322,75 @@ export const emailRouter = router({
         markEmailRead(ctx.userId!, e.corsair_message_id).catch(console.error);
       });
 
+      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
+      for (const emailId of input.emailIds) {
+        const thread = await ctx.db.query.emails.findFirst({
+          where: and(eq(emails.id, emailId), eq(emails.userId, ctx.userId!)),
+          columns: { thread_id: true },
+        })
+        if (thread?.thread_id) {
+          await ctx.redis.del(`thread:${ctx.userId}:${thread.thread_id}`)
+        }
+      }
+
       return { success: true };
+    }),
+
+  bulkMarkRead: protectedProcedure
+    .input(bulkActionSchema)
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db.update(emails)
+        .set({ is_read: true })
+        .where(and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)));
+
+      const toUpdate = await ctx.db.query.emails.findMany({
+        where: and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)),
+        columns: { corsair_message_id: true, thread_id: true }
+      });
+
+      await Promise.all(toUpdate.map((email) => markEmailRead(ctx.userId!, email.corsair_message_id).catch(console.error)));
+      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
+      await Promise.all(toUpdate.map((email) => email.thread_id ? ctx.redis.del(`thread:${ctx.userId}:${email.thread_id}`) : Promise.resolve()))
+
+      return { success: true, count: toUpdate.length };
+    }),
+
+  bulkArchive: protectedProcedure
+    .input(bulkActionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const rows = await ctx.db.query.emails.findMany({
+        where: and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)),
+        columns: { corsair_message_id: true, thread_id: true }
+      });
+
+      await Promise.all(rows.map((email) => archiveEmail(ctx.userId!, email.corsair_message_id).catch(console.error)));
+      await ctx.db.update(emails)
+        .set({ is_archived: true })
+        .where(and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)));
+      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
+      await Promise.all(rows.map((email) => email.thread_id ? ctx.redis.del(`thread:${ctx.userId}:${email.thread_id}`) : Promise.resolve()))
+
+      return { success: true, count: rows.length };
+    }),
+
+  bulkDelete: protectedProcedure
+    .input(bulkActionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const rows = await ctx.db.query.emails.findMany({
+        where: and(inArray(emails.id, input.emailIds), eq(emails.userId, ctx.userId!)),
+        columns: { id: true, corsair_message_id: true, thread_id: true }
+      });
+
+      await Promise.all(rows.map(async (email) => {
+        await ctx.db.update(emails)
+          .set({ is_deleted: true, deleted_at: new Date() })
+          .where(eq(emails.id, email.id));
+        await corsairDeleteEmail(ctx.userId!, email.corsair_message_id).catch(console.error);
+      }));
+
+      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
+      await Promise.all(rows.map((email) => email.thread_id ? ctx.redis.del(`thread:${ctx.userId}:${email.thread_id}`) : Promise.resolve()))
+      return { success: true, count: rows.length };
     }),
 
   archiveEmail: protectedProcedure
@@ -313,6 +408,13 @@ export const emailRouter = router({
         .set({ is_archived: true })
         .where(and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)))
         .returning({ id: emails.id });
+
+      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
+      const thread = await ctx.db.query.emails.findFirst({
+        where: and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)),
+        columns: { thread_id: true },
+      })
+      if (thread?.thread_id) await ctx.redis.del(`thread:${ctx.userId}:${thread.thread_id}`)
 
       // Fire and forget audit log
       ctx.db.insert(auditLogs).values({
@@ -334,6 +436,13 @@ export const emailRouter = router({
         .where(and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)))
         .returning({ id: emails.id });
 
+      await ctx.redis.del(`inbox:${ctx.userId}:archived:50`)
+      const thread = await ctx.db.query.emails.findFirst({
+        where: and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)),
+        columns: { thread_id: true },
+      })
+      if (thread?.thread_id) await ctx.redis.del(`thread:${ctx.userId}:${thread.thread_id}`)
+
       return { success: true, id: localResult[0]?.id || input.emailId };
     }),
 
@@ -350,6 +459,8 @@ export const emailRouter = router({
       await ctx.db.update(emails)
         .set({ is_deleted: true, deleted_at: new Date() })
         .where(eq(emails.id, email.id));
+
+      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
 
       // 3. Redis buffer
       await ctx.redis.set(`deleted:${ctx.userId}:${input.emailId}`, 'true', { ex: 600 });
@@ -390,6 +501,8 @@ export const emailRouter = router({
       await ctx.db.update(emails)
         .set({ is_deleted: false, deleted_at: null })
         .where(and(eq(emails.corsair_message_id, input.emailId), eq(emails.userId, ctx.userId!)));
+
+      await ctx.redis.del(`inbox:${ctx.userId}:active:50`)
 
       return { success: true };
     }),
@@ -549,6 +662,9 @@ export const emailRouter = router({
       }
 
       await ctx.redis.del(redisKey);
+      if (payload.threadId) {
+        await ctx.redis.del(`thread:${ctx.userId}:${payload.threadId}`)
+      }
 
       ctx.db.insert(auditLogs).values({
         userId: ctx.userId!,

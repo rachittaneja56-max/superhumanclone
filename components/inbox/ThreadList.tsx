@@ -4,6 +4,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { useRouter } from 'next/navigation'
 import { useUIStore } from '@/store/ui-store'
 import { toast } from 'sonner'
+import { Archive, CheckCheck, Square, Trash2 } from 'lucide-react'
 
 interface ThreadListProps {
   initialData: any[]
@@ -11,7 +12,13 @@ interface ThreadListProps {
 
 export function ThreadList({ initialData }: ThreadListProps) {
   const router = useRouter()
-  const { selectedEmailId, setSelectedEmail } = useUIStore()
+  const {
+    selectedEmailId,
+    selectedEmailIds,
+    setSelectedEmail,
+    toggleSelectedEmail,
+    clearSelectedEmails,
+  } = useUIStore()
 
   const { data: threads = initialData } = trpc.email.getThreads.useQuery(
     { limit: 50, isArchived: false },
@@ -22,6 +29,27 @@ export function ThreadList({ initialData }: ThreadListProps) {
     }
   )
 
+  const bulkMarkRead = trpc.email.bulkMarkRead.useMutation({
+    onSuccess: () => {
+      toast.success('Marked read')
+      clearSelectedEmails()
+    },
+    onError: () => toast.error('Failed to mark read'),
+  })
+  const bulkArchive = trpc.email.bulkArchive.useMutation({
+    onSuccess: () => {
+      toast.success('Archived')
+      clearSelectedEmails()
+    },
+    onError: () => toast.error('Failed to archive'),
+  })
+  const bulkDelete = trpc.email.bulkDelete.useMutation({
+    onSuccess: () => {
+      toast.success('Moved to trash')
+      clearSelectedEmails()
+    },
+    onError: () => toast.error('Failed to delete'),
+  })
   const archiveMutation = trpc.email.archiveEmail.useMutation({
     onMutate: async ({ emailId }) => {
       toast.success('Archived', {
@@ -31,6 +59,8 @@ export function ThreadList({ initialData }: ThreadListProps) {
     },
     onError: () => toast.error('Failed to archive'),
   })
+
+  const selectedCount = selectedEmailIds.length
 
   if (threads.length === 0) {
     return (
@@ -48,22 +78,79 @@ export function ThreadList({ initialData }: ThreadListProps) {
 
   return (
     <div className="divide-y divide-border">
+      {selectedCount > 0 && (
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
+          <div className="text-sm text-muted-foreground">
+            {selectedCount} selected
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => bulkMarkRead.mutate({ emailIds: selectedEmailIds })}
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              <CheckCheck className="h-4 w-4" />
+              Read
+            </button>
+            <button
+              onClick={() => bulkArchive.mutate({ emailIds: selectedEmailIds })}
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              <Archive className="h-4 w-4" />
+              Archive
+            </button>
+            <button
+              onClick={() => bulkDelete.mutate({ emailIds: selectedEmailIds })}
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-red-600 hover:bg-red-500/10"
+            >
+              <Trash2 className="h-4 w-4" />
+              Trash
+            </button>
+            <button
+              onClick={clearSelectedEmails}
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              <Square className="h-4 w-4" />
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
       {threads.map((thread: any) => (
         <div
           key={thread.id}
           onClick={() => {
+            if (selectedCount > 0) {
+              toggleSelectedEmail(thread.id)
+              return
+            }
             setSelectedEmail(thread.id)
             router.push('/inbox/' + thread.threadId)
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            toggleSelectedEmail(thread.id)
           }}
           className={[
             'px-4 py-3 cursor-pointer transition-all duration-100',
             'hover:bg-surface-overlay',
-            selectedEmailId === thread.id
+            selectedEmailIds.includes(thread.id)
+              ? 'bg-accent/10 border-l-2 border-accent pl-[14px]'
+              : selectedEmailId === thread.id
               ? 'bg-accent/5 border-l-2 border-accent pl-[14px]'
               : 'border-l-2 border-transparent',
           ].join(' ')}
         >
           <div className="flex items-start justify-between gap-2 mb-0.5">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleSelectedEmail(thread.id)
+              }}
+              className="mt-0.5 text-muted-foreground hover:text-foreground"
+              aria-label="Select thread"
+            >
+              <Square className="h-4 w-4" />
+            </button>
             <span className={[
               'text-sm truncate',
               !thread.isRead ? 'font-semibold text-foreground' : 'text-foreground-muted',

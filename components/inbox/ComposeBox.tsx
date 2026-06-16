@@ -14,7 +14,17 @@ const COMMANDS = [
   { id: "translate", label: "Translate" },
 ] as const;
 
-export function ComposeBox({ threadId }: { threadId?: string }) {
+export function ComposeBox({
+  threadId,
+  replyTo,
+}: {
+  threadId?: string
+  replyTo?: {
+    to?: string
+    subject?: string
+    bodyPrefix?: string
+  }
+}) {
   const [draft, setDraft] = useState("");
   const [originalDraft, setOriginalDraft] = useState("");
   const [rewrittenDraft, setRewrittenDraft] = useState("");
@@ -25,6 +35,16 @@ export function ComposeBox({ threadId }: { threadId?: string }) {
   const [to, setTo] = useState("");
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!replyTo) return
+    setTo(replyTo.to || "")
+    setSubject(replyTo.subject || "")
+    setDraft(replyTo.bodyPrefix || "")
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto"
+    }
+  }, [replyTo])
 
   const rewriteMutation = trpc.email.rewriteDraft.useMutation();
   const sendMutation = trpc.email.sendEmail.useMutation();
@@ -182,7 +202,7 @@ export function ComposeBox({ threadId }: { threadId?: string }) {
               ref={textareaRef}
               value={draft}
               onChange={handleTextChange}
-              placeholder="Write your email here..."
+              placeholder={replyTo ? "Write your reply here..." : "Write your email here..."}
               className="w-full min-h-[80px] p-3 rounded-md border bg-transparent text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[var(--accent)] transition-all"
               style={{
                 borderColor: "var(--border)",
@@ -217,7 +237,9 @@ export function ComposeBox({ threadId }: { threadId?: string }) {
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-[12px] opacity-60">Type &quot;/&quot; on a new line for AI commands</span>
+        <span className="text-[12px] opacity-60">
+          Type &quot;/&quot; on a new line for AI commands
+        </span>
         <button
           onClick={handleSend}
           disabled={!draft || rewriteState !== "idle" || isPending}
