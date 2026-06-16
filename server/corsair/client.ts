@@ -86,6 +86,19 @@ export async function getThreads(userId: string, params?: { limit?: number; offs
   }
 }
 
+export async function getMessages(userId: string, params?: { limit?: number }) {
+  const t = getTenant(userId)
+  try {
+    const result = await t.gmail.db.messages.list({
+      limit: params?.limit ?? 50,
+    })
+    return { success: true, data: result, needsConnect: false }
+  } catch (err: any) {
+    if (isAuthError(err)) return { success: false, data: null, needsConnect: true }
+    throw err
+  }
+}
+
 export async function getThreadMessages(userId: string, threadId: string) {
   const t = getTenant(userId)
   try {

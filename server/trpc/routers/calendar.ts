@@ -104,6 +104,20 @@ export const calendarRouter = router({
       // Fall back to Corsair if local DB is empty
       const result = await getCalendarEvents(ctx.userId!, { limit: 50 })
       if (!result.success || !result.data) return []
-      return result.data
+      
+      return result.data.map((e: any) => ({
+        id: e.id,
+        userId: ctx.userId!,
+        corsair_event_id: e.id,
+        title: e.summary || '(No Title)',
+        description: e.description || null,
+        start_time: new Date(e.start?.dateTime || e.start?.date || Date.now()),
+        end_time: new Date(e.end?.dateTime || e.end?.date || Date.now()),
+        location: e.location || null,
+        is_all_day: !!e.start?.date,
+        status: e.status || 'confirmed',
+        created_at: new Date(),
+        updated_at: new Date(),
+      }))
     }),
 });

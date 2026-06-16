@@ -10,6 +10,7 @@ import {
   deleteEmail as corsairDeleteEmail,
   syncInbox as syncGmailInbox,
   getThreadMessages as corsairGetThread,
+  getMessages as corsairGetMessages,
   markEmailRead,
 } from '@/server/corsair/client';
 import { generateDigest, rewriteDraft } from '@/server/ai/provider';
@@ -54,14 +55,39 @@ export const emailRouter = router({
           throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Gmail not connected' });
         }
         
-        return await ctx.db.query.emails.findMany({
-          where: and(
-            eq(emails.userId, ctx.userId!),
-            eq(emails.is_archived, input.isArchived),
-            eq(emails.is_deleted, false)
-          ),
-          orderBy: [desc(emails.created_at)],
-          limit: input.limit
+        // Fallback to Corsair DB directly to instantly hydrate the UI
+        const corsairResult = await corsairGetMessages(ctx.userId!, { limit: input.limit });
+        if (!corsairResult.success || !corsairResult.data) return [];
+        
+        return corsairResult.data.map((m: any) => {
+          const fromParts = (m.from || '').split('<');
+          const fromName = fromParts[0].trim().replace(/"/g, '');
+          const fromAddress = fromParts[1] ? fromParts[1].replace('>', '').trim() : m.from;
+
+          return {
+            id: m.id,
+            userId: ctx.userId!,
+            corsair_message_id: m.id,
+            thread_id: m.threadId || m.id,
+            from_address: fromAddress || 'unknown@example.com',
+            from_name: fromName || null,
+            to_address: m.to || 'me',
+            subject: m.subject || '(No Subject)',
+            snippet: m.snippet || '',
+            body_text: null,
+            body_html: null,
+            is_read: !((m.labelIds || []).includes('UNREAD')),
+            is_archived: false,
+            is_deleted: false,
+            deleted_at: null,
+            ai_triage_skipped: true,
+            priority: 'medium',
+            tag: 'other',
+            tldr: null,
+            confidence: null,
+            embedding: null,
+            created_at: new Date(m.internalDate ? parseInt(m.internalDate) : Date.now()),
+          };
         });
       }
 
