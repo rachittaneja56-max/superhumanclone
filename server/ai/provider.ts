@@ -5,6 +5,8 @@ import { openai } from "@ai-sdk/openai";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createCalendarEvent, sendEmail } from "../corsair/client";
+import { getUserBillingPolicy, shouldBlockAiUsage } from "../billing/policy";
+import { incrementUsage, getUsage } from "../billing/usage";
 import { db } from "../db";
 import { emails } from "../db/schema";
 import { redis } from "../redis";
@@ -13,7 +15,6 @@ import { getFallbackProvider, getModelForCapability, getPrimaryProvider, getProv
 import { prompts } from "./prompts";
 import type { AIExecutionOptions, AIJsonResult, AIProvider, AIProviderHealth, AITextResult, StructuredTask } from "./types";
 
-const DEFAULT_MONTHLY_LIMIT = 20;
 const PROVIDER_COOLDOWN_MS = 15 * 60 * 1000;
 const PROVIDER_FAILURE_THRESHOLD = 3;
 const ZERO_EMBEDDING = new Array<number>(768).fill(0);
@@ -59,21 +60,12 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function monthKey() {
-  const date = new Date();
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
 function dayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
 function healthKey(provider: AIProvider) {
   return `key:health:${provider}:${dayKey()}`;
-}
-
-function usageKey(userId: string) {
-  return `key:usage:${userId}:${monthKey()}`;
 }
 
 function stripHtml(value: string) {
@@ -174,39 +166,24 @@ async function isProviderCircuitOpen(provider: AIProvider) {
   return Number.isFinite(lastFailureTime) && Date.now() - lastFailureTime < PROVIDER_COOLDOWN_MS;
 }
 
-async function resolveUsagePolicy(userId?: string) {
-  if (!userId) {
-    return { monthlyLimit: null, tier: "admin" as const };
-  }
-
-  const adminUsers = (process.env.AI_ADMIN_USER_IDS ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-  const proUsers = (process.env.AI_PRO_USER_IDS ?? "").split(",").map((item) => item.trim()).filter(Boolean);
-
-  if (adminUsers.includes(userId)) {
-    return { monthlyLimit: null, tier: "admin" as const };
-  }
-
-  if (proUsers.includes(userId)) {
-    return { monthlyLimit: 200, tier: "pro" as const };
-  }
-
-  return { monthlyLimit: DEFAULT_MONTHLY_LIMIT, tier: "free" as const };
-}
-
 async function reserveUsage(userId?: string) {
   if (!userId) return;
 
-  const policy = await resolveUsagePolicy(userId);
-  if (policy.monthlyLimit === null) return;
-
-  const key = usageKey(userId);
-  const current = Number((await redis.get<number | string>(key)) ?? 0);
-  if (current >= policy.monthlyLimit) {
-    throw new AIUsageLimitError();
+  const policy = await getUserBillingPolicy(userId);
+  const current = await getUsage(redis, userId, "ai");
+  const limitState = shouldBlockAiUsage(policy, current);
+  if (limitState.blocked && limitState.reason === "disabled") {
+    throw new AIUsageLimitError("AI access is disabled for this account.");
+  }
+  if (policy.monthlyLimit === null || policy.isAdmin) {
+    await incrementUsage(redis, userId, "ai");
+    return;
+  }
+  if (limitState.blocked && limitState.reason === "limit") {
+    throw new AIUsageLimitError("You have reached the Free plan AI limit. Upgrade to continue using AI.");
   }
 
-  await redis.incr(key);
-  await redis.expire(key, 60 * 60 * 24 * 40);
+  await incrementUsage(redis, userId, "ai");
 }
 
 async function callChatCompletion(params: {
@@ -747,7 +724,15 @@ export async function streamAgentResponse(
     return {
       textStream: createSingleChunkStream(text),
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof AIUsageLimitError) {
+      return {
+        textStream: createSingleChunkStream(
+          "You’ve reached the Free plan AI limit for this month. Upgrade to Pro to keep using the agent.",
+        ),
+      };
+    }
+
     return {
       textStream: createSingleChunkStream(
         "AI assistance is temporarily unavailable. You can still use Inbox, Calendar, and manual actions safely.",

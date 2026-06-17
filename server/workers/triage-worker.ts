@@ -5,6 +5,8 @@ import { emails, aiConsentRules, autoReplyDrafts } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { isDomainBlocked } from '@/lib/domain-matcher';
 import { classifyEmail, generateTLDR, generateAutoReplies, generateEmbedding } from '../ai/provider';
+import { AIUsageLimitError } from '../ai/errors';
+import { incrementUsage } from '../billing/usage';
 import pino from 'pino';
 
 const logger = pino();
@@ -29,6 +31,7 @@ export async function processTriageJob(payload: unknown) {
   }
   const data = parsed.data;
   const { userId, emailId, corsairMessageId, fromAddress, subject, snippet, bodyText } = data;
+  await incrementUsage(redis, userId, 'email-triage').catch(() => null);
 
   // 2. PRIVACY GATE
   const domain = fromAddress.split('@')[1] ?? '';
@@ -53,38 +56,52 @@ export async function processTriageJob(payload: unknown) {
   }
 
   // 3. AI classification with provider guardrails
-  const { tag, priority } = await classifyEmail(subject, snippet, { userId });
-  await workerDb.update(emails)
-    .set({ tag, priority })
-    .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
+  let finalTag = 'other';
+  let finalPriority = 'medium';
+  try {
+    const { tag, priority } = await classifyEmail(subject, snippet, { userId });
+    finalTag = tag;
+    finalPriority = priority;
+    await workerDb.update(emails)
+      .set({ tag, priority })
+      .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
 
-  // 4. generateTLDR
-  const content = bodyText ?? snippet;
-  const tldr = await generateTLDR(subject, content, { userId });
-  await workerDb.update(emails)
-    .set({ tldr })
-    .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
+    // 4. generateTLDR
+    const content = bodyText ?? snippet;
+    const tldr = await generateTLDR(subject, content, { userId });
+    await workerDb.update(emails)
+      .set({ tldr })
+      .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
 
-  // 5. generateAutoReplies
-  const replies = await generateAutoReplies(subject, content, { userId });
-  await workerDb.insert(autoReplyDrafts)
-    .values([
-      { userId, emailId, reply_text: replies.direct, status: 'draft' },
-      { userId, emailId, reply_text: replies.warm, status: 'draft' },
-      { userId, emailId, reply_text: replies.boundary, status: 'draft' },
-    ])
-    .onConflictDoNothing();
+    // 5. generateAutoReplies
+    const replies = await generateAutoReplies(subject, content, { userId });
+    await workerDb.insert(autoReplyDrafts)
+      .values([
+        { userId, emailId, reply_text: replies.direct, status: 'draft' },
+        { userId, emailId, reply_text: replies.warm, status: 'draft' },
+        { userId, emailId, reply_text: replies.boundary, status: 'draft' },
+      ])
+      .onConflictDoNothing();
 
-  // 6. generateEmbedding
-  const embedding = await generateEmbedding(subject + ' ' + snippet, { userId });
-  await workerDb.update(emails)
-    .set({ embedding })
-    .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
-
-  // 7. UPDATE emails SET ai_triage_skipped=false
-  await workerDb.update(emails)
-    .set({ ai_triage_skipped: false })
-    .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
+    // 6. generateEmbedding
+    const embedding = await generateEmbedding(subject + ' ' + snippet, { userId });
+    await workerDb.update(emails)
+      .set({ embedding, ai_triage_skipped: false })
+      .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
+  } catch (error) {
+    if (error instanceof AIUsageLimitError) {
+      logger.info({
+        event: 'triage_skipped_ai_limit',
+        emailId,
+        userId: userId.slice(0, 8),
+      });
+      await workerDb.update(emails)
+        .set({ ai_triage_skipped: true })
+        .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
+      return { status: 'skipped', reason: 'ai_limit' };
+    }
+    throw error;
+  }
 
   // 8. Invalidate contact cache
   await redis.del('contact:' + userId + ':' + fromAddress);
@@ -98,7 +115,7 @@ export async function processTriageJob(payload: unknown) {
         Authorization: 'Basic ' + Buffer.from(ablyKey).toString('base64'),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ name: 'email:triaged', data: { emailId, tag, priority } })
+      body: JSON.stringify({ name: 'email:triaged', data: { emailId, tag: finalTag, priority: finalPriority } })
     });
   }
 
@@ -107,8 +124,8 @@ export async function processTriageJob(payload: unknown) {
     event: 'triage_complete',
     emailId,
     durationMs: Date.now() - startTime,
-    tag,
-    priority,
+    tag: finalTag,
+    priority: finalPriority,
     userId: userId.slice(0, 8)
   });
 

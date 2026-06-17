@@ -3,11 +3,12 @@ import "server-only";
 import { streamAgentResponse } from "../provider";
 import { runCalendarAgent } from "./calendar-agent";
 import { runComposeAgent } from "./compose-agent";
+import { detectIntent } from "./intent";
 import { runReplyAgent } from "./reply-agent";
 import { sanitiseAgentInput, wrapAgentEmailContext } from "./sanitization";
 import { runSummarizerAgent } from "./summarizer-agent";
 import { runTriageAgent } from "./triage-agent";
-import type { AgentContext, AgentIntent, AgentResult } from "./types";
+import type { AgentContext, AgentResult } from "./types";
 
 function createSingleChunkStream(text: string) {
   return {
@@ -15,18 +16,6 @@ function createSingleChunkStream(text: string) {
       yield text;
     },
   };
-}
-
-function detectIntent(message: string, threadContext?: string): AgentIntent {
-  const lower = message.toLowerCase().trim();
-
-  if (lower.startsWith("/")) return "compose";
-  if (/\b(triage|classify|priority|urgent)\b/.test(lower) && !!threadContext) return "triage";
-  if (/\b(tl;dr|tldr|summari[sz]e|digest)\b/.test(lower) && !!threadContext) return "summarizer";
-  if (/\b(reply|respond|draft a reply|write back)\b/.test(lower) && !!threadContext) return "reply";
-  if (/\b(schedule|meeting|calendar|event|meet)\b/.test(lower)) return "calendar";
-  if (/\b(send|archive|delete|trash|mark unread|mark read|create)\b/.test(lower)) return "action";
-  return "general";
 }
 
 async function runSpecialist(context: AgentContext): Promise<AgentResult | null> {

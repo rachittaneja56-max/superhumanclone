@@ -3,7 +3,7 @@
 import type { ComponentType } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Calendar, DraftingCompass, Inbox, Send, Settings, ShieldAlert, Trash2, LogOut } from 'lucide-react'
+import { Calendar, CreditCard, DraftingCompass, Inbox, Send, Settings, ShieldAlert, Trash2, LogOut, Shield } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { signOutAction } from '@/app/actions/auth'
 
@@ -19,15 +19,18 @@ const MAILBOX_ITEMS: Array<{ folder: MailFolder; label: string; icon: ComponentT
 
 const APP_ITEMS = [
   { href: '/calendar', label: 'Calendar', icon: Calendar },
+  { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
 export function UnifiedSidebar({
   firstName,
   email,
+  isAdmin = false,
 }: {
   firstName: string
   email?: string | null
+  isAdmin?: boolean
 }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -99,6 +102,20 @@ export function UnifiedSidebar({
               </Link>
             )
           })}
+          {isAdmin ? (
+            <Link
+              href="/admin"
+              className={[
+                'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-100',
+                pathname === '/admin'
+                  ? 'bg-accent/10 text-accent font-medium border-l-2 border-accent pl-[10px]'
+                  : 'text-foreground-muted hover:bg-surface-overlay hover:text-foreground',
+              ].join(' ')}
+            >
+              <Shield className="h-4 w-4 shrink-0" />
+              <span className="truncate">Admin</span>
+            </Link>
+          ) : null}
         </div>
   </div>
 

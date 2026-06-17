@@ -58,6 +58,10 @@ export const users = pgTable('users', {
   email: text('email').notNull().unique(),
   emailVerified: timestamp('email_verified', { mode: 'date' }),
   image: text('image'),
+  plan: text('plan').$type<'free' | 'pro' | 'team'>().default('free').notNull(),
+  isAdmin: boolean('is_admin').default(false).notNull(),
+  isFlagged: boolean('is_flagged').default(false).notNull(),
+  aiDisabled: boolean('ai_disabled').default(false).notNull(),
   // Aethra custom columns — added AFTER Auth.js required columns
   // Note: Corsair OAuth tokens are managed by @corsair-dev/app — never stored locally
   createdAt: timestamp('created_at').defaultNow(),

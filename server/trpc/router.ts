@@ -9,6 +9,8 @@ import { settingsRouter } from './routers/settings';
 import { realtimeRouter } from './routers/realtime';
 import { auditRouter } from './routers/audit';
 import { waitlistRouter } from './routers/waitlist';
+import { billingRouter } from './routers/billing';
+import { adminRouter } from './routers/admin';
 export const appRouter = router({
   email: emailRouter,
   calendar: calendarRouter,
@@ -18,6 +20,8 @@ export const appRouter = router({
   settings: settingsRouter,
   realtime: realtimeRouter,
   audit: auditRouter,
+  billing: billingRouter,
+  admin: adminRouter,
   waitlist: waitlistRouter,
 });
 

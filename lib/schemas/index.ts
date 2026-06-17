@@ -7,3 +7,5 @@ export * from './calendar';
 export * from './contacts';
 export * from './search';
 export * from './email';
+export * from './billing';
+export * from './admin';

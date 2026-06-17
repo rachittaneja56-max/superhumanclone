@@ -7,6 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { redis } from '../../redis';
 import { mapHitlActionForClient } from '../../ai/agents/action-agent';
 import { sanitisePayload } from '@/lib/sanitise-payload';
+import { resolveHitlTransition } from '../../agents/hitl-state';
 
 const resolveHitlLimit = createRateLimitMiddleware('hitl_resolve', 60, 60);
 const chatMessageLimit = createRateLimitMiddleware('agent_chat', 50, 3600);
@@ -43,17 +44,26 @@ export const agentRouter = router({
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authorized to resolve this action' });
       }
 
+      const transition = resolveHitlTransition({
+        currentStatus: row.status,
+        decision: input.decision,
+        expiresAt: new Date(row.expires_at),
+      });
+
       if (row.status !== 'pending') {
         throw new TRPCError({ code: 'CONFLICT', message: 'HITL action already resolved or expired' });
       }
 
-      if (new Date(row.expires_at) < new Date()) {
+      if (transition.reason === 'expired') {
+        await db.update(hitlActions)
+          .set({ status: 'expired', resolved_at: new Date() })
+          .where(eq(hitlActions.id, input.actionId));
         throw new TRPCError({ code: 'CONFLICT', message: 'HITL action has expired' });
       }
 
       // Update the DB
       await db.update(hitlActions)
-        .set({ status: input.decision, resolved_at: new Date() })
+        .set({ status: transition.nextStatus, resolved_at: new Date() })
         .where(eq(hitlActions.id, input.actionId));
 
       // Publish to Redis to resume the agent interceptor

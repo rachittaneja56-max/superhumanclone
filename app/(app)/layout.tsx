@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { AppClientShell } from '@/components/app-client-shell'
 import { UnifiedSidebar } from '@/components/app/UnifiedSidebar'
+import { getUserAdminState } from '@/server/admin/access'
 import { db } from '@/server/db'
 import { userSettings, users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
@@ -31,10 +32,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const email = localUser.email ?? ''
   const name = localUser.name ?? 'User'
   const firstName = name.split(' ')[0] || 'User'
+  const { isAdmin } = await getUserAdminState(userId)
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <UnifiedSidebar firstName={firstName} email={email} />
+      <UnifiedSidebar firstName={firstName} email={email} isAdmin={isAdmin} />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {children}
