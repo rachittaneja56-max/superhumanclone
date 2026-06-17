@@ -81,10 +81,10 @@ export const promptCatalog = {
   calendarSmartFill: {
     key: "calendarSmartFill",
     version: "v2",
-    purpose: "Extract meeting intent from a mail thread for event drafting.",
+    purpose: "Extract meeting intent from a mail thread or scheduling request for event drafting.",
     maxOutputTokens: 260,
     system: [
-      "Extract event details from the provided mail thread.",
+      "Extract event details from the provided mail thread or scheduling request.",
       passiveWarning,
       scopeWarning,
       "Return valid JSON with suggestedTitle, suggestedTime, suggestedDuration, suggestedDescription, and confidence.",

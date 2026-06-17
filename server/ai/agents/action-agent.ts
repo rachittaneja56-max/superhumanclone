@@ -69,7 +69,10 @@ export function mapHitlPayloadForClient(actionType: string, payload: Record<stri
       startTime: typeof payload.startTime === "string" ? payload.startTime : undefined,
       endTime: typeof payload.endTime === "string" ? payload.endTime : undefined,
       durationMinutes: typeof payload.durationMinutes === "number" ? payload.durationMinutes : undefined,
-      attendeesSummary: summarizeList(attendees, "more"),
+      attendeesSummary:
+        typeof payload.attendeesSummary === "string"
+          ? sanitiseAgentOutput(payload.attendeesSummary, 180)
+          : summarizeList(attendees, "more"),
       location: typeof payload.location === "string" ? sanitiseAgentOutput(payload.location, 140) : undefined,
       description: typeof payload.description === "string" ? sanitiseAgentOutput(payload.description, 240) : undefined,
       addMeetLink: typeof payload.addMeetLink === "boolean" ? payload.addMeetLink : true,

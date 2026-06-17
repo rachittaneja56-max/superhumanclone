@@ -36,9 +36,10 @@ function mapDbEvent(row: typeof calendarEvents.$inferSelect) {
     startTime: row.start_time,
     endTime: row.end_time,
     location: row.location,
+    meetLink: row.meeting_link,
+    attendeesSummary: row.attendees_summary,
     is_all_day: row.is_all_day,
     status: row.status,
-    meetLink: null,
   };
 }
 
@@ -51,6 +52,8 @@ function mapRemoteEvent(userId: string, event: Record<string, unknown>) {
   const startRaw = String(start.dateTime ?? start.date ?? event.startTime ?? Date.now());
   const endRaw = String(end.dateTime ?? end.date ?? event.endTime ?? Date.now());
   const isAllDay = !!start.date && !start.dateTime;
+  const attendeesSummary = extractAttendeeSummary(event);
+  const meetingLink = extractMeetLink(event);
 
   return {
     userId,
@@ -60,6 +63,8 @@ function mapRemoteEvent(userId: string, event: Record<string, unknown>) {
     start_time: new Date(startRaw),
     end_time: new Date(endRaw),
     location: (event.location as string) || null,
+    meeting_link: meetingLink,
+    attendees_summary: attendeesSummary,
     is_all_day: isAllDay,
     status: (event.status as string) || 'confirmed',
   };
@@ -74,6 +79,8 @@ async function upsertRemoteEvents(ctx: any, items: Record<string, unknown>[]) {
     start_time: Date;
     end_time: Date;
     location: string | null;
+    meeting_link: string | null;
+    attendees_summary: string | null;
     is_all_day: boolean;
     status: string;
   }>;
@@ -92,6 +99,8 @@ async function upsertRemoteEvents(ctx: any, items: Record<string, unknown>[]) {
           start_time: sql`excluded.start_time`,
           end_time: sql`excluded.end_time`,
           location: sql`excluded.location`,
+          meeting_link: sql`excluded.meeting_link`,
+          attendees_summary: sql`excluded.attendees_summary`,
           is_all_day: sql`excluded.is_all_day`,
           status: sql`excluded.status`,
           updated_at: new Date(),
@@ -127,6 +136,40 @@ function extractAttendees(event: Record<string, unknown> | null | undefined) {
       return name && email ? `${name} <${email}>` : email || name;
     })
     .filter(Boolean);
+}
+
+function extractMeetLink(event: Record<string, unknown> | null | undefined) {
+  if (!event) return null;
+  if (typeof event.hangoutLink === 'string' && event.hangoutLink) {
+    return event.hangoutLink;
+  }
+
+  const conferenceData = event.conferenceData as Record<string, unknown> | undefined;
+  const entryPoints = Array.isArray(conferenceData?.entryPoints) ? conferenceData.entryPoints : [];
+  for (const entry of entryPoints) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as Record<string, unknown>;
+    if (String(record.entryPointType ?? '') === 'video' && typeof record.uri === 'string' && record.uri) {
+      return record.uri;
+    }
+  }
+
+  return null;
+}
+
+function extractAttendeeSummary(event: Record<string, unknown> | null | undefined) {
+  if (!event || !Array.isArray(event.attendees)) return null;
+  const names = event.attendees
+    .map((attendee) => {
+      if (!attendee || typeof attendee !== 'object') return '';
+      const record = attendee as Record<string, unknown>;
+      const name = typeof record.displayName === 'string' ? record.displayName.trim() : '';
+      const email = typeof record.email === 'string' ? record.email.trim() : '';
+      return name || email;
+    })
+    .filter(Boolean);
+
+  return names.length > 0 ? names.join(', ') : null;
 }
 
 function normalizeEmailForMatch(value: string) {
@@ -368,12 +411,13 @@ export const calendarRouter = router({
           time: event.start_time,
           title: event.title,
           subtitle: event.location || event.status,
-          attendees: [],
+          attendeesSummary: event.attendees_summary ?? null,
           event: serializeEvent(mapDbEvent(event)),
         })),
         ...mails.map((mail) => ({
           type: 'email' as const,
           id: mail.id,
+          threadId: mail.thread_id,
           time: mail.created_at,
           sender: mail.from_name || mail.from_address || 'Unknown sender',
           subject: mail.subject || '(no subject)',

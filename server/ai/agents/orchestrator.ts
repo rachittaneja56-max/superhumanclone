@@ -29,7 +29,7 @@ async function runSpecialist(
   if (intent === "summarizer") return runSummarizerAgent(context);
   if (intent === "reply") return runReplyAgent(context);
   if (intent === "compose") return runComposeAgent(context);
-  if (intent === "calendar") return runCalendarAgent(context);
+  if (intent === "calendar") return runCalendarAgent(context, hitlInterceptor);
   if (intent === "action") return runActionAgent(context, hitlInterceptor);
   return null;
 }

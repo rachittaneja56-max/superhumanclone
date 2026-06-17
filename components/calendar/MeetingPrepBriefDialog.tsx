@@ -46,7 +46,7 @@ export function MeetingPrepBriefDialog({
 
         {briefMutation.isPending ? (
           <div className="flex items-center justify-center py-12 text-sm text-foreground-muted">
-            Building a safe brief from allowed email context...
+            Building a safe brief from allowed email context…
           </div>
         ) : brief ? (
           <div className="grid gap-4">

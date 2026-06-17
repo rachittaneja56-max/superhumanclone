@@ -181,6 +181,8 @@ export const calendarEvents = pgTable(
     start_time: timestamp('start_time', { withTimezone: true, mode: 'date' }).notNull(),
     end_time: timestamp('end_time', { withTimezone: true, mode: 'date' }).notNull(),
     location: text('location'),
+    meeting_link: text('meeting_link'),
+    attendees_summary: text('attendees_summary'),
     is_all_day: boolean('is_all_day').default(false).notNull(),
     status: text('status').default('confirmed').notNull(),
     created_at: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),

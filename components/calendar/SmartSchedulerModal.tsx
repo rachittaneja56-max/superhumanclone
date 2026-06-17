@@ -194,7 +194,7 @@ export function SmartSchedulerModal({
         {smartFillMutation.isPending ? (
           <div className="flex flex-col items-center justify-center space-y-3 p-8">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-            <div className="text-sm text-muted-foreground animate-pulse">Analyzing thread context...</div>
+            <div className="text-sm text-muted-foreground animate-pulse">Analyzing thread context…</div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
@@ -291,7 +291,7 @@ export function SmartSchedulerModal({
                 </Button>
               </div>
               <Button type="submit" disabled={createEventMutation.isPending}>
-                {createEventMutation.isPending ? "Creating..." : "Create event"}
+                {createEventMutation.isPending ? "Creating…" : "Create event"}
               </Button>
             </DialogFooter>
           </form>

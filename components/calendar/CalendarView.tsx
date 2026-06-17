@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { addDays, addMonths, addWeeks, differenceInMinutes, endOfDay, endOfMonth, endOfWeek, format, isAfter, isSameDay, isSameMonth, isToday, startOfDay, startOfMonth, startOfWeek, subMonths, subWeeks } from "date-fns";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Clock, MapPin, Plus } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
@@ -44,6 +45,7 @@ type TimelineItem =
   | {
       type: "email";
       id: string;
+      threadId: string;
       time: Date;
       sender: string;
       subject: string;
@@ -55,7 +57,7 @@ type TimelineItem =
       id: string;
       time: Date;
       title: string;
-      attendees: string[];
+      attendeesSummary: string | null;
       location?: string | null;
       event: CalendarEvent;
     };
@@ -160,6 +162,7 @@ export function CalendarView({
         return {
           type: "email",
           id: item.id,
+          threadId: item.threadId,
           time: new Date(item.time),
           sender: item.sender,
           subject: item.subject,
@@ -169,18 +172,18 @@ export function CalendarView({
       }
 
       return {
-        type: "event",
-        id: item.id,
-        time: new Date(item.time),
-        title: item.title,
-        attendees: Array.isArray(item.attendees) ? item.attendees : [],
-        location: item.location ?? null,
-        event: {
-          ...(item.event as CalendarEvent),
-          startTime: parseDate((item.event as CalendarEvent).startTime),
-          endTime: parseDate((item.event as CalendarEvent).endTime),
-        },
-      } as TimelineItem;
+          type: "event",
+          id: item.id,
+          time: new Date(item.time),
+          title: item.title,
+          attendeesSummary: typeof item.attendeesSummary === "string" ? item.attendeesSummary : null,
+          location: item.location ?? null,
+          event: {
+            ...(item.event as CalendarEvent),
+            startTime: parseDate((item.event as CalendarEvent).startTime),
+            endTime: parseDate((item.event as CalendarEvent).endTime),
+          },
+        } as TimelineItem;
     });
 
     return items.sort((a: TimelineItem, b: TimelineItem) => a.time.getTime() - b.time.getTime());
@@ -721,6 +724,7 @@ function UnifiedTimelineFeed({
   onOpenEvent: (event: CalendarEvent) => void;
   onPickDay: (date: Date | null) => void;
 }) {
+  const router = useRouter();
   const grouped = useMemo(() => {
     const buckets: Record<string, TimelineItem[]> = {};
     for (const item of items) {
@@ -755,7 +759,7 @@ function UnifiedTimelineFeed({
                     {item.type === "email" ? (
                       <button
                         type="button"
-                        onClick={() => onPickDay(item.time)}
+                        onClick={() => router.push(`/inbox/${item.threadId}`)}
                         className="w-full text-left"
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -787,7 +791,7 @@ function UnifiedTimelineFeed({
                               {item.event.is_all_day ? "All day" : `${format(item.time, "h:mm a")} - ${format(parseDate(item.event.endTime), "h:mm a")}`}
                             </div>
                             <div className="mt-1 line-clamp-2 text-xs leading-5 text-foreground-muted">
-                              {item.attendees.length > 0 ? item.attendees.slice(0, 3).join(", ") : "No attendees"}
+                              {item.attendeesSummary || "No attendees"}
                             </div>
                           </div>
                           <div className="shrink-0 text-xs text-foreground-subtle">
@@ -901,7 +905,7 @@ function EventDetailDialog({
           {event.description && <p className="whitespace-pre-wrap leading-6 text-foreground">{event.description}</p>}
           {event.meetLink && (
             <a href={event.meetLink} target="_blank" rel="noreferrer" className="inline-flex text-sm font-medium text-accent hover:underline">
-              Join Google Meet
+              Join Meet
             </a>
           )}
         </div>
@@ -1017,7 +1021,7 @@ function EventEditorDialog({
 function CalendarLoading() {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-10 text-sm text-foreground-muted">
-      Loading calendar...
+      Loading calendar…
     </div>
   );
 }
