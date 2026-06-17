@@ -20,7 +20,7 @@ export default async function DashboardPage() {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-        <DashboardShell settings={settings} connectionState={connectionState} />
+        <DashboardShell settings={settings} />
         <Suspense fallback={<DashboardDataSkeleton />}>
           <DashboardData settings={settings} connectionState={connectionState} />
         </Suspense>

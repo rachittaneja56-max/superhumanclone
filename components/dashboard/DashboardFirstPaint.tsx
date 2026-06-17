@@ -91,17 +91,23 @@ async function safe<T>(promise: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-export function DashboardShell({
+export async function DashboardShell({
   settings,
-  connectionState,
 }: {
   settings: DashboardSettings;
-  connectionState: ConnectionState;
 }) {
-  const gmailConnected = connectionState.gmailConnected;
-  const calendarConnected = connectionState.calendarConnected;
-  const privacyReady = Boolean(settings?.privacyConfigured);
-  const aiEnabled = Boolean(settings?.aiEnabled);
+  const trpc = await serverTrpc();
+  const digestEnabled = Boolean(settings?.morningDigestEnabled && settings?.aiEnabled && settings?.privacyConfigured);
+  const digest: MorningDigest = digestEnabled ? await safe(trpc.email.getMorningDigest({}), null) : null;
+  const digestUnavailableReason = !settings?.morningDigestEnabled
+    ? "Enable Morning Digest in Settings to see a daily summary."
+    : !settings?.aiEnabled
+      ? "AI summary is turned off."
+      : !settings?.privacyConfigured
+        ? "Enable Privacy Gate to see a daily summary."
+        : "No summary available.";
+  const digestSummary = digest?.digest?.trim() ? digest : null;
+  const digestText = digestSummary?.digest?.trim() ?? "";
 
   return (
     <section className="overflow-hidden rounded-[2rem] border border-border bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(244,238,229,0.96))] p-6 shadow-[0_24px_60px_rgba(38,28,14,0.08)] sm:p-8 dark:bg-[radial-gradient(circle_at_top_right,rgba(217,119,6,0.14),transparent_35%),linear-gradient(180deg,rgba(22,22,22,0.96),rgba(12,12,12,0.98))] dark:shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
@@ -109,36 +115,35 @@ export function DashboardShell({
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-foreground-subtle">
             <Sparkles className="h-4 w-4 text-accent" />
-            Command center
+            AI digest
           </div>
-          <h1 className="mt-3 font-display text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-            Good morning. Here&apos;s the state of your workspace.
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-foreground-muted sm:text-base">
-            Aethra keeps email, calendar, and approvals in one executive summary so you can act fast without reading a wall of text.
-          </p>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <StatusCard
-              label="Gmail"
-              value={gmailConnected ? "Connected" : "Disconnected"}
-              tone={gmailConnected ? "good" : "warn"}
-            />
-            <StatusCard
-              label="Calendar"
-              value={calendarConnected ? "Connected" : "Disconnected"}
-              tone={calendarConnected ? "good" : "warn"}
-            />
-            <StatusCard
-              label="Privacy Gate"
-              value={privacyReady ? "Configured" : "Needs setup"}
-              tone={privacyReady ? "good" : "warn"}
-            />
-            <StatusCard
-              label="AI"
-              value={aiEnabled ? "Enabled" : "Disabled"}
-              tone={aiEnabled ? "good" : "warn"}
-            />
+          <div className="mt-3 rounded-[1.75rem] border border-border bg-[rgba(255,255,255,0.82)] p-5 shadow-[0_18px_36px_rgba(28,20,12,0.06)] dark:bg-background/55 dark:shadow-none">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl border border-border bg-background p-3 text-accent dark:bg-surface">
+                <Activity className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+                  Command Brief
+                </h1>
+                <p className="mt-2 text-sm leading-6 text-foreground-muted sm:text-base">
+                  {digestText ? digestText : digestUnavailableReason}
+                </p>
+                {digestSummary ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className="rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-foreground-subtle">
+                      {digestSummary.emailCount} email{digestSummary.emailCount === 1 ? "" : "s"}
+                    </span>
+                    <span className="rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-foreground-subtle">
+                      {digestSummary.eventCount} event{digestSummary.eventCount === 1 ? "" : "s"}
+                    </span>
+                    <span className="rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-foreground-subtle">
+                      Morning digest
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -164,18 +169,6 @@ export function DashboardShell({
               </Link>
             </div>
           </div>
-
-          <div className="rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] p-4 dark:bg-background/60">
-            <div className="flex items-start gap-3">
-              <ShieldCheck className="mt-0.5 h-5 w-5 text-accent" />
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">Fast load mode</h3>
-                <p className="mt-1 text-sm leading-6 text-foreground-muted">
-                  The dashboard shell loads first. Inbox, calendar, digest, and audit cards fill in right after.
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </section>
@@ -192,22 +185,18 @@ export async function DashboardData({
   const trpc = await serverTrpc();
   const today = new Date();
   const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
-  const digestEnabled = Boolean(settings?.morningDigestEnabled && settings.aiEnabled && settings.privacyConfigured);
-
   const [
     billing,
     unreadCounts,
     inboxThreads,
     auditLogs,
     calendarEvents,
-    digest,
   ] = await Promise.all([
     safe(trpc.billing.getOverview({}), null),
     safe(trpc.email.getUnreadCounts({}), null),
     safe(trpc.email.getMailboxThreads({ folder: "inbox", limit: 12, offset: 0, query: "" }), { items: [], nextPageToken: null }),
     safe(trpc.audit.getAuditLog({ limit: 8 }), []),
     safe(trpc.calendar.getEvents({ startDate: today, endDate: weekEnd }), []),
-    digestEnabled ? safe(trpc.email.getMorningDigest({}), null) : Promise.resolve(null),
   ]);
 
   const normalizedCalendarEvents = (calendarEvents ?? []).map((event: any) => ({
@@ -263,10 +252,10 @@ export async function DashboardData({
     <>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
-          label="Communication"
-          value={gmailConnected && calendarConnected ? "Live" : gmailConnected || calendarConnected ? "Partial" : "Offline"}
-          helper={`${gmailConnected ? "Gmail connected" : "Gmail disconnected"} · ${calendarConnected ? "Calendar connected" : "Calendar disconnected"}`}
-          tone={gmailConnected && calendarConnected ? "good" : "warn"}
+          label="Unread"
+          value={String(inboxUnread)}
+          helper={inboxUnread > 0 ? "Recent mail still waiting for attention" : "Inbox is clear for now"}
+          tone={inboxUnread > 0 ? "warn" : "good"}
         />
         <SummaryCard
           label="Needs reply"
@@ -286,26 +275,6 @@ export async function DashboardData({
           helper={nextEvent ? `Next at ${format(nextEvent.startTime, "h:mm a")}` : "No meetings scheduled"}
         />
       </div>
-
-      {digest?.digest ? (
-        <div className="mt-5 max-w-3xl rounded-2xl border border-border/80 bg-black/20 p-4">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
-            <Activity className="h-4 w-4 text-accent" />
-            Morning digest
-          </div>
-          <p className="mt-2 line-clamp-3 text-sm leading-6 text-foreground-muted">
-            {digest.digest}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-foreground-subtle">
-            <span className="rounded-full border border-border bg-background/60 px-2.5 py-1">
-              {digest.emailCount} email{digest.emailCount === 1 ? "" : "s"}
-            </span>
-            <span className="rounded-full border border-border bg-background/60 px-2.5 py-1">
-              {digest.eventCount} event{digest.eventCount === 1 ? "" : "s"}
-            </span>
-          </div>
-        </div>
-      ) : null}
 
       <div className="mt-5 grid items-stretch gap-4 xl:grid-cols-3">
         <PanelCard title="Priority threads" icon={<Mail className="h-4 w-4" />} description="Top items from the inbox right now." className="xl:col-span-1">
@@ -355,15 +324,6 @@ export async function DashboardData({
                   : "Enable calendar, privacy, and AI for meeting prep."}
               </div>
             </div>
-          </div>
-        </PanelCard>
-
-        <PanelCard title="Trust / privacy" icon={<ShieldCheck className="h-4 w-4" />} description="Connection and AI posture at a glance." className="xl:col-span-1">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <StatusRow label="Gmail" value={gmailConnected ? "Connected" : "Disconnected"} tone={gmailConnected ? "good" : "warn"} />
-            <StatusRow label="Calendar" value={calendarConnected ? "Connected" : "Disconnected"} tone={calendarConnected ? "good" : "warn"} />
-            <StatusRow label="Privacy Gate" value={privacyReady ? "Configured" : "Needs setup"} tone={privacyReady ? "good" : "warn"} />
-            <StatusRow label="AI" value={aiEnabled ? "Enabled" : "Disabled"} tone={aiEnabled ? "good" : "warn"} />
           </div>
         </PanelCard>
       </div>
@@ -421,6 +381,17 @@ export async function DashboardData({
               value={aiUsage === null ? "Unavailable" : String(aiUsage)}
               helper={billing?.limits?.ai === null ? "Unlimited" : billing?.limits?.ai ? `of ${billing.limits.ai}` : undefined}
             />
+          </div>
+        </PanelCard>
+      </div>
+
+      <div className="mt-4 grid items-stretch gap-4 xl:grid-cols-3">
+        <PanelCard title="Trust / privacy" icon={<ShieldCheck className="h-4 w-4" />} description="Connection and AI posture at a glance." className="xl:col-span-1">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <StatusRow label="Gmail" value={gmailConnected ? "Connected" : "Disconnected"} tone={gmailConnected ? "good" : "warn"} />
+            <StatusRow label="Calendar" value={calendarConnected ? "Connected" : "Disconnected"} tone={calendarConnected ? "good" : "warn"} />
+            <StatusRow label="Privacy Gate" value={privacyReady ? "Configured" : "Needs setup"} tone={privacyReady ? "good" : "warn"} />
+            <StatusRow label="AI" value={aiEnabled ? "Enabled" : "Disabled"} tone={aiEnabled ? "good" : "warn"} />
           </div>
         </PanelCard>
       </div>
@@ -499,25 +470,6 @@ function SummaryCard({ label, value, helper, tone = "default" }: SummaryCardProp
       <div className="text-[11px] uppercase tracking-[0.18em] text-foreground-subtle">{label}</div>
       <div className="mt-2 text-xl font-semibold text-foreground">{value}</div>
       {helper ? <div className="mt-1 text-sm leading-5 text-foreground-muted">{helper}</div> : null}
-    </div>
-  );
-}
-
-function StatusCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: "good" | "warn";
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] px-4 py-3 dark:bg-background">
-      <div className="text-sm text-foreground-muted">{label}</div>
-      <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]", tone === "good" ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300")}>
-        {value}
-      </span>
     </div>
   );
 }
