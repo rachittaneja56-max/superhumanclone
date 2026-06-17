@@ -1,7 +1,6 @@
 import 'server-only'
 
 import { db } from '@/server/db'
-import { userSettings } from '@/server/db/schema'
 import { sql } from 'drizzle-orm'
 
 export type UserSettingsPresence = {
@@ -72,6 +71,10 @@ function readValue(row: RawUserSettingsRow, ...keys: string[]) {
     }
   }
   return undefined
+}
+
+function quoteIdent(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`
 }
 
 function normalizeUserSettings(row: RawUserSettingsRow | undefined, userId: string): SafeUserSettings {
@@ -170,7 +173,11 @@ export async function ensureSafeUserSettings(userId: string): Promise<SafeUserSe
     return current
   }
 
-  await db.insert(userSettings).values({ userId } as any).onConflictDoNothing()
+  await db.execute(sql`
+    insert into ${sql.raw(quoteIdent('user_settings'))} (${sql.raw(quoteIdent('user_id'))})
+    values (${userId})
+    on conflict (${sql.raw(quoteIdent('user_id'))}) do nothing
+  `)
   return getSafeUserSettings(userId)
 }
 
@@ -182,10 +189,18 @@ export async function saveSafeUserSettings(userId: string, patch: SafeUserSettin
     return
   }
 
-  await db.insert(userSettings)
-    .values({ userId, ...supportedPatch } as any)
-    .onConflictDoUpdate({
-      target: userSettings.userId,
-      set: supportedPatch as any,
-    })
+  const columns = ['user_id', ...Object.keys(supportedPatch)]
+  const quotedColumns = columns.map(quoteIdent).join(', ')
+  const values = [userId, ...Object.values(supportedPatch)]
+  const insertValues = sql.join(values.map((value) => sql`${value}`), sql.raw(', '))
+  const updateColumns = Object.keys(supportedPatch)
+  const updateClause = updateColumns
+    .map((column) => `${quoteIdent(column)} = excluded.${quoteIdent(column)}`)
+    .join(', ')
+
+  await db.execute(sql`
+    insert into ${sql.raw(quoteIdent('user_settings'))} (${sql.raw(quotedColumns)})
+    values (${insertValues})
+    on conflict (${sql.raw(quoteIdent('user_id'))}) do update set ${sql.raw(updateClause)}
+  `)
 }
