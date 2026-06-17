@@ -125,7 +125,6 @@ export async function GET(request: Request) {
       const existingUsers = await db
         .select({
           id: sql<string>`"id"`,
-          emailVerified: sql<Date | null>`"emailVerified"`,
         })
         .from(users)
         .where(eq(users.email, googleUser.email))
@@ -136,13 +135,12 @@ export async function GET(request: Request) {
       if (!existingUser) {
         userId = crypto.randomUUID();
         await db.execute(sql`
-          insert into "users" ("id", "email", "name", "image", "emailVerified")
+          insert into "users" ("id", "email", "name", "image")
           values (
             ${userId},
             ${googleUser.email},
             ${googleUser.name},
-            ${googleUser.picture},
-            ${googleUser.email_verified ? new Date() : null}
+            ${googleUser.picture}
           )
         `);
 
@@ -159,12 +157,7 @@ export async function GET(request: Request) {
           update "users"
           set
             "name" = ${googleUser.name},
-            "image" = ${googleUser.picture},
-            "emailVerified" = ${
-              googleUser.email_verified && !existingUser.emailVerified
-                ? new Date()
-                : existingUser.emailVerified
-            }
+            "image" = ${googleUser.picture}
           where "id" = ${userId}
         `);
       }
