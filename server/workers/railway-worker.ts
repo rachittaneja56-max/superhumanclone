@@ -74,7 +74,7 @@ app.post('/agent/chat', async (req: any, res: any) => {
   // Verify X-Worker-Secret header
   if (!verifyWorkerSecret(req, res)) return;
 
-  const { userId, sessionId, message, threadContext } = req.body;
+  const { userId, sessionId, message, threadContext, history, allowMemory } = req.body;
   if (!userId || !sessionId || !message) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
@@ -85,7 +85,7 @@ app.post('/agent/chat', async (req: any, res: any) => {
   try {
     await runAgentTurn(userId, sessionId, message, (chunk) => {
       res.write(chunk);
-    }, threadContext);
+    }, threadContext, Array.isArray(history) ? history : [], Boolean(allowMemory));
     res.end();
   } catch (error) {
     console.error('Agent chat error:', error);

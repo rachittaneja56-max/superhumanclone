@@ -4,16 +4,16 @@ import { embed, streamText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { createCalendarEvent, sendEmail } from "../corsair/client";
 import { getUserBillingPolicy, shouldBlockAiUsage } from "../billing/policy";
 import { incrementUsage, getUsage } from "../billing/usage";
 import { db } from "../db";
 import { emails } from "../db/schema";
 import { redis } from "../redis";
 import { AIAllProvidersFailedError, AIInvalidResponseError, AIProviderUnavailableError, AIUsageLimitError } from "./errors";
-import { getFallbackProvider, getModelForCapability, getPrimaryProvider, getProviderApiKey, getProviderBaseUrl, getProviderOrder } from "./models";
+import { getModelForCapability, getPrimaryProvider, getProviderApiKey, getProviderBaseUrl, getProviderOrder } from "./models";
 import { prompts } from "./prompts";
 import type { AIExecutionOptions, AIJsonResult, AIProvider, AIProviderHealth, AITextResult, StructuredTask } from "./types";
+import { sanitiseAgentInput, sanitiseAgentOutput } from "./agents/sanitization";
 
 const PROVIDER_COOLDOWN_MS = 15 * 60 * 1000;
 const PROVIDER_FAILURE_THRESHOLD = 3;
@@ -69,12 +69,7 @@ function healthKey(provider: AIProvider) {
 }
 
 function stripHtml(value: string) {
-  return value
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return sanitiseAgentInput(value).replace(/\s+/g, " ").trim();
 }
 
 function redactSensitiveText(value: string) {
@@ -86,7 +81,7 @@ function redactSensitiveText(value: string) {
 }
 
 function truncateText(value: string, maxChars: number) {
-  return value.length <= maxChars ? value : `${value.slice(0, Math.max(0, maxChars - 1)).trim()}…`;
+  return value.length <= maxChars ? value : `${value.slice(0, Math.max(0, maxChars - 1)).trim()}...`;
 }
 
 function wrapEmailContent(value: string) {
@@ -98,7 +93,7 @@ function wrapCalendarContent(value: string) {
 }
 
 function sanitizeOutput(value: string, maxChars: number) {
-  return truncateText(redactSensitiveText(value), maxChars);
+  return sanitiseAgentOutput(truncateText(redactSensitiveText(value), maxChars), maxChars);
 }
 
 async function getProviderHealth(provider: AIProvider): Promise<AIProviderHealth> {
@@ -617,7 +612,7 @@ async function vectorSearchInternal(userId: string, query: string) {
   });
 }
 
-function buildAgentTools(userId: string, hitlInterceptor: (action: unknown) => Promise<boolean>) {
+function buildAgentTools(userId: string) {
   return {
     searchEmails: tool({
       description: "Search emails semantically using local search",
@@ -634,88 +629,43 @@ function buildAgentTools(userId: string, hitlInterceptor: (action: unknown) => P
           }));
       },
     } as any),
-    sendEmail: tool({
-      description: "Send an email. ALWAYS requires user approval first.",
-      parameters: z.object({
-        to: z.array(z.string().email()),
-        subject: z.string(),
-        body: z.string(),
-      }),
-      execute: async (params: { to: string[]; subject: string; body: string }) => {
-        const approved = await hitlInterceptor({
-          actionType: "send_email",
-          payload: { to: params.to, subject: sanitizeOutput(params.subject, 180) },
-          humanReadable: `Send to ${params.to.join(", ")}: "${sanitizeOutput(params.subject, 120)}"`,
-        });
-        if (!approved) return { status: "cancelled by user" };
-        const result = await sendEmail(userId, params);
-        if (result.needsConnect) return { error: "Gmail not connected" };
-        return { status: "sent" };
-      },
-    } as any),
-    createCalendarEvent: tool({
-      description: "Create a calendar event. Requires user approval.",
-      parameters: z.object({
-        title: z.string(),
-        startTime: z.string(),
-        endTime: z.string(),
-        attendees: z.array(z.string().email()),
-        description: z.string().optional(),
-        location: z.string().optional(),
-        addMeetLink: z.boolean().default(true),
-      }),
-      execute: async (params: { title: string; startTime: string; endTime: string; attendees: string[]; description?: string; location?: string; addMeetLink?: boolean }) => {
-        const approved = await hitlInterceptor({
-          actionType: "create_event",
-          payload: {
-            ...params,
-            title: sanitizeOutput(params.title, 180),
-            description: params.description ? sanitizeOutput(params.description, 240) : undefined,
-            durationMinutes: Math.max(
-              15,
-              Math.round((new Date(params.endTime).getTime() - new Date(params.startTime).getTime()) / 60000),
-            ),
-          },
-          humanReadable: `Create "${sanitizeOutput(params.title, 120)}" on ${params.startTime}`,
-        });
-        if (!approved) return { status: "cancelled by user" };
-        const result = await createCalendarEvent(userId, params);
-        if (result.needsConnect) return { error: "Calendar not connected" };
-        return { status: "created" };
-      },
-    } as any),
   };
+}
+
+function formatAgentPrompt(messages: Message[]) {
+  return messages
+    .slice(-20)
+    .map((message) => `${message.role.toUpperCase()}: ${sanitiseAgentInput(message.content)}`)
+    .join("\n\n");
 }
 
 export async function streamAgentResponse(
   userId: string,
   _sessionId: string,
   messages: Message[],
-  hitlInterceptor: (action: unknown) => Promise<boolean>,
+  _hitlInterceptor: (action: unknown) => Promise<unknown>,
 ) {
-  const providerOrder = getProviderOrder("agent");
-  const openAiCandidate = providerOrder.find((provider) => provider === "openai" && getProviderApiKey(provider));
+  const promptBody = formatAgentPrompt(messages);
+  const primaryProvider = getPrimaryProvider();
 
-  if (openAiCandidate) {
+  if (primaryProvider === "openai" && getProviderApiKey("openai")) {
     try {
       await reserveUsage(userId);
       const result = streamText({
-        model: openai(getModelForCapability(openAiCandidate, "agent")),
+        model: openai(getModelForCapability("openai", "agent")),
         system: prompts.agentSystem.system,
         messages: messages as Array<{ role: "user" | "assistant"; content: string }>,
-        tools: buildAgentTools(userId, hitlInterceptor),
+        tools: buildAgentTools(userId),
       });
-      void markProviderSuccess(openAiCandidate);
+      void markProviderSuccess("openai");
       return result;
     } catch (error) {
-      await markProviderFailure(openAiCandidate, error);
+      await markProviderFailure("openai", error);
     }
   }
 
-  const lastUserMessage = messages[messages.length - 1]?.content ?? "";
-
   try {
-    const { text } = await executeTextTask(lastUserMessage, {
+    const { text } = await executeTextTask(promptBody, {
       userId,
       capability: "smart",
       prompt: prompts.agentSystem,
@@ -725,10 +675,26 @@ export async function streamAgentResponse(
       textStream: createSingleChunkStream(text),
     };
   } catch (error) {
+    if (primaryProvider === "mistral" && getProviderApiKey("openai")) {
+      try {
+        await reserveUsage(userId);
+        const result = streamText({
+          model: openai(getModelForCapability("openai", "agent")),
+          system: prompts.agentSystem.system,
+          messages: messages as Array<{ role: "user" | "assistant"; content: string }>,
+          tools: buildAgentTools(userId),
+        });
+        void markProviderSuccess("openai");
+        return result;
+      } catch (fallbackError) {
+        await markProviderFailure("openai", fallbackError);
+      }
+    }
+
     if (error instanceof AIUsageLimitError) {
       return {
         textStream: createSingleChunkStream(
-          "You’ve reached the Free plan AI limit for this month. Upgrade to Pro to keep using the agent.",
+          "You've reached the Free plan AI limit for this month. AI features are now disabled until the next cycle or an upgrade.",
         ),
       };
     }

@@ -1,18 +1,24 @@
-import { z } from 'zod';
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
 import { db } from '../../db';
-import { hitlActions, auditLogs } from '../../db/schema';
+import { hitlActions, auditLogs, agentSessions } from '../../db/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { redis } from '../../redis';
 import { mapHitlActionForClient } from '../../ai/agents/action-agent';
 import { sanitisePayload } from '@/lib/sanitise-payload';
 import { resolveHitlTransition } from '../../agents/hitl-state';
+import { executeApprovedHitlAction } from '../../agents/action-agent';
 
 const resolveHitlLimit = createRateLimitMiddleware('hitl_resolve', 60, 60);
 const chatMessageLimit = createRateLimitMiddleware('agent_chat', 50, 3600);
 
-import { getPendingHITLSchema, resolveHITLSchema, chatMessageSchema } from '@/lib/schemas';
+import {
+  getPendingHITLSchema,
+  resolveHITLSchema,
+  chatMessageSchema,
+  clearAgentSessionSchema,
+  replaceAgentSessionHistorySchema,
+} from '@/lib/schemas';
 
 export const agentRouter = router({
   getPendingHITL: protectedProcedure
@@ -61,7 +67,10 @@ export const agentRouter = router({
         throw new TRPCError({ code: 'CONFLICT', message: 'HITL action has expired' });
       }
 
-      // Update the DB
+      if (input.decision === 'approved') {
+        await executeApprovedHitlAction(ctx.userId!, input.actionId, { db: ctx.db, redis: ctx.redis });
+      }
+
       await db.update(hitlActions)
         .set({ status: transition.nextStatus, resolved_at: new Date() })
         .where(eq(hitlActions.id, input.actionId));
@@ -69,6 +78,9 @@ export const agentRouter = router({
       // Publish to Redis to resume the agent interceptor
       await redis.publish(`hitl:response:${input.actionId}`, input.decision);
       await redis.del(`hitl:pending:${input.actionId}`);
+      if (input.decision === 'rejected') {
+        await redis.del(`hitl:private:${input.actionId}`);
+      }
 
       // Audit Log
       await db.insert(auditLogs).values({
@@ -78,6 +90,63 @@ export const agentRouter = router({
       }).catch(() => undefined);
 
       return { resolved: true, decision: input.decision };
+    }),
+
+  clearSessionHistory: protectedProcedure
+    .input(clearAgentSessionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.query.agentSessions.findFirst({
+        where: eq(agentSessions.id, input.sessionId),
+      });
+
+      if (!session) {
+        return { cleared: true };
+      }
+
+      if (session.userId !== ctx.userId) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authorized to clear this session' });
+      }
+
+      await db.delete(agentSessions).where(eq(agentSessions.id, input.sessionId));
+      await db.insert(auditLogs).values({
+        userId: ctx.userId!,
+        action: 'settings_changed',
+        details: sanitisePayload({ type: 'agent_memory_cleared', sessionId: input.sessionId }),
+      }).catch(() => undefined);
+
+      return { cleared: true };
+    }),
+
+  replaceSessionHistory: protectedProcedure
+    .input(replaceAgentSessionHistorySchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.query.agentSessions.findFirst({
+        where: eq(agentSessions.id, input.sessionId),
+      });
+
+      if (session && session.userId !== ctx.userId) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authorized to edit this session' });
+      }
+
+      if (!session) {
+        await db.insert(agentSessions).values({
+          id: input.sessionId,
+          userId: ctx.userId!,
+          history: input.history,
+        });
+      } else {
+        await db.update(agentSessions)
+          .set({ history: input.history, updated_at: new Date() })
+          .where(eq(agentSessions.id, input.sessionId));
+      }
+
+      await db.insert(auditLogs).values({
+        userId: ctx.userId!,
+        action: 'settings_changed',
+        details: sanitisePayload({ type: 'agent_memory_updated', sessionId: input.sessionId, itemCount: input.history.length }),
+      }).catch(() => undefined);
+
+      return { updated: true };
     }),
 
   chatMessage: protectedProcedure
@@ -96,6 +165,8 @@ export const agentRouter = router({
           sessionId: input.sessionId,
           message: input.message,
           threadContext: input.threadContext,
+          history: input.history,
+          allowMemory: input.allowMemory,
         }),
       });
 

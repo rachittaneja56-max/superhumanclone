@@ -22,11 +22,11 @@ function parseProvider(value: string | undefined, fallback: AIProvider): AIProvi
 }
 
 export function getPrimaryProvider(): AIProvider {
-  return parseProvider(process.env.AI_PRIMARY_PROVIDER, "openai");
+  return parseProvider(process.env.AI_PRIMARY_PROVIDER, "mistral");
 }
 
 export function getFallbackProvider(primary: AIProvider): AIProvider {
-  const fallback = parseProvider(process.env.AI_FALLBACK_PROVIDER, primary === "openai" ? "mistral" : "openai");
+  const fallback = parseProvider(process.env.AI_FALLBACK_PROVIDER, primary === "mistral" ? "openai" : "mistral");
   return fallback === primary ? (primary === "openai" ? "mistral" : "openai") : fallback;
 }
 
@@ -42,17 +42,18 @@ export function getProviderOrder(capability: AICapability): AIProvider[] {
 }
 
 export function getModelForCapability(provider: AIProvider, capability: AICapability): string {
+  const primaryProvider = getPrimaryProvider();
+
   if (capability === "embedding") {
     return DEFAULT_EMBEDDING_MODELS[provider];
   }
 
   if (capability === "smart" || capability === "agent") {
-    if (provider === "openai" && process.env.AI_SMART_MODEL) return process.env.AI_SMART_MODEL;
+    if (provider === primaryProvider && process.env.AI_SMART_MODEL) return process.env.AI_SMART_MODEL;
     return DEFAULT_SMART_MODELS[provider];
   }
 
-  if (provider === "mistral" && process.env.AI_FAST_MODEL) return process.env.AI_FAST_MODEL;
-  if (provider === "openai" && process.env.AI_FAST_MODEL) return process.env.AI_FAST_MODEL;
+  if (provider === primaryProvider && process.env.AI_FAST_MODEL) return process.env.AI_FAST_MODEL;
   return DEFAULT_FAST_MODELS[provider];
 }
 

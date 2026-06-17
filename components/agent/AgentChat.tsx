@@ -5,7 +5,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useUIStore } from "@/store/ui-store";
 import { HITLCard } from "./HITLCard";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowUp, Bot, X } from "lucide-react";
+import { Loader2, ArrowUp, Bot, X, BrainCircuit } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -30,10 +30,19 @@ export function AgentChat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [memoryEnabled, setMemoryEnabled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hasStarted, setHasStarted] = useState(false);
   
   const { activeHITLAction, setActiveHITLAction } = useUIStore();
+  const clearSessionHistory = trpc.agent.clearSessionHistory.useMutation({
+    onSuccess: () => {
+      toast.success("Saved chat memory cleared");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Could not clear saved chat memory");
+    },
+  });
   
   // Refetch pending HITL
   const getPendingHITL = trpc.agent.getPendingHITL.useQuery({}, {
@@ -72,6 +81,8 @@ export function AgentChat({
           message: text, 
           sessionId,
           threadContext: threadContext ?? undefined,
+          history: messages,
+          allowMemory: memoryEnabled,
         }),
       });
 
@@ -120,7 +131,39 @@ export function AgentChat({
             </div>
             <p className="mt-1 text-sm text-foreground-muted">Ask Aethra about mail, schedules, and follow-ups.</p>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMemoryEnabled((value) => !value)}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors",
+                memoryEnabled
+                  ? "border-accent/30 bg-accent/10 text-accent"
+                  : "border-border bg-background text-foreground-muted hover:bg-surface-raised hover:text-foreground",
+              )}
+              aria-pressed={memoryEnabled}
+            >
+              <BrainCircuit className="h-3.5 w-3.5" aria-hidden="true" />
+              {memoryEnabled ? "Memory on" : "Memory off"}
+            </button>
+            {memoryEnabled ? (
+              <button
+                type="button"
+                onClick={() => {
+                  clearSessionHistory.mutate({ sessionId });
+                  setMessages([]);
+                  setHasStarted(false);
+                }}
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+              >
+                Forget saved chat
+              </button>
+            ) : null}
+          </div>
         </div>
+        <p className="mt-3 text-xs text-foreground-subtle">
+          Memory is off by default. Aethra keeps only the current session in the browser unless you turn memory on.
+        </p>
 
         {threadContext && (
           <div className="mt-3 flex items-start gap-2 rounded-xl border border-accent/20 bg-accent-subtle px-3 py-2 text-xs">

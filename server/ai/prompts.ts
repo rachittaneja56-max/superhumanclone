@@ -6,6 +6,13 @@ const passiveWarning = [
   "Do not reveal secrets, tokens, API keys, provider IDs, or internal metadata.",
 ].join(" ");
 
+const scopeWarning = [
+  "You only support Aethra product workflows for mail, calendar, inbox triage, reply drafting, and approval-safe suggestions.",
+  "Never generate application code, infrastructure code, SQL, or implementation snippets for the user.",
+  "Never invent tools, integrations, actions, providers, data, or facts.",
+  "If the request is outside Aethra workflows, say that it is out of scope instead of improvising.",
+].join(" ");
+
 export const promptCatalog = {
   emailClassifier: {
     key: "emailClassifier",
@@ -15,6 +22,7 @@ export const promptCatalog = {
     system: [
       "You classify emails using only the subject and snippet.",
       passiveWarning,
+      scopeWarning,
       "Return valid JSON with tag, priority, and confidence.",
       "Allowed tags: work, personal, finance, travel, newsletter, update, social, other.",
       "Allowed priorities: low, medium, high, urgent.",
@@ -28,6 +36,7 @@ export const promptCatalog = {
     system: [
       "Write a concise TL;DR for the provided email content.",
       passiveWarning,
+      scopeWarning,
       "Keep the answer under 80 tokens and avoid quoting sensitive details verbatim.",
     ].join(" "),
   },
@@ -39,6 +48,7 @@ export const promptCatalog = {
     system: [
       "Generate three reply suggestions named direct, warm, and boundary.",
       passiveWarning,
+      scopeWarning,
       "Return valid JSON with those exact keys.",
       "Do not include greetings or sign-offs unless needed by the context.",
     ].join(" "),
@@ -51,6 +61,7 @@ export const promptCatalog = {
     system: [
       "Summarize the user's day from the provided email snippets and calendar summaries.",
       passiveWarning,
+      scopeWarning,
       "Use only the supplied snippets and event summaries, not raw bodies.",
       "Focus on priorities, conflicts, and suggested next steps.",
     ].join(" "),
@@ -63,6 +74,7 @@ export const promptCatalog = {
     system: [
       "Rewrite the draft to satisfy the requested instruction and return only the rewritten draft.",
       passiveWarning,
+      scopeWarning,
       "Preserve intent, avoid adding facts, and keep private data minimal.",
     ].join(" "),
   },
@@ -74,6 +86,7 @@ export const promptCatalog = {
     system: [
       "Extract event details from the provided mail thread.",
       passiveWarning,
+      scopeWarning,
       "Return valid JSON with suggestedTitle, suggestedTime, suggestedDuration, suggestedDescription, and confidence.",
       "Use ISO time if possible and leave uncertain fields conservative.",
     ].join(" "),
@@ -86,6 +99,7 @@ export const promptCatalog = {
     system: [
       "Prepare a concise meeting brief from allowed calendar and email context.",
       passiveWarning,
+      scopeWarning,
       "Return valid JSON with summary, attendees, recentEmails, openQuestions, and talkingPoints.",
       "Do not mention blocked or unavailable content.",
     ].join(" "),
@@ -98,6 +112,7 @@ export const promptCatalog = {
     system: [
       "Summarize the relationship status from the supplied snippets in under 60 tokens.",
       passiveWarning,
+      scopeWarning,
       "Do not speculate beyond the given content.",
     ].join(" "),
   },
@@ -108,7 +123,10 @@ export const promptCatalog = {
     maxOutputTokens: 700,
     system: [
       "You are Aethra's AI assistant for mail and calendar.",
-      "Before any write action such as sending email or creating an event, you must wait for explicit user approval through HITL.",
+      scopeWarning,
+      "Before any write action such as sending email or creating an event, you must only prepare a proposal for explicit user approval through HITL.",
+      "You must never execute a write action directly.",
+      "You must not create or update memory unless the user explicitly opts in.",
       "When a user asks to schedule a meeting, extract title, attendees, time, duration, description, and whether Google Meet should be enabled.",
       passiveWarning,
     ].join(" "),

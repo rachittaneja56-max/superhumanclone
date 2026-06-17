@@ -1,6 +1,9 @@
 import "server-only";
 
+import { z } from "zod";
+
 import { sanitiseAgentOutput } from "./sanitization";
+import type { AgentContext, AgentResult } from "./types";
 
 export type SafeHitlPayload = {
   subject?: string;
@@ -23,6 +26,22 @@ export type SafeHitlAction = {
   riskLevel: "low" | "medium" | "high";
   payload: SafeHitlPayload;
 };
+
+const sendEmailProposalSchema = z.object({
+  to: z.array(z.string().email()).min(1),
+  subject: z.string().max(240).default(""),
+  body: z.string().max(20000).default(""),
+});
+
+const createEventProposalSchema = z.object({
+  title: z.string().min(1).max(240),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  attendees: z.array(z.string().email()).default([]),
+  description: z.string().max(4000).optional(),
+  location: z.string().max(240).optional(),
+  addMeetLink: z.boolean().default(true),
+});
 
 function summarizeList(values: string[] | undefined, noun: string) {
   if (!values?.length) return undefined;
@@ -86,5 +105,94 @@ export function mapHitlActionForClient(action: {
     expiresAt: new Date(action.expires_at).toISOString(),
     riskLevel: getHitlRiskLevel(action.action_type),
     payload: mapHitlPayloadForClient(action.action_type, payload),
+  };
+}
+
+function extractEmails(input: string) {
+  return [...input.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map((match) => match[0]);
+}
+
+function extractField(input: string, label: string) {
+  const regex = new RegExp(`${label}\\s*:\\s*([^\\n]+)`, "i");
+  return input.match(regex)?.[1]?.trim() ?? "";
+}
+
+export async function runActionAgent(
+  context: AgentContext,
+  hitlInterceptor: (action: { actionType: string; payload: Record<string, unknown>; humanReadable: string }) => Promise<{ actionId: string } | unknown>,
+): Promise<AgentResult> {
+  const request = context.userMessage.trim();
+  const lower = request.toLowerCase();
+
+  if (/\b(send|email)\b/.test(lower)) {
+    const to = extractEmails(request);
+    const subject = extractField(request, "subject");
+    const body = extractField(request, "body");
+
+    const parsed = sendEmailProposalSchema.safeParse({ to, subject, body });
+    if (!parsed.success) {
+      return {
+        intent: "action",
+        indicator: "Preparing approval card",
+        text: "To propose a send action safely, share explicit details like `to: person@example.com`, `subject: ...`, and `body: ...`. I will only prepare an approval card.",
+      };
+    }
+
+    const proposal = await hitlInterceptor({
+      actionType: "send_email",
+      payload: parsed.data,
+      humanReadable: `Send to ${parsed.data.to.join(", ")}: "${sanitiseAgentOutput(parsed.data.subject || "(no subject)", 120)}"`,
+    });
+
+    return {
+      intent: "action",
+      indicator: "Preparing approval card",
+      text: `Approval requested for sending that email. Review the card before anything happens. Action ID: ${String((proposal as { actionId?: string })?.actionId ?? "pending")}`,
+    };
+  }
+
+  if (/\b(create|schedule|event|meeting)\b/.test(lower)) {
+    const title = extractField(request, "title");
+    const startTime = extractField(request, "start");
+    const endTime = extractField(request, "end");
+    const attendees = extractEmails(request);
+    const description = extractField(request, "description");
+    const location = extractField(request, "location");
+
+    const parsed = createEventProposalSchema.safeParse({
+      title,
+      startTime,
+      endTime,
+      attendees,
+      description: description || undefined,
+      location: location || undefined,
+      addMeetLink: !/\bno meet\b/i.test(request),
+    });
+
+    if (!parsed.success) {
+      return {
+        intent: "action",
+        indicator: "Preparing approval card",
+        text: "To propose an event safely, share exact details like `title: ...`, `start: 2026-06-18T15:00:00.000Z`, `end: 2026-06-18T15:30:00.000Z`, and any attendee emails.",
+      };
+    }
+
+    const proposal = await hitlInterceptor({
+      actionType: "create_event",
+      payload: parsed.data,
+      humanReadable: `Create "${sanitiseAgentOutput(parsed.data.title, 120)}" starting ${parsed.data.startTime}`,
+    });
+
+    return {
+      intent: "action",
+      indicator: "Preparing approval card",
+      text: `Approval requested for that event. Review the card before anything is created. Action ID: ${String((proposal as { actionId?: string })?.actionId ?? "pending")}`,
+    };
+  }
+
+  return {
+    intent: "action",
+    indicator: "Preparing approval card",
+    text: "Write actions stay behind approval in Aethra. I can prepare a send-email or create-event approval card once you provide the exact details.",
   };
 }

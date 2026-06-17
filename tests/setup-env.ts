@@ -11,12 +11,12 @@ const defaults: Record<string, string> = {
   QSTASH_TOKEN: "test-qstash-token",
   ABLY_API_KEY: "test:ably:key",
   WORKER_SECRET: "test-worker-secret",
-  AI_PRIMARY_PROVIDER: "openai",
-  AI_FALLBACK_PROVIDER: "mistral",
+  AI_PRIMARY_PROVIDER: "mistral",
+  AI_FALLBACK_PROVIDER: "openai",
   OPENAI_API_KEY: "test-openai-key",
   MISTRAL_API_KEY: "test-mistral-key",
-  AI_FAST_MODEL: "gpt-4o-mini",
-  AI_SMART_MODEL: "gpt-4o",
+  AI_FAST_MODEL: "ministral-8b-latest",
+  AI_SMART_MODEL: "mistral-large-latest",
   BILLING_MODE: "dummy",
 };
 

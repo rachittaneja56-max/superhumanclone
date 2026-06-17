@@ -11,7 +11,9 @@ export async function runAgentTurn(
   sessionId: string,
   userMessage: string,
   onChunk: (chunk: string) => void,
-  threadContext?: string
+  threadContext?: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  allowMemory = false
 ) {
   // 1. Rate limit: 50 messages/hour per userId
   const dateStr = new Date().toISOString().slice(0, 13); // YYYY-MM-DD-HH
@@ -25,27 +27,33 @@ export async function runAgentTurn(
     return;
   }
 
-  // 2. Load session from agent_sessions table
-  let session = await db.query.agentSessions.findFirst({
-    where: eq(agentSessions.id, sessionId),
-  });
+  // 2. Load persisted history only when the user explicitly opts in to memory.
+  let session: typeof agentSessions.$inferSelect | undefined;
 
-  if (!session) {
-    const [newSession] = await db.insert(agentSessions).values({
-      id: sessionId,
-      userId,
-      history: [],
-    }).returning();
-    session = newSession;
+  if (allowMemory) {
+    session = await db.query.agentSessions.findFirst({
+      where: eq(agentSessions.id, sessionId),
+    });
+
+    if (!session) {
+      const [newSession] = await db.insert(agentSessions).values({
+        id: sessionId,
+        userId,
+        history: [],
+      }).returning();
+      session = newSession;
+    }
+
+    if (session.userId !== userId) {
+      throw new Error('Unauthorized access to session');
+    }
   }
 
-  if (session.userId !== userId) {
-    throw new Error('Unauthorized access to session');
-  }
+  const sourceHistory = allowMemory
+    ? (Array.isArray(session?.history) ? session.history : [])
+    : history;
 
-  const history = Array.isArray(session.history) ? session.history : [];
-  // Keep last 20 messages to prevent context overflow
-  const recentHistory = history.slice(-20) as { role: 'user' | 'assistant'; content: string }[];
+  const recentHistory = sourceHistory.slice(-20) as { role: 'user' | 'assistant'; content: string }[];
   
   const messages = [...recentHistory, { role: 'user' as const, content: userMessage }];
 
@@ -58,6 +66,8 @@ export async function runAgentTurn(
     sessionId,
     userMessage,
     threadContext,
+    history: recentHistory,
+    allowMemory,
   }, messages, hitlInterceptorForSession);
   
   // 5. Stream chunks
@@ -76,11 +86,12 @@ export async function runAgentTurn(
     { role: 'assistant' as const, content: fullResponse }
   ];
 
-  // 6. Update agent_sessions
-  await db.update(agentSessions)
-    .set({
-      history: newHistory,
-      updated_at: new Date()
-    })
-    .where(eq(agentSessions.id, sessionId));
+  if (allowMemory && session) {
+    await db.update(agentSessions)
+      .set({
+        history: newHistory,
+        updated_at: new Date()
+      })
+      .where(eq(agentSessions.id, sessionId));
+  }
 }

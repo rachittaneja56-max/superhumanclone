@@ -38,6 +38,12 @@ Use Railway environment variables for the worker service.
 - `AI_FAST_MODEL`
 - `AI_SMART_MODEL`
 
+Recommended defaults:
+- `AI_PRIMARY_PROVIDER=mistral`
+- `AI_FALLBACK_PROVIDER=openai`
+- `AI_FAST_MODEL=ministral-8b-latest`
+- `AI_SMART_MODEL=mistral-large-latest`
+
 ### Billing
 - `BILLING_MODE`
 - `RAZORPAY_KEY_ID`

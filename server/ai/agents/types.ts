@@ -14,6 +14,8 @@ export interface AgentContext {
   sessionId: string;
   userMessage: string;
   threadContext?: string;
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
+  allowMemory?: boolean;
 }
 
 export interface AgentResult {

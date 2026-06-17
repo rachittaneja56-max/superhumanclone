@@ -1,24 +1,83 @@
-import 'server-only';
-import { db } from '../db';
-import { auditLogs, hitlActions } from '../db/schema';
-import { sanitisePayload } from '@/lib/sanitise-payload';
-import { redis } from '../redis';
-import { mapHitlActionForClient, mapHitlPayloadForClient } from '../ai/agents/action-agent';
+import "server-only";
 
-export async function hitlInterceptor(
+import { z } from "zod";
+import { and, eq } from "drizzle-orm";
+
+import { invalidateCalendarCache, invalidateMailCache } from "@/server/cache";
+import { createCalendarEvent, sendEmail } from "@/server/corsair/client";
+import { db as defaultDb } from "../db";
+import { auditLogs, hitlActions } from "../db/schema";
+import { sanitisePayload } from "@/lib/sanitise-payload";
+import { redis as defaultRedis } from "../redis";
+import { mapHitlActionForClient, mapHitlPayloadForClient, type SafeHitlAction } from "../ai/agents/action-agent";
+import type { Redis } from "@upstash/redis";
+
+const PRIVATE_HITL_TTL_SECONDS = 60 * 5;
+
+const sendEmailProposalSchema = z.object({
+  to: z.array(z.string().email()).min(1),
+  cc: z.array(z.string().email()).optional(),
+  bcc: z.array(z.string().email()).optional(),
+  subject: z.string().max(240).default(""),
+  body: z.string().max(20000).default(""),
+  threadId: z.string().optional(),
+});
+
+const createEventProposalSchema = z.object({
+  title: z.string().min(1).max(240),
+  startTime: z.string().datetime(),
+  endTime: z.string().datetime(),
+  attendees: z.array(z.string().email()).default([]),
+  description: z.string().max(4000).optional(),
+  location: z.string().max(240).optional(),
+  addMeetLink: z.boolean().default(true),
+});
+
+type HitlDeps = {
+  db?: typeof defaultDb;
+  redis?: Redis;
+};
+
+function getPrivatePayloadKey(actionId: string) {
+  return `hitl:private:${actionId}`;
+}
+
+async function publishHitlCard(userId: string, safeCard: SafeHitlAction) {
+  if (!process.env.ABLY_API_KEY) {
+    return;
+  }
+
+  const base64Key = Buffer.from(process.env.ABLY_API_KEY).toString("base64");
+
+  await fetch(`https://rest.ably.io/channels/private:user-${userId}/messages`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Basic ${base64Key}`,
+    },
+    body: JSON.stringify({
+      name: "hitl:action",
+      data: safeCard,
+    }),
+  }).catch(() => undefined);
+}
+
+export async function createHitlProposal(
   userId: string,
   sessionId: string | null,
-  action: { actionType: string; payload: any; humanReadable: string }
-): Promise<boolean> {
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  action: { actionType: string; payload: Record<string, unknown>; humanReadable: string },
+  deps: HitlDeps = {},
+): Promise<{ actionId: string; safeCard: SafeHitlAction }> {
+  const db = deps.db ?? defaultDb;
+  const redis = deps.redis ?? defaultRedis;
+  const expiresAt = new Date(Date.now() + PRIVATE_HITL_TTL_SECONDS * 1000);
   const safePayload = mapHitlPayloadForClient(action.actionType, action.payload ?? {});
 
-  // 1. Insert HITL action into DB
   const [row] = await db.insert(hitlActions).values({
     userId,
     action_type: action.actionType,
     payload: sanitisePayload(safePayload),
-    status: 'pending',
+    status: "pending",
     expires_at: expiresAt,
   }).returning({ id: hitlActions.id });
 
@@ -31,11 +90,14 @@ export async function hitlInterceptor(
     humanReadable: action.humanReadable,
   });
 
-  await redis.set(`hitl:pending:${actionId}`, safeCard, { ex: 60 * 5 });
+  await redis.set(getPrivatePayloadKey(actionId), JSON.stringify(action.payload ?? {}), {
+    ex: PRIVATE_HITL_TTL_SECONDS,
+  });
+  await redis.set(`hitl:pending:${actionId}`, safeCard, { ex: PRIVATE_HITL_TTL_SECONDS });
 
   await db.insert(auditLogs).values({
     userId,
-    action: 'hitl_created',
+    action: "hitl_created",
     details: sanitisePayload({
       actionType: action.actionType,
       sessionId,
@@ -44,68 +106,70 @@ export async function hitlInterceptor(
     }),
   }).catch(() => undefined);
 
-  // 2. Publish to Ably via REST
-  if (!process.env.ABLY_API_KEY) {
-    throw new Error('ABLY_API_KEY is not set');
+  await publishHitlCard(userId, safeCard);
+
+  return { actionId, safeCard };
+}
+
+export async function executeApprovedHitlAction(
+  userId: string,
+  actionId: string,
+  deps: HitlDeps = {},
+) {
+  const db = deps.db ?? defaultDb;
+  const redis = deps.redis ?? defaultRedis;
+
+  const row = await db.query.hitlActions.findFirst({
+    where: and(eq(hitlActions.id, actionId), eq(hitlActions.userId, userId)),
+  });
+
+  if (!row) {
+    throw new Error("HITL action not found");
   }
 
-  const base64Key = Buffer.from(process.env.ABLY_API_KEY).toString('base64');
-  
-  await fetch(`https://rest.ably.io/channels/private:user-${userId}/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Basic ${base64Key}`,
-    },
-    body: JSON.stringify({
-      name: 'hitl:action',
-      data: safeCard,
+  const rawPrivatePayload = await redis.get<string>(getPrivatePayloadKey(actionId));
+  if (!rawPrivatePayload) {
+    throw new Error("HITL action payload expired");
+  }
+
+  const privatePayload = JSON.parse(rawPrivatePayload) as Record<string, unknown>;
+
+  if (row.action_type === "send_email") {
+    const payload = sendEmailProposalSchema.parse(privatePayload);
+    const result = await sendEmail(userId, payload);
+    if (result.needsConnect) {
+      throw new Error("gmail_not_connected");
+    }
+
+    await invalidateMailCache(redis, userId).catch(() => null);
+  } else if (row.action_type === "create_event") {
+    const payload = createEventProposalSchema.parse(privatePayload);
+    const result = await createCalendarEvent(userId, payload);
+    if (result.needsConnect) {
+      throw new Error("calendar_not_connected");
+    }
+
+    await invalidateCalendarCache(redis, userId).catch(() => null);
+  }
+
+  await redis.del(getPrivatePayloadKey(actionId)).catch(() => null);
+  await redis.del(`hitl:pending:${actionId}`).catch(() => null);
+
+  await db.insert(auditLogs).values({
+    userId,
+    action: "hitl_resolved",
+    details: sanitisePayload({
+      actionId,
+      actionType: row.action_type,
+      executed: true,
     }),
   }).catch(() => undefined);
+}
 
-  // 3. Wait for Redis pub/sub response
-  return new Promise((resolve) => {
-    // Subscribe to specific channel
-    const channel = `hitl:response:${actionId}`;
-    
-    let isResolved = false;
-
-    // Set timeout first so it can be const
-    const timeoutId = setTimeout(() => {
-      if (isResolved) return;
-      isResolved = true;
-      
-      try {
-         if (typeof (redis as any).unsubscribe === 'function') {
-             (redis as any).unsubscribe(channel);
-         }
-      } catch (e) {}
-
-      resolve(false);
-    }, 5 * 60 * 1000);
-
-    const subscribeCallback = (message: string) => {
-      if (isResolved) return;
-      isResolved = true;
-      clearTimeout(timeoutId);
-      
-      // Cleanup
-      try {
-         if (typeof (redis as any).unsubscribe === 'function') {
-             (redis as any).unsubscribe(channel);
-         }
-      } catch (e) {}
-
-      resolve(message === 'approved');
-    };
-
-    // Attempt to use it
-    try {
-      if (typeof (redis as any).subscribe === 'function') {
-        (redis as any).subscribe(channel, subscribeCallback);
-      }
-    } catch (e) {
-      resolve(false);
-    }
-  });
+export async function hitlInterceptor(
+  userId: string,
+  sessionId: string | null,
+  action: { actionType: string; payload: Record<string, unknown>; humanReadable: string },
+) {
+  return createHitlProposal(userId, sessionId, action);
 }
