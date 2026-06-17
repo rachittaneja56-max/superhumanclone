@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { workerDb } from '../db/worker-index';
 import { emails } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
-import { deleteEmail as corsairDeleteEmail } from '../corsair/client';
+import { permanentlyDeleteEmail as corsairDeleteEmail } from '../corsair/client';
 import pino from 'pino';
 
 const logger = pino();

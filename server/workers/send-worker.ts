@@ -66,6 +66,8 @@ export async function processSendJob(payload: unknown, deps: SendJobDeps) {
       event: "send_message_needs_connect",
       userId: userId.slice(0, 8),
       hasBody: Boolean(body.trim()),
+      bodyLength: body.length,
+      hasSubject: Boolean(subject.trim()),
       recipientCount: Array.isArray(payloadData.to) ? payloadData.to.length : 0,
     });
     await deps.redis.del(lockKey).catch(() => null);
@@ -81,6 +83,8 @@ export async function processSendJob(payload: unknown, deps: SendJobDeps) {
     event: "send_message_success",
     userId: userId.slice(0, 8),
     hasBody: Boolean(body.trim()),
+    bodyLength: body.length,
+    hasSubject: Boolean(subject.trim()),
     recipientCount: Array.isArray(payloadData.to) ? payloadData.to.length : 0,
   });
   await deps.db.insert(emails).values({

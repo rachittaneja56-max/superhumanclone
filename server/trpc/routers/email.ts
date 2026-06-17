@@ -7,6 +7,7 @@ import {
   archiveEmail,
   restoreArchivedEmail,
   deleteEmail as corsairDeleteEmail,
+  permanentlyDeleteEmail,
   restoreEmailFromTrash,
   getThreadMessages as corsairGetThread,
   getDraftMessages as corsairGetDraftMessages,
@@ -970,10 +971,12 @@ export const emailRouter = router({
         columns: { id: true, corsair_message_id: true }
       });
 
-        const results = await Promise.all(trashed.map((email) => corsairDeleteEmail(ctx.userId!, email.corsair_message_id)));
-        if (results.some((result) => result.needsConnect)) {
-          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
-        }
+      const results = await Promise.all(
+        trashed.map((email) => permanentlyDeleteEmail(ctx.userId!, email.corsair_message_id))
+      );
+      if (results.some((result) => result.needsConnect)) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
 
       await ctx.db.update(emails)
         .set({ body_text: null })

@@ -13,6 +13,7 @@ type CorsairTenant = {
         send: (params: any) => Promise<any>
         modify: (params: any) => Promise<any>
         trash: (params: any) => Promise<any>
+        delete: (params: any) => Promise<any>
       }
       threads: {
         get: (params: any) => Promise<any>
@@ -244,7 +245,7 @@ export async function sendEmail(userId: string, payload: {
     const fromHeader = currentUser?.name
       ? `${sanitiseHeaderValue(currentUser.name)} <${sanitiseHeaderValue(currentUser.email)}>`
       : sanitiseHeaderValue(currentUser?.email)
-    const body = typeof payload.body === 'string' ? payload.body.trimEnd() : ''
+    const body = typeof payload.body === 'string' ? payload.body : ''
 
     const result = await t.gmail.api.messages.send({
       raw: buildMimeMessage({
@@ -271,6 +272,17 @@ export async function archiveEmail(userId: string, messageId: string) {
       id: messageId,
       removeLabelIds: ['INBOX'],
     })
+    return { success: true, needsConnect: false }
+  } catch (err: any) {
+    if (isAuthError(err)) return { success: false, needsConnect: true }
+    throw err
+  }
+}
+
+export async function permanentlyDeleteEmail(userId: string, messageId: string) {
+  const t = await getTenant(userId)
+  try {
+    await (t.gmail.api.messages as any).delete({ id: messageId })
     return { success: true, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, needsConnect: true }
