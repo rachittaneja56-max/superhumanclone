@@ -325,10 +325,17 @@ export function CalendarView({
       addMeetLink: editorState.addMeetLink,
     };
 
+    const wantsMeetLink = editorState.addMeetLink;
+    let result: { meetLink?: string | null } | null = null;
+
     if (editorState.eventId) {
-      await updateEventMutation.mutateAsync({ eventId: editorState.eventId, ...payload });
+      result = await updateEventMutation.mutateAsync({ eventId: editorState.eventId, ...payload });
     } else {
-      await createEventMutation.mutateAsync(payload);
+      result = await createEventMutation.mutateAsync(payload);
+    }
+
+    if (wantsMeetLink && !result?.meetLink) {
+      toast.message("Event saved. Google Meet link was not returned by Google.");
     }
     setEditorOpen(false);
     setEditorState(null);

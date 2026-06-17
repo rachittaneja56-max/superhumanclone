@@ -7,7 +7,6 @@ import { trpc } from "@/lib/trpc/client";
 
 type BillingOverview = {
   mode: "dummy" | "razorpay";
-  razorpayReady: boolean;
   currentPlan: "free" | "pro" | "team";
   aiDisabled: boolean;
   isFlagged: boolean;
@@ -25,18 +24,9 @@ type BillingOverview = {
 };
 
 export function BillingClient({ initialOverview }: { initialOverview: BillingOverview }) {
-  const utils = trpc.useUtils();
   const { data: overview = initialOverview } = trpc.billing.getOverview.useQuery({}, {
     initialData: initialOverview,
     staleTime: 30000,
-  });
-
-  const simulatePlanChange = trpc.billing.simulatePlanChange.useMutation({
-    onSuccess: async () => {
-      toast.success("Plan updated");
-      await utils.billing.getOverview.invalidate();
-    },
-    onError: (error) => toast.error(error.message || "Could not update plan"),
   });
 
   return (
@@ -62,11 +52,7 @@ export function BillingClient({ initialOverview }: { initialOverview: BillingOve
       <div className="mb-6 grid gap-4 md:grid-cols-3">
         <UsageCard label="AI calls this month" value={String(overview.usage.ai)} limit={overview.limits.ai} />
         <UsageCard label="Email triage this month" value={String(overview.usage.triage)} limit={overview.limits.triage} />
-        <UsageCard
-          label="Billing readiness"
-          value={overview.razorpayReady ? "Razorpay ready" : "Dummy mode"}
-          limit={null}
-        />
+        <UsageCard label="Billing mode" value="Dummy only" limit={null} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -105,10 +91,13 @@ export function BillingClient({ initialOverview }: { initialOverview: BillingOve
               <Button
                 className="w-full"
                 variant={active ? "outline" : "default"}
-                disabled={active || simulatePlanChange.isPending || overview.mode !== "dummy"}
-                onClick={() => simulatePlanChange.mutate({ plan: plan.id })}
+                onClick={() => {
+                  if (!active) {
+                    toast.message("Contact us to change plans.");
+                  }
+                }}
               >
-                {overview.mode === "dummy" ? (active ? "Current plan" : "Switch plan") : "Contact billing"}
+                {active ? "Current plan" : "Contact us"}
               </Button>
             </div>
           );

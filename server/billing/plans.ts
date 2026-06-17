@@ -17,9 +17,9 @@ export const PLAN_CONFIGS: Record<UserPlan, PlanConfig> = {
     id: "free",
     label: "Free",
     description: "Core inbox, calendar, and limited AI.",
-    aiMonthlyLimit: 20,
+    aiMonthlyLimit: 50,
     triageMonthlyLimit: 100,
-    features: ["20 AI calls / month", "Core Gmail + Calendar", "Basic agent access"],
+    features: ["50 AI calls / month", "Core Gmail + Calendar", "Basic agent access"],
   },
   pro: {
     id: "pro",
@@ -40,16 +40,11 @@ export const PLAN_CONFIGS: Record<UserPlan, PlanConfig> = {
 };
 
 export function getBillingMode(): BillingMode {
-  return process.env.BILLING_MODE === "razorpay" ? "razorpay" : "dummy";
+  return "dummy";
 }
 
 export function isRazorpayConfigured() {
-  return (
-    getBillingMode() === "razorpay" &&
-    Boolean(process.env.RAZORPAY_KEY_ID?.trim()) &&
-    Boolean(process.env.RAZORPAY_KEY_SECRET?.trim()) &&
-    Boolean(process.env.RAZORPAY_WEBHOOK_SECRET?.trim())
-  );
+  return false;
 }
 
 export function getPlanConfig(plan: string | null | undefined): PlanConfig {

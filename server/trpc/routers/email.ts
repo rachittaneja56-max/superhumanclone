@@ -238,7 +238,7 @@ export const emailRouter = router({
           .map((draft: any) => {
             const headers = draft.payload?.headers || [];
             const subject = getHeader(headers, 'Subject') || '(no subject)';
-            const { text: bodyText, html: bodyHtml } = parseEmailBody(draft.payload);
+            const { text: bodyText } = parseEmailBody(draft.payload);
 
             return mapEmailForListClient({
               id: draft.id,
@@ -247,11 +247,7 @@ export const emailRouter = router({
               from_address: '',
               subject,
               snippet: redactSensitiveForClient(bodyText || draft.snippet || 'Draft in progress.'),
-              body_text: bodyText || null,
-              body_html: bodyHtml || null,
               is_read: true,
-              is_archived: false,
-              is_deleted: false,
               created_at: draft.internalDate ? new Date(Number(draft.internalDate)) : new Date(),
               mailbox: 'drafts',
             });

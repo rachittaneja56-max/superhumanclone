@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 
-import { getBillingMode, getPlanConfig, isRazorpayConfigured, PLAN_CONFIGS } from "@/server/billing/plans";
+import { getBillingMode, getPlanConfig, PLAN_CONFIGS } from "@/server/billing/plans";
 import { getUsage } from "@/server/billing/usage";
 import { users } from "@/server/db/schema";
 import { getUsersColumnPresence } from "@/server/db/users-compat";
@@ -40,7 +40,6 @@ export const billingRouter = router({
 
       return {
         mode: getBillingMode(),
-        razorpayReady: isRazorpayConfigured(),
         currentPlan: planConfig.id,
         aiDisabled: user.aiDisabled ?? false,
         isFlagged: user.isFlagged ?? false,

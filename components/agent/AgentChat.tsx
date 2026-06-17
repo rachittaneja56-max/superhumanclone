@@ -5,11 +5,21 @@ import { trpc } from "@/lib/trpc/client";
 import { useUIStore } from "@/store/ui-store";
 import { HITLCard } from "./HITLCard";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowUp, Bot, X, BrainCircuit } from "lucide-react";
+import { Loader2, ArrowUp, Bot, X, BrainCircuit, Mic, MicOff, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 type Message = { role: "user" | "assistant"; content: string };
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: any) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+};
 
 const SUGGESTED_PROMPTS = [
   "What needs my attention today?",
@@ -33,6 +43,11 @@ export function AgentChat({
   const [memoryEnabled, setMemoryEnabled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hasStarted, setHasStarted] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voicePreview, setVoicePreview] = useState("");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   
   const { activeHITLAction, setActiveHITLAction } = useUIStore();
   const clearSessionHistory = trpc.agent.clearSessionHistory.useMutation({
@@ -60,6 +75,74 @@ export function AgentChat({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, activeHITLAction]);
+
+  useEffect(() => {
+    const SpeechRecognitionCtor =
+      typeof window !== "undefined"
+        ? ((window as typeof window & {
+            SpeechRecognition?: new () => SpeechRecognitionLike;
+            webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+          }).SpeechRecognition ??
+            (window as typeof window & {
+              SpeechRecognition?: new () => SpeechRecognitionLike;
+              webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+            }).webkitSpeechRecognition ??
+            null)
+        : null;
+
+    if (!SpeechRecognitionCtor) {
+      setVoiceSupported(false);
+      return;
+    }
+
+    setVoiceSupported(true);
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: any) => {
+      let finalText = "";
+      let interimText = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result[0]?.transcript?.trim() ?? "";
+        if (!transcript) continue;
+        if (result.isFinal) {
+          finalText += `${transcript} `;
+        } else {
+          interimText += `${transcript} `;
+        }
+      }
+
+      if (finalText.trim()) {
+        const chunk = finalText.trim();
+        setInputValue((current) => (current.trim() ? `${current.trim()} ${chunk}` : chunk));
+        setVoicePreview("");
+        setVoiceError(null);
+      } else if (interimText.trim()) {
+        setVoicePreview(interimText.trim());
+      }
+    };
+
+    recognition.onerror = () => {
+      setVoiceListening(false);
+      setVoicePreview("");
+      setVoiceError("Voice input is unavailable right now.");
+    };
+
+    recognition.onend = () => {
+      setVoiceListening(false);
+      setVoicePreview("");
+    };
+
+    recognitionRef.current = recognition;
+    return () => {
+      recognition.stop();
+      recognitionRef.current = null;
+    };
+  }, []);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isStreaming || activeHITLAction) return;
@@ -120,6 +203,24 @@ export function AgentChat({
     }
   };
 
+  const toggleVoiceInput = () => {
+    if (!voiceSupported || !recognitionRef.current) {
+      setVoiceError("Voice input is not supported in this browser.");
+      return;
+    }
+
+    if (voiceListening) {
+      recognitionRef.current.stop();
+      setVoiceListening(false);
+      return;
+    }
+
+    setVoiceError(null);
+    setVoicePreview("");
+    recognitionRef.current.start();
+    setVoiceListening(true);
+  };
+
   return (
     <div className="flex h-full w-full min-w-0 flex-col rounded-2xl border border-border bg-surface shadow-sm">
       <div className="border-b border-border px-4 py-4 sm:px-5">
@@ -161,7 +262,7 @@ export function AgentChat({
             ) : null}
           </div>
         </div>
-        <p className="mt-3 text-xs text-foreground-subtle">Memory stays off unless you turn it on.</p>
+        <p className="mt-3 text-xs text-foreground-subtle">Memory stays off by default.</p>
 
         {threadContext && (
           <div className="mt-3 flex items-start gap-2 rounded-xl border border-accent/20 bg-accent-subtle px-3 py-2 text-xs">
@@ -194,7 +295,21 @@ export function AgentChat({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5 sm:py-5">
-      
+        {(voiceListening || voicePreview || voiceError) && (
+          <div className="mb-3 rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground-muted" aria-live="polite">
+            {voiceError ? (
+              voiceError
+            ) : voiceListening ? (
+              <>
+                Listening…
+                {voicePreview ? <span className="ml-2 text-foreground">{voicePreview}</span> : null}
+              </>
+            ) : (
+              voicePreview
+            )}
+          </div>
+        )}
+
       {!hasStarted && messages.length === 0 ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 py-4 text-center animate-in fade-in zoom-in-95 duration-500">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/20 text-accent">
@@ -202,7 +317,7 @@ export function AgentChat({
           </div>
           <div className="max-w-sm space-y-1">
             <h2 className="text-2xl font-display font-medium text-foreground">How can I help you today?</h2>
-            <p className="text-sm text-foreground-muted">Pick a prompt or start from the box below.</p>
+            <p className="text-sm text-foreground-muted">Pick a prompt or type below.</p>
           </div>
           
           <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
@@ -272,14 +387,28 @@ export function AgentChat({
             }}
             rows={1}
           />
-          <div className="p-2">
-            <Button 
-              size="icon-sm" 
-              className="rounded-xl w-10 h-10 bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-50 transition-transform active:scale-95"
+          <div className="flex items-center gap-2 p-2">
+            <button
+              type="button"
+              onClick={toggleVoiceInput}
+              disabled={!voiceSupported || isStreaming || !!activeHITLAction}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label={voiceListening ? "Stop voice input" : "Start voice input"}
+              title={voiceSupported ? (voiceListening ? "Stop voice input" : "Tap to speak") : "Voice input unavailable"}
+            >
+              {voiceSupported ? (
+                voiceListening ? <Square className="h-4 w-4 fill-current" aria-hidden="true" /> : <Mic className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <MicOff className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+            <Button
+              size="icon-sm"
+              className="h-10 w-10 rounded-xl bg-accent text-accent-foreground transition-transform hover:bg-accent/90 active:scale-95 disabled:opacity-50"
               disabled={!inputValue.trim() || isStreaming || !!activeHITLAction}
               onClick={() => sendMessage(inputValue)}
             >
-              <ArrowUp className="w-5 h-5" />
+              <ArrowUp className="h-5 w-5" aria-hidden="true" />
             </Button>
           </div>
         </div>

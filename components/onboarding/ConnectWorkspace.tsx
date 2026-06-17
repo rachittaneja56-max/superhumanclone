@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, Mail, Calendar, RefreshCw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { continueToDashboard, disconnectCalendar, disconnectGmail } from "@/app/onboarding/connect/actions";
+import { useFormStatus } from "react-dom";
 
 type IntegrationState = {
   gmailConnected: boolean;
@@ -83,13 +84,16 @@ export function ConnectWorkspace({
         </p>
       </div>
 
-      <div className="mb-8 w-full max-w-2xl rounded-2xl border border-border bg-card p-6 shadow-sm md:p-8">
+      <div className="mb-8 w-full max-w-2xl rounded-3xl border border-border bg-card p-6 shadow-[0_18px_60px_rgba(0,0,0,0.18)] md:p-8">
         <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-tag-red">
-            <Mail className="h-6 w-6" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+            <Mail className="h-6 w-6" aria-hidden="true" />
           </div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted text-tag-blue">
-            <Calendar className="h-6 w-6" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+            <Calendar className="h-6 w-6" aria-hidden="true" />
+          </div>
+          <div className="ml-auto rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-foreground-muted">
+            Secure setup
           </div>
         </div>
 
@@ -102,9 +106,14 @@ export function ConnectWorkspace({
           )}
         </div>
 
-        <p className="mb-8 text-[15px] leading-relaxed text-muted-foreground">
-          Connect your Google Account to authorize Aethra to sync your emails, drafts, and calendar events. This enables your AI assistant to draft emails and schedule meetings.
+        <p className="mb-8 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
+          Connect Gmail to power inbox sync. Calendar is optional and unlocks meeting scheduling and Google Meet links.
         </p>
+
+        <div className="mb-6 grid gap-3 rounded-2xl border border-border bg-background p-4 sm:grid-cols-2">
+          <StatusRow label="Gmail" active={state.gmailConnected} />
+          <StatusRow label="Calendar" active={state.calendarConnected} />
+        </div>
 
         <div className="flex flex-col justify-between gap-4 border-t border-border pt-6 sm:flex-row sm:items-center">
           <div className="flex w-full flex-col gap-4 sm:w-auto sm:flex-row">
@@ -125,14 +134,7 @@ export function ConnectWorkspace({
           </div>
 
           <form action={continueToDashboard} className="w-full sm:w-auto">
-            <button
-              type="submit"
-              disabled={!canContinue}
-              className="inline-flex w-full items-center justify-center rounded-xl px-6 py-3 text-sm font-medium text-accent-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-              style={{ backgroundColor: "var(--accent)" }}
-            >
-              Continue to Dashboard
-            </button>
+            <ContinueButton disabled={!canContinue} />
           </form>
         </div>
       </div>
@@ -146,6 +148,34 @@ export function ConnectWorkspace({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ContinueButton({ disabled }: { disabled: boolean }) {
+  const { pending: formPending } = useFormStatus();
+  const isPending = formPending;
+
+  return (
+    <button
+      type="submit"
+      disabled={disabled || isPending}
+      className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-accent-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+      style={{ backgroundColor: "var(--accent)" }}
+    >
+      {isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+      {isPending ? "Continuing…" : "Continue to Dashboard"}
+    </button>
+  );
+}
+
+function StatusRow({ label, active }: { label: string; active: boolean }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3">
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <span className={active ? "text-sm font-medium text-accent" : "text-sm text-foreground-muted"}>
+        {active ? "Connected" : "Not connected"}
+      </span>
     </div>
   );
 }
