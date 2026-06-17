@@ -139,7 +139,7 @@ export async function GET(request: Request) {
         if (isSuperadmin) {
           try {
             await db.execute(sql`
-              insert into "users" ("id", "email", "name", "image", "role", "is_admin")
+              insert into "users" ("id", "email", "name", "image", "role", "isAdmin")
               values (
                 ${userId},
                 ${googleUser.email},
@@ -156,7 +156,7 @@ export async function GET(request: Request) {
             }
 
             await db.execute(sql`
-              insert into "users" ("id", "email", "name", "image", "is_admin")
+              insert into "users" ("id", "email", "name", "image", "isAdmin")
               values (
                 ${userId},
                 ${googleUser.email},
@@ -195,7 +195,7 @@ export async function GET(request: Request) {
                 "name" = ${googleUser.name},
                 "image" = ${googleUser.picture},
                 "role" = 'superadmin',
-                "is_admin" = true
+              "isAdmin" = true
               where "id" = ${userId}
             `);
           } catch (error) {
@@ -209,7 +209,7 @@ export async function GET(request: Request) {
               set
                 "name" = ${googleUser.name},
                 "image" = ${googleUser.picture},
-                "is_admin" = true
+              "isAdmin" = true
               where "id" = ${userId}
             `);
           }
