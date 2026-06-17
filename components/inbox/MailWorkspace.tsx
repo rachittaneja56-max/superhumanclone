@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronLeft, Loader2, Search, SquarePen, X, Bot } from "lucide-react";
@@ -633,12 +633,48 @@ export function ComposeModal({
   const [rewriteState, setRewriteState] = useState<"idle" | "loading" | "preview">("idle");
   const [showCcBcc, setShowCcBcc] = useState(false);
   const [showAiTools, setShowAiTools] = useState(false);
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashQuery, setSlashQuery] = useState("");
+  const [slashIndex, setSlashIndex] = useState(-1);
+  const [slashLength, setSlashLength] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const aiAllowed = Boolean(settingsQuery.data?.aiEnabled && settingsQuery.data?.draftSuggestionsEnabled && settingsQuery.data?.privacyConfigured);
 
   const hasContent = [to, cc, bcc, subject, body].some((value) => value.trim().length > 0);
+  const visibleAiCommands = slashQuery.trim()
+    ? AI_COMMANDS.filter((command) => command.id.replaceAll("_", "-").includes(slashQuery.trim()))
+    : AI_COMMANDS;
+
+  const closeSlashMenu = useCallback(() => {
+    setShowSlashMenu(false);
+    setSlashQuery("");
+    setSlashIndex(-1);
+    setSlashLength(0);
+  }, []);
+
+  const handleBodyChange = useCallback((event: ChangeEvent<HTMLTextAreaElement>) => {
+    const value = event.target.value;
+    setBody(value);
+
+    const cursor = event.target.selectionStart ?? value.length;
+    const lastNewline = value.lastIndexOf("\n", Math.max(0, cursor - 1));
+    const lineStart = lastNewline === -1 ? 0 : lastNewline + 1;
+    const currentLine = value.slice(lineStart, cursor);
+    const commandMatch = currentLine.match(/^\/([a-z-]*)$/i);
+
+    if (commandMatch) {
+      setShowAiTools(true);
+      setShowSlashMenu(true);
+      setSlashIndex(lineStart);
+      setSlashLength(currentLine.length);
+      setSlashQuery(commandMatch[1].toLowerCase());
+      return;
+    }
+
+    closeSlashMenu();
+  }, [closeSlashMenu]);
 
   useEffect(() => {
     if (!initialDraft) return;
@@ -649,6 +685,10 @@ export function ComposeModal({
     setSubject(initialDraft.subject ?? "");
     setBody(initialDraft.body ?? "");
     setShowAiTools(false);
+    setShowSlashMenu(false);
+    setSlashQuery("");
+    setSlashIndex(-1);
+    setSlashLength(0);
     setRewriteState("idle");
     setOriginalBody("");
     setRewrittenBody("");
@@ -746,18 +786,24 @@ export function ComposeModal({
       return;
     }
 
-    if (!body.trim()) {
+    const hasInlineCommand = showSlashMenu && slashIndex >= 0 && slashLength > 0;
+    const sourceBody = hasInlineCommand
+      ? body.slice(0, slashIndex) + body.slice(slashIndex + slashLength)
+      : body;
+
+    if (!sourceBody.trim()) {
       toast.error("Write something first.");
       return;
     }
 
     setShowAiTools(true);
-    setOriginalBody(body);
+    setShowSlashMenu(false);
+    setOriginalBody(sourceBody);
     setRewriteState("loading");
 
     try {
       const result = await rewriteMutation.mutateAsync({
-        draft: body,
+        draft: sourceBody,
         instruction: command,
         translateTo: command === "translate" ? "Spanish" : undefined,
       });
@@ -767,17 +813,19 @@ export function ComposeModal({
       toast.error("Could not rewrite this draft.");
       setRewriteState("idle");
     }
-  }, [aiAllowed, body, rewriteMutation]);
+  }, [aiAllowed, body, rewriteMutation, showSlashMenu, slashIndex, slashLength]);
 
   const acceptRewrite = useCallback(() => {
     setBody(rewrittenBody);
     setRewriteState("idle");
-  }, [rewrittenBody]);
+    closeSlashMenu();
+  }, [closeSlashMenu, rewrittenBody]);
 
   const discardRewrite = useCallback(() => {
     setBody(originalBody);
     setRewriteState("idle");
-  }, [originalBody]);
+    closeSlashMenu();
+  }, [closeSlashMenu, originalBody]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -849,7 +897,7 @@ export function ComposeModal({
             <div className="rounded-xl border border-border bg-background p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">AI tools</span>
-                {AI_COMMANDS.map((command) => (
+                {visibleAiCommands.map((command) => (
                   <button
                     key={command.id}
                     type="button"
@@ -861,6 +909,11 @@ export function ComposeModal({
                   </button>
                 ))}
               </div>
+              {showSlashMenu && (
+                <div className="mt-2 text-[11px] text-foreground-subtle">
+                  Filtering for <span translate="no">/{slashQuery || "…"}</span>
+                </div>
+              )}
               <div className="mt-2 text-[11px] text-foreground-subtle">
                 Privacy gate and AI settings must allow draft rewrites before these actions run.
               </div>
@@ -921,7 +974,7 @@ export function ComposeModal({
               />
               <textarea
                 value={body}
-                onChange={(e) => setBody(e.target.value)}
+                onChange={handleBodyChange}
                 placeholder="Write your message..."
                 className="min-h-[22rem] w-full rounded-xl border border-border bg-background px-3 py-3 text-sm leading-6 outline-none transition-colors focus:border-accent"
               />

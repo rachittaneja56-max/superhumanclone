@@ -3,12 +3,16 @@ import { redirect } from 'next/navigation'
 import { serverTrpc } from '@/lib/trpc/server'
 import { CalendarView } from '@/components/calendar/CalendarView'
 import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
+import { endOfWeek, startOfMonth, startOfWeek, endOfMonth } from 'date-fns'
 
 export default async function CalendarPage() {
   const session = await getSession()
   if (!session.userId) redirect('/login')
 
   let events: any[] = []
+  const today = new Date()
+  const startDate = startOfWeek(startOfMonth(today), { weekStartsOn: 1 })
+  const endDate = endOfWeek(endOfMonth(today), { weekStartsOn: 1 })
 
   const { calendarConnected } = await reconcileGoogleConnectionState(session.userId).catch(() => ({
     calendarConnected: false,
@@ -39,8 +43,8 @@ export default async function CalendarPage() {
   try {
     const trpc = await serverTrpc()
     const result = await trpc.calendar.getEvents({
-      startDate: new Date(Date.now() - 365 * 24 * 60 * 60 * 1000),
-      endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      startDate,
+      endDate,
     })
     events = result ?? []
   } catch (err) {
@@ -53,7 +57,7 @@ export default async function CalendarPage() {
         <h1 className="font-display font-semibold text-lg">Calendar</h1>
       </div>
       <div className="flex-1 overflow-y-auto p-6">
-        <CalendarView initialEvents={events} />
+        <CalendarView initialEvents={events} initialDate={today} />
       </div>
     </div>
   )

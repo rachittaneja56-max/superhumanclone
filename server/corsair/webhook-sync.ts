@@ -6,7 +6,7 @@ import { isDomainBlocked } from '@/lib/domain-matcher'
 import { mapGmailMessageToEmailRow } from '@/server/corsair/email-mapper'
 import { redis } from '@/server/redis'
 import { Client } from '@upstash/qstash'
-import { invalidateMailCache } from '@/server/cache'
+import { invalidateMailCache, invalidateCalendarCache } from '@/server/cache'
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' })
 
@@ -213,6 +213,7 @@ export async function handleCalendarWebhook(ctx: Record<string, unknown>, result
 
   if (result.type === 'eventDeleted') {
     await db.delete(calendarEvents).where(eq(calendarEvents.corsair_event_id, result.eventId))
+    await invalidateCalendarCache(redis, userId)
     return
   }
 
@@ -235,6 +236,7 @@ export async function handleCalendarWebhook(ctx: Record<string, unknown>, result
         updated_at: new Date(),
       },
     })
+  await invalidateCalendarCache(redis, userId)
 }
 
 export function extractPubSubMessageId(rawBody: string): string | null {

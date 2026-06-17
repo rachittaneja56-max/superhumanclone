@@ -5,6 +5,7 @@ const SETTINGS_TTL = 60;
 const MAILBOX_TTL = 30;
 const UNREAD_TTL = 30;
 const THREAD_TTL = 300;
+const CALENDAR_TTL = 60;
 const VERSION_TTL = 60 * 60 * 24 * 7;
 
 export function settingsVersionKey(userId: string) {
@@ -13,6 +14,10 @@ export function settingsVersionKey(userId: string) {
 
 export function mailVersionKey(userId: string) {
   return `user:${userId}:mail:v1:version`;
+}
+
+export function calendarVersionKey(userId: string) {
+  return `user:${userId}:calendar:v1:version`;
 }
 
 export function settingsCacheKey(userId: string, version: string | number) {
@@ -31,6 +36,15 @@ export function threadCacheKey(userId: string, threadId: string, version: string
   return `user:${userId}:thread:${threadId}:v1:${version}`;
 }
 
+export function calendarCacheKey(
+  userId: string,
+  version: string | number,
+  startDate: string,
+  endDate: string
+) {
+  return `user:${userId}:calendar:v1:${version}:${encodeURIComponent(startDate)}:${encodeURIComponent(endDate)}`;
+}
+
 async function bumpVersion(redis: Redis, key: string) {
   await redis.incr(key);
   await redis.expire(key, VERSION_TTL).catch(() => null);
@@ -44,9 +58,14 @@ export async function invalidateMailCache(redis: Redis, userId: string) {
   await bumpVersion(redis, mailVersionKey(userId));
 }
 
+export async function invalidateCalendarCache(redis: Redis, userId: string) {
+  await bumpVersion(redis, `user:${userId}:calendar:v1:version`);
+}
+
 export const cacheTtls = {
   settings: SETTINGS_TTL,
   mailbox: MAILBOX_TTL,
   unread: UNREAD_TTL,
   thread: THREAD_TTL,
+  calendar: CALENDAR_TTL,
 };

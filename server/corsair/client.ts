@@ -316,7 +316,20 @@ export async function getCalendarEvents(
   params?: { limit?: number; timeMin?: string; timeMax?: string }
 ) {
   const t = await getTenant(userId)
+  const hasRange = Boolean(params?.timeMin || params?.timeMax)
   try {
+    if (hasRange) {
+      const result = await t.googlecalendar.api.events.getMany({
+        calendarId: 'primary',
+        singleEvents: true,
+        orderBy: 'startTime',
+        maxResults: params?.limit ?? 250,
+        ...(params?.timeMin && { timeMin: params.timeMin }),
+        ...(params?.timeMax && { timeMax: params.timeMax }),
+      })
+      return { success: true, data: result.items || [], needsConnect: false }
+    }
+
     // Prefer the Corsair DB layer (synced corsair_entities) — much faster, no API quota
     const dbResult = await t.googlecalendar.db.events.list({
       limit: params?.limit ?? 100,
@@ -326,15 +339,22 @@ export async function getCalendarEvents(
     return { success: true, data: items, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, data: null, needsConnect: true }
-    // Fall back to live API if DB layer fails
+    // Fall back to the other source if the primary one fails
     try {
+      if (hasRange) {
+        const dbResult = await t.googlecalendar.db.events.list({
+          limit: params?.limit ?? 100,
+          offset: 0,
+        })
+        const items: any[] = Array.isArray(dbResult) ? dbResult : (dbResult?.items ?? dbResult?.data ?? [])
+        return { success: true, data: items, needsConnect: false }
+      }
+
       const result = await t.googlecalendar.api.events.getMany({
         calendarId: 'primary',
         singleEvents: true,
         orderBy: 'startTime',
         maxResults: params?.limit ?? 50,
-        ...(params?.timeMin && { timeMin: params.timeMin }),
-        ...(params?.timeMax && { timeMax: params.timeMax }),
       })
       return { success: true, data: result.items || [], needsConnect: false }
     } catch (err2: any) {
@@ -352,6 +372,7 @@ export async function createCalendarEvent(userId: string, event: {
   endTime: string
   attendees: string[]
   description?: string
+  location?: string
   addMeetLink?: boolean
 }) {
   const t = await getTenant(userId)
@@ -362,6 +383,7 @@ export async function createCalendarEvent(userId: string, event: {
       end: { dateTime: event.endTime },
       attendees: event.attendees.map(email => ({ email })),
       ...(event.description && { description: event.description }),
+      ...(event.location && { location: event.location }),
     }
 
     const createParams: any = { event: eventPayload, calendarId: 'primary' }
@@ -385,6 +407,67 @@ export async function createCalendarEvent(userId: string, event: {
     return { success: true, data: result, meetLink, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, data: null, meetLink: null, needsConnect: true }
+    throw err
+  }
+}
+
+export async function updateCalendarEvent(userId: string, event: {
+  eventId: string
+  title: string
+  startTime: string
+  endTime: string
+  attendees: string[]
+  description?: string
+  location?: string
+  addMeetLink?: boolean
+}) {
+  const t = await getTenant(userId)
+  try {
+    const eventPayload: any = {
+      summary: event.title,
+      start: { dateTime: event.startTime },
+      end: { dateTime: event.endTime },
+      attendees: event.attendees.map(email => ({ email })),
+      ...(event.description && { description: event.description }),
+      ...(event.location && { location: event.location }),
+    }
+
+    if (event.addMeetLink) {
+      eventPayload.conferenceData = {
+        createRequest: {
+          requestId: crypto.randomUUID(),
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
+      }
+    }
+
+    const result = await t.googlecalendar.api.events.update({
+      calendarId: 'primary',
+      eventId: event.eventId,
+      event: eventPayload,
+      ...(event.addMeetLink ? { conferenceDataVersion: 1 } : {}),
+    })
+
+    const meetLink = result?.conferenceData?.entryPoints
+      ?.find((e: any) => e.entryPointType === 'video')?.uri ?? null
+
+    return { success: true, data: result, meetLink, needsConnect: false }
+  } catch (err: any) {
+    if (isAuthError(err)) return { success: false, data: null, meetLink: null, needsConnect: true }
+    throw err
+  }
+}
+
+export async function deleteCalendarEvent(userId: string, eventId: string) {
+  const t = await getTenant(userId)
+  try {
+    await t.googlecalendar.api.events.delete({
+      calendarId: 'primary',
+      eventId,
+    })
+    return { success: true, needsConnect: false }
+  } catch (err: any) {
+    if (isAuthError(err)) return { success: false, needsConnect: true }
     throw err
   }
 }

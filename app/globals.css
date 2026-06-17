@@ -169,6 +169,20 @@
   * {
     @apply border-border outline-ring/50;
   }
+  button:not(:disabled),
+  [role="button"],
+  a {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+  input,
+  textarea,
+  select {
+    cursor: text;
+  }
   body {
     @apply bg-background text-foreground;
   }
