@@ -318,8 +318,8 @@ export function MailWorkspace({
     to: string[];
     cc?: string[];
     bcc?: string[];
-    subject: string;
-    body: string;
+    subject?: string;
+    body?: string;
     threadId?: string;
   }) => {
     try {
@@ -375,6 +375,14 @@ export function MailWorkspace({
                 >
                   <SquarePen className="h-4 w-4" />
                   Compose
+                </button>
+                <button
+                  onClick={() => void fetchMore()}
+                  disabled={!hasMore || isFetchingMore || mailboxQuery.isLoading}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isFetchingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {hasMore ? "Load more" : "No more mails"}
                 </button>
               </div>
             </div>
@@ -612,8 +620,8 @@ export function ComposeModal({
     to: string[];
     cc?: string[];
     bcc?: string[];
-    subject: string;
-    body: string;
+    subject?: string;
+    body?: string;
     threadId?: string;
   }) => Promise<void>;
   initialDraft?: ComposeDraft;

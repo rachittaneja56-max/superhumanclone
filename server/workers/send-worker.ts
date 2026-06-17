@@ -44,6 +44,8 @@ export async function processSendJob(payload: unknown, deps: SendJobDeps) {
   }
 
   const payloadData = typeof payloadStr === "string" ? JSON.parse(payloadStr) : payloadStr;
+  const body = typeof payloadData.body === "string" ? payloadData.body : "";
+  const subject = typeof payloadData.subject === "string" ? payloadData.subject : "";
 
   const me = await deps.db.query.users.findFirst({
     where: eq(users.id, userId),
@@ -54,12 +56,18 @@ export async function processSendJob(payload: unknown, deps: SendJobDeps) {
     to: payloadData.to,
     cc: payloadData.cc,
     bcc: payloadData.bcc,
-    subject: payloadData.subject,
-    body: payloadData.body,
+    subject,
+    body,
     threadId: payloadData.threadId,
   });
 
   if (sendResult.needsConnect) {
+    logger.warn({
+      event: "send_message_needs_connect",
+      userId: userId.slice(0, 8),
+      hasBody: Boolean(body.trim()),
+      recipientCount: Array.isArray(payloadData.to) ? payloadData.to.length : 0,
+    });
     await deps.redis.del(lockKey).catch(() => null);
     return { status: "needs_connect" as const };
   }
@@ -69,6 +77,12 @@ export async function processSendJob(payload: unknown, deps: SendJobDeps) {
   await deps.redis.del(jobKey).catch(() => null);
 
   const sentMessageId = sendResult?.data?.id || sendResult?.data?.messageId || crypto.randomUUID();
+  logger.info({
+    event: "send_message_success",
+    userId: userId.slice(0, 8),
+    hasBody: Boolean(body.trim()),
+    recipientCount: Array.isArray(payloadData.to) ? payloadData.to.length : 0,
+  });
   await deps.db.insert(emails).values({
     userId,
     corsair_message_id: sentMessageId,
@@ -76,10 +90,10 @@ export async function processSendJob(payload: unknown, deps: SendJobDeps) {
     from_address: me?.email || "me@aethra.local",
     from_name: me?.name || "Me",
     to_address: Array.isArray(payloadData.to) ? payloadData.to.join(", ") : payloadData.to,
-    subject: payloadData.subject,
-    snippet: redactSensitiveForClient(payloadData.body).slice(0, 180),
-    body_text: payloadData.body,
-    body_html: `<pre style="white-space:pre-wrap;font-family:inherit">${payloadData.body.replace(/[&<>]/g, (ch: string) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch] || ch))}</pre>`,
+    subject,
+    snippet: redactSensitiveForClient(body).slice(0, 180),
+    body_text: body,
+    body_html: `<pre style="white-space:pre-wrap;font-family:inherit">${body.replace(/[&<>]/g, (ch: string) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch] || ch))}</pre>`,
     is_read: true,
     is_archived: false,
     is_deleted: false,

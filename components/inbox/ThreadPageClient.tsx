@@ -17,8 +17,8 @@ export function ThreadPageClient({ threadId }: { threadId: string }) {
     to: string[];
     cc?: string[];
     bcc?: string[];
-    subject: string;
-    body: string;
+    subject?: string;
+    body?: string;
     threadId?: string;
   }) => {
     try {

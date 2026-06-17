@@ -2,6 +2,7 @@ import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
 import { emails, auditLogs, calendarEvents, autoReplyDrafts, users } from '@/server/db/schema';
 import { eq, and, desc, gt, between, inArray, asc, or, ilike, sql, lt } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
+import pino from 'pino';
 import {
   archiveEmail,
   restoreArchivedEmail,
@@ -26,6 +27,7 @@ import {
 import { processSendJob } from '@/server/workers/send-worker';
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' });
+const logger = pino();
 
 import {
   getThreadsSchema,
@@ -99,6 +101,15 @@ function normalizeSearchPattern(query: string) {
   const trimmed = query.trim();
   if (!trimmed) return '';
   return `%${trimmed.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
+}
+
+function isOutboundSentMessage(row: {
+  from_address?: string | null;
+  to_address?: string | null;
+}, meEmail?: string | null) {
+  if (!meEmail) return false;
+  if ((row.from_address ?? "").toLowerCase() !== meEmail.toLowerCase()) return false;
+  return Boolean((row.to_address ?? "").trim());
 }
 
 async function invalidateMailCaches(ctx: any, threadId?: string | null) {
@@ -269,24 +280,20 @@ export const emailRouter = router({
           where: and(
             eq(emails.userId, ctx.userId!),
             eq(emails.is_deleted, false),
-            or(
-              eq(emails.is_archived, false),
-              eq(emails.is_archived, true)
-            ),
-            me?.email ? eq(emails.from_address, me.email) : sql`true`,
+            me?.email ? sql`${emails.from_address} = ${me.email} and ${emails.to_address} <> ''` : sql`false`,
             cursor
               ? or(
                   lt(emails.created_at, new Date(cursor.createdAt)),
                   and(eq(emails.created_at, new Date(cursor.createdAt)), lt(emails.id, cursor.id))
                 )
               : sql`true`,
-            pattern
-              ? or(
-                  ilike(emails.subject, pattern),
-                  ilike(emails.to_address, pattern),
-                  ilike(emails.snippet, pattern)
-                )
-              : sql`true`
+          pattern
+            ? or(
+                ilike(emails.subject, pattern),
+                ilike(emails.to_address, pattern),
+                ilike(emails.snippet, pattern)
+              )
+            : sql`true`
           ),
           columns: {
             id: true,
@@ -303,7 +310,9 @@ export const emailRouter = router({
           limit: input.limit + 1,
           offset: cursor ? 0 : input.offset,
         });
-        const mapped = rows.map((r) =>
+        const mapped = rows
+          .filter((r) => isOutboundSentMessage(r, me?.email))
+          .map((r) =>
           mapEmailForListClient({
             ...r,
             from_name: me?.name || r.from_name || 'Me',
@@ -1069,6 +1078,12 @@ export const emailRouter = router({
     .input(sendEmailSchema)
     .mutation(async ({ ctx, input }) => {
       const undoToken = crypto.randomUUID();
+      logger.info({
+        event: 'send_email_queued',
+        userId: ctx.userId?.slice(0, 8),
+        hasBody: Boolean(input.body?.trim()),
+        recipientCount: input.to.length,
+      });
       // Keep the payload alive longer than the undo window so the queued job
       // still has something to send even if QStash fires a little late.
       await ctx.redis.set(`undo:send:${ctx.userId}:${undoToken}`, JSON.stringify(input), { ex: 300 });
