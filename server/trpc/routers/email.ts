@@ -1042,7 +1042,7 @@ export const emailRouter = router({
         location: ev.location,
       }));
 
-      const digest = await generateDigest(formattedEmails, formattedEvents);
+      const digest = await generateDigest(formattedEmails, formattedEvents, { userId: ctx.userId! });
 
       const result = {
         digest,
@@ -1059,8 +1059,8 @@ export const emailRouter = router({
   rewriteDraft: protectedProcedure
     .use(createRateLimitMiddleware('rewriteDraft', 20, 60))
     .input(rewriteDraftSchema)
-    .mutation(async ({ input }) => {
-      const rewritten = await rewriteDraft(input.draft, input.instruction, input.translateTo);
+    .mutation(async ({ ctx, input }) => {
+      const rewritten = await rewriteDraft(input.draft, input.instruction, input.translateTo, { userId: ctx.userId! });
       return { rewritten };
     }),
 

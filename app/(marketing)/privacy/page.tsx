@@ -33,7 +33,7 @@ export default function PrivacyPolicy() {
         <ul className="list-disc pl-6 space-y-2 mb-8">
           <li>You explicitly choose which email domains AI can access via our <strong>Privacy Gate</strong>.</li>
           <li>Emails from protected domains are actively filtered out and <strong>never sent</strong> to AI providers.</li>
-          <li>AI providers used: Google Gemini (for fast categorization) and OpenAI (for complex processing in production).</li>
+          <li>AI providers used: Mistral (for faster lower-cost processing) and OpenAI (for more complex reasoning).</li>
           <li>You can disable all AI processing at any time directly in your Settings.</li>
         </ul>
 

@@ -52,30 +52,21 @@ export async function processTriageJob(payload: unknown) {
     return { status: 'skipped', reason: 'privacy_gate' };
   }
 
-  // 3. Check token budget (circuit breaker)
-  const budgetKey = 'tokens:' + userId + ':' + new Date().toISOString().slice(0, 10);
-  const current = parseInt((await redis.get<string>(budgetKey)) ?? '0');
-  const limit = parseInt(process.env.AI_DAILY_TOKEN_LIMIT ?? '100000');
-  if (current > limit) {
-    console.log({ event: 'triage_skipped_budget', emailId });
-    return { status: 'skipped', reason: 'budget' };
-  }
-
-  // 4. classifyEmail
-  const { tag, priority } = await classifyEmail(subject, snippet);
+  // 3. AI classification with provider guardrails
+  const { tag, priority } = await classifyEmail(subject, snippet, { userId });
   await workerDb.update(emails)
     .set({ tag, priority })
     .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
 
-  // 5. generateTLDR
+  // 4. generateTLDR
   const content = bodyText ?? snippet;
-  const tldr = await generateTLDR(subject, content);
+  const tldr = await generateTLDR(subject, content, { userId });
   await workerDb.update(emails)
     .set({ tldr })
     .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
 
-  // 6. generateAutoReplies
-  const replies = await generateAutoReplies(subject, content);
+  // 5. generateAutoReplies
+  const replies = await generateAutoReplies(subject, content, { userId });
   await workerDb.insert(autoReplyDrafts)
     .values([
       { userId, emailId, reply_text: replies.direct, status: 'draft' },
@@ -84,26 +75,21 @@ export async function processTriageJob(payload: unknown) {
     ])
     .onConflictDoNothing();
 
-  // 7. generateEmbedding
-  const embedding = await generateEmbedding(subject + ' ' + snippet);
+  // 6. generateEmbedding
+  const embedding = await generateEmbedding(subject + ' ' + snippet, { userId });
   await workerDb.update(emails)
     .set({ embedding })
     .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
 
-  // 8. UPDATE emails SET ai_triage_skipped=false
+  // 7. UPDATE emails SET ai_triage_skipped=false
   await workerDb.update(emails)
     .set({ ai_triage_skipped: false })
     .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
 
-  // 9. Increment token budget
-  const estimatedTokensUsed = 1000; // Simple estimation
-  await redis.incrby(budgetKey, estimatedTokensUsed);
-  await redis.expire(budgetKey, 86400);
-
-  // 10. Invalidate contact cache
+  // 8. Invalidate contact cache
   await redis.del('contact:' + userId + ':' + fromAddress);
 
-  // 11. Publish Ably real-time event
+  // 9. Publish Ably real-time event
   const ablyKey = process.env.ABLY_API_KEY;
   if (ablyKey) {
     await fetch(`https://rest.ably.io/channels/private:user-${userId}/messages`, {
@@ -112,11 +98,11 @@ export async function processTriageJob(payload: unknown) {
         Authorization: 'Basic ' + Buffer.from(ablyKey).toString('base64'),
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ name: 'email:triaged', data: { emailId, tag, priority, tldr: tldr.slice(0, 100) } })
+      body: JSON.stringify({ name: 'email:triaged', data: { emailId, tag, priority } })
     });
   }
 
-  // 12. Pino structured log
+  // 10. Pino structured log
   logger.info({
     event: 'triage_complete',
     emailId,

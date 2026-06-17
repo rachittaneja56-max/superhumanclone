@@ -58,7 +58,7 @@ export const contactsRouter = router({
         const snippets = recentEmails.map((e) => e.snippet || "").filter(Boolean);
         if (snippets.length > 0) {
           try {
-            summary = await generateContactSummary(snippets);
+            summary = await generateContactSummary(snippets, { userId: ctx.userId! });
             
             // Upsert in DB
             if (existingIntel) {

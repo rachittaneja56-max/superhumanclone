@@ -34,7 +34,7 @@ export const searchRouter = router({
       }
 
       // 2. generateEmbedding
-      const queryEmbedding = await generateEmbedding(query);
+      const queryEmbedding = await generateEmbedding(query, { userId: ctx.userId! });
 
       // 3. Drizzle cosine distance query
       // ORDER BY cosine distance ASC

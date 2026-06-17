@@ -166,7 +166,7 @@ export const calendarRouter = router({
         .map((e) => `From: ${e.from_name || e.from_address}\nSubject: ${e.subject}\n${e.snippet || ''}`)
         .join('\n---\n');
 
-      const aiResult = await smartFillFromThread(content);
+      const aiResult = await smartFillFromThread(content, { userId: ctx.userId! });
 
       return {
         ...aiResult,
@@ -282,7 +282,7 @@ export const calendarRouter = router({
       ].join('\n');
 
       try {
-        const aiBrief = await generateMeetingPrepBrief(briefContext);
+        const aiBrief = await generateMeetingPrepBrief(briefContext, { userId: ctx.userId! });
         return {
           ...aiBrief,
           attendees: attendeeList.length ? attendeeList : aiBrief.attendees,

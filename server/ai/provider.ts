@@ -1,254 +1,628 @@
-import 'server-only';
-import { generateObject, generateText, embed } from 'ai';
-import { google } from '@ai-sdk/google';
-import { openai } from '@ai-sdk/openai';
-import { z } from 'zod';
-import * as prompts from './prompts';
-import { sendEmail, createCalendarEvent } from '../corsair/client';
-import { db } from '../db';
-import { emails } from '../db/schema';
-import { eq, and, isNotNull, sql } from 'drizzle-orm';
-import { streamText, tool } from 'ai';
+import "server-only";
 
-console.log('[AI] Provider:', process.env.NODE_ENV === 'development' ? 'Gemini' : 'OpenAI');
+import { embed, streamText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { z } from "zod";
+import { createCalendarEvent, sendEmail } from "../corsair/client";
+import { db } from "../db";
+import { emails } from "../db/schema";
+import { redis } from "../redis";
+import { AIAllProvidersFailedError, AIInvalidResponseError, AIProviderUnavailableError, AIUsageLimitError } from "./errors";
+import { getFallbackProvider, getModelForCapability, getPrimaryProvider, getProviderApiKey, getProviderBaseUrl, getProviderOrder } from "./models";
+import { prompts } from "./prompts";
+import type { AIExecutionOptions, AIJsonResult, AIProvider, AIProviderHealth, AITextResult, StructuredTask } from "./types";
 
-function getModel(capability: 'fast' | 'smart') {
-  const isDev = process.env.NODE_ENV === 'development';
-  if (isDev) {
-    return capability === 'fast'
-      ? google('gemini-1.5-flash')
-      : google('gemini-1.5-pro');
-  } else {
-    return capability === 'fast'
-      ? openai('gpt-4o-mini')
-      : openai('gpt-4o');
-  }
+const DEFAULT_MONTHLY_LIMIT = 20;
+const PROVIDER_COOLDOWN_MS = 15 * 60 * 1000;
+const PROVIDER_FAILURE_THRESHOLD = 3;
+const ZERO_EMBEDDING = new Array<number>(768).fill(0);
+
+const classificationSchema = z.object({
+  tag: z.enum(["work", "personal", "finance", "travel", "newsletter", "update", "social", "other"]),
+  priority: z.enum(["low", "medium", "high", "urgent"]),
+  confidence: z.number().min(0).max(1),
+});
+
+const autoRepliesSchema = z.object({
+  direct: z.string(),
+  warm: z.string(),
+  boundary: z.string(),
+});
+
+const smartFillSchema = z.object({
+  suggestedTitle: z.string(),
+  suggestedTime: z.string(),
+  suggestedDuration: z.number(),
+  suggestedDescription: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+
+const meetingPrepSchema = z.object({
+  summary: z.string(),
+  attendees: z.array(z.string()),
+  recentEmails: z.array(
+    z.object({
+      sender: z.string(),
+      subject: z.string(),
+      snippet: z.string(),
+      receivedAt: z.string(),
+    }),
+  ),
+  openQuestions: z.array(z.string()),
+  talkingPoints: z.array(z.string()),
+});
+
+type Message = { role: "user" | "assistant"; content: string };
+
+function nowIso() {
+  return new Date().toISOString();
 }
 
-export async function classifyEmail(
-  subject: string,
-  snippet: string
-): Promise<{ tag: 'work' | 'personal' | 'finance' | 'travel' | 'newsletter' | 'update' | 'social' | 'other'; priority: 'low' | 'medium' | 'high' | 'urgent'; confidence: number }> {
-  const model = getModel('fast');
-  const input = `<email_content>Subject: ${subject}\nSnippet: ${snippet}</email_content>`;
+function monthKey() {
+  const date = new Date();
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
-  const { object } = await generateObject({
-    model,
-    system: prompts.emailClassifier,
-    prompt: input,
-    schema: z.object({
-      tag: z.enum(['work', 'personal', 'finance', 'travel', 'newsletter', 'update', 'social', 'other']),
-      priority: z.enum(['low', 'medium', 'high', 'urgent']),
-      confidence: z.number(),
+function dayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function healthKey(provider: AIProvider) {
+  return `key:health:${provider}:${dayKey()}`;
+}
+
+function usageKey(userId: string) {
+  return `key:usage:${userId}:${monthKey()}`;
+}
+
+function stripHtml(value: string) {
+  return value
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function redactSensitiveText(value: string) {
+  return value
+    .replace(/\b(?:\d[ -]*?){13,19}\b/g, "[redacted-card]")
+    .replace(/\b\d{4}[ -]?\d{4}[ -]?\d{4}\b/g, "[redacted-aadhaar]")
+    .replace(/\b(?:\+?\d{1,3}[ -]?)?(?:\d[ -]?){10,14}\b/g, "[redacted-phone]")
+    .trim();
+}
+
+function truncateText(value: string, maxChars: number) {
+  return value.length <= maxChars ? value : `${value.slice(0, Math.max(0, maxChars - 1)).trim()}…`;
+}
+
+function wrapEmailContent(value: string) {
+  return `<email_content>${stripHtml(value)}</email_content>`;
+}
+
+function wrapCalendarContent(value: string) {
+  return `<calendar_content>${stripHtml(value)}</calendar_content>`;
+}
+
+function sanitizeOutput(value: string, maxChars: number) {
+  return truncateText(redactSensitiveText(value), maxChars);
+}
+
+async function getProviderHealth(provider: AIProvider): Promise<AIProviderHealth> {
+  const cached = await redis.get<AIProviderHealth | string>(healthKey(provider));
+  if (!cached) {
+    return {
+      consecutiveFailures: 0,
+      totalFailures: 0,
+      totalSuccesses: 0,
+      lastFailureAt: null,
+      lastErrorCode: null,
+    };
+  }
+
+  if (typeof cached === "string") {
+    try {
+      return JSON.parse(cached) as AIProviderHealth;
+    } catch {
+      return {
+        consecutiveFailures: 0,
+        totalFailures: 0,
+        totalSuccesses: 0,
+        lastFailureAt: null,
+        lastErrorCode: null,
+      };
+    }
+  }
+
+  return cached;
+}
+
+async function setProviderHealth(provider: AIProvider, health: AIProviderHealth) {
+  await redis.set(healthKey(provider), health, { ex: 86400 });
+}
+
+async function markProviderSuccess(provider: AIProvider) {
+  const current = await getProviderHealth(provider);
+  await setProviderHealth(provider, {
+    consecutiveFailures: 0,
+    totalFailures: current.totalFailures,
+    totalSuccesses: current.totalSuccesses + 1,
+    lastFailureAt: current.lastFailureAt,
+    lastErrorCode: null,
+  });
+}
+
+async function markProviderFailure(provider: AIProvider, error: unknown) {
+  const current = await getProviderHealth(provider);
+  await setProviderHealth(provider, {
+    consecutiveFailures: current.consecutiveFailures + 1,
+    totalFailures: current.totalFailures + 1,
+    totalSuccesses: current.totalSuccesses,
+    lastFailureAt: nowIso(),
+    lastErrorCode: error instanceof Error ? error.name : "unknown",
+  });
+}
+
+async function isProviderCircuitOpen(provider: AIProvider) {
+  const current = await getProviderHealth(provider);
+  if (current.consecutiveFailures < PROVIDER_FAILURE_THRESHOLD || !current.lastFailureAt) {
+    return false;
+  }
+
+  const lastFailureTime = new Date(current.lastFailureAt).getTime();
+  return Number.isFinite(lastFailureTime) && Date.now() - lastFailureTime < PROVIDER_COOLDOWN_MS;
+}
+
+async function resolveUsagePolicy(userId?: string) {
+  if (!userId) {
+    return { monthlyLimit: null, tier: "admin" as const };
+  }
+
+  const adminUsers = (process.env.AI_ADMIN_USER_IDS ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+  const proUsers = (process.env.AI_PRO_USER_IDS ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+
+  if (adminUsers.includes(userId)) {
+    return { monthlyLimit: null, tier: "admin" as const };
+  }
+
+  if (proUsers.includes(userId)) {
+    return { monthlyLimit: 200, tier: "pro" as const };
+  }
+
+  return { monthlyLimit: DEFAULT_MONTHLY_LIMIT, tier: "free" as const };
+}
+
+async function reserveUsage(userId?: string) {
+  if (!userId) return;
+
+  const policy = await resolveUsagePolicy(userId);
+  if (policy.monthlyLimit === null) return;
+
+  const key = usageKey(userId);
+  const current = Number((await redis.get<number | string>(key)) ?? 0);
+  if (current >= policy.monthlyLimit) {
+    throw new AIUsageLimitError();
+  }
+
+  await redis.incr(key);
+  await redis.expire(key, 60 * 60 * 24 * 40);
+}
+
+async function callChatCompletion(params: {
+  provider: AIProvider;
+  model: string;
+  system: string;
+  prompt: string;
+  maxOutputTokens: number;
+  jsonMode?: boolean;
+}) {
+  const apiKey = getProviderApiKey(params.provider);
+  if (!apiKey) {
+    throw new AIProviderUnavailableError(params.provider, "Missing AI provider API key");
+  }
+
+  const response = await fetch(`${getProviderBaseUrl(params.provider)}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: params.model,
+      temperature: 0.2,
+      max_tokens: params.maxOutputTokens,
+      messages: [
+        { role: "system", content: params.system },
+        { role: "user", content: params.prompt },
+      ],
+      ...(params.jsonMode ? { response_format: { type: "json_object" } } : {}),
     }),
   });
 
-  return object;
-}
-
-export async function generateTLDR(subject: string, bodyText: string): Promise<string> {
-  const model = getModel('fast');
-  const slicedText = bodyText.slice(0, 3000);
-  const input = `<email_content>${slicedText}</email_content>`;
-
-  const { text } = await generateText({
-    model,
-    system: prompts.tldrGenerator,
-    prompt: input,
-    maxOutputTokens: 80,
-  });
-
-  return text;
-}
-
-export async function generateAutoReplies(
-  subject: string,
-  bodyText: string
-): Promise<{ direct: string; warm: string; boundary: string }> {
-  const model = getModel('fast');
-  const slicedText = bodyText.slice(0, 2000);
-  const input = `<email_content>${slicedText}</email_content>`;
-
-  const { object } = await generateObject({
-    model,
-    system: prompts.autoReplyGenerator,
-    prompt: input,
-    schema: z.object({
-      direct: z.string(),
-      warm: z.string(),
-      boundary: z.string(),
-    }),
-  });
-
-  return object;
-}
-
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const isDev = process.env.NODE_ENV === 'development';
-  let embeddingModel;
-
-  if (isDev) {
-    embeddingModel = google.textEmbeddingModel('text-embedding-004');
-  } else {
-    embeddingModel = openai.embedding('text-embedding-3-small');
+  if (!response.ok) {
+    throw new AIProviderUnavailableError(params.provider, `Provider returned ${response.status}`);
   }
 
-  const { embedding } = await embed({
-    model: embeddingModel,
-    value: text,
-    ...(!isDev ? {
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string | Array<{ text?: string }> } }>;
+  };
+
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => part.text ?? "").join("").trim();
+  }
+
+  throw new AIInvalidResponseError();
+}
+
+async function callEmbedding(provider: AIProvider, model: string, value: string) {
+  const apiKey = getProviderApiKey(provider);
+  if (!apiKey) {
+    throw new AIProviderUnavailableError(provider, "Missing AI provider API key");
+  }
+
+  if (provider === "openai") {
+    const { embedding } = await embed({
+      model: openai.embedding(model),
+      value,
       providerOptions: {
         openai: {
           dimensions: 768,
         },
       },
-    } : {}),
+    });
+    return embedding;
+  }
+
+  const response = await fetch(`${getProviderBaseUrl(provider)}/embeddings`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      input: value,
+      encoding_format: "float",
+    }),
   });
 
+  if (!response.ok) {
+    throw new AIProviderUnavailableError(provider, `Provider returned ${response.status}`);
+  }
+
+  const data = (await response.json()) as {
+    data?: Array<{ embedding?: number[] }>;
+  };
+  const embedding = data.data?.[0]?.embedding;
+  if (!embedding) {
+    throw new AIInvalidResponseError("Embedding response was empty");
+  }
+
   if (embedding.length !== 768) {
-    throw new Error('Embedding dimension mismatch');
+    throw new AIInvalidResponseError("Embedding dimension mismatch");
   }
 
   return embedding;
 }
 
+async function executeTextTask(promptBody: string, options: AIExecutionOptions): Promise<AITextResult> {
+  const providerOrder = getProviderOrder(options.capability);
+  let lastError: unknown = null;
+
+  for (const provider of providerOrder) {
+    if (await isProviderCircuitOpen(provider)) continue;
+
+    try {
+      await reserveUsage(options.userId);
+      const model = getModelForCapability(provider, options.capability);
+      const text = await callChatCompletion({
+        provider,
+        model,
+        system: options.prompt.system,
+        prompt: promptBody,
+        maxOutputTokens: options.prompt.maxOutputTokens,
+      });
+      await markProviderSuccess(provider);
+      return {
+        text: sanitizeOutput(text, options.prompt.maxOutputTokens * 6),
+        provider,
+        model,
+      };
+    } catch (error) {
+      lastError = error;
+      await markProviderFailure(provider, error);
+      if (error instanceof AIUsageLimitError) throw error;
+    }
+  }
+
+  throw new AIAllProvidersFailedError(lastError instanceof Error ? lastError.message : undefined);
+}
+
+async function executeJsonTask<TSchema extends z.ZodTypeAny>(
+  promptBody: string,
+  structuredTask: StructuredTask<TSchema>,
+  options: AIExecutionOptions,
+): Promise<AIJsonResult<z.infer<TSchema>>> {
+  const providerOrder = getProviderOrder(options.capability);
+  let lastError: unknown = null;
+
+  for (const provider of providerOrder) {
+    if (await isProviderCircuitOpen(provider)) continue;
+
+    try {
+      await reserveUsage(options.userId);
+      const model = getModelForCapability(provider, options.capability);
+      const raw = await callChatCompletion({
+        provider,
+        model,
+        system: options.prompt.system,
+        prompt: promptBody,
+        maxOutputTokens: options.prompt.maxOutputTokens,
+        jsonMode: true,
+      });
+      const parsed = structuredTask.schema.parse(JSON.parse(raw));
+      await markProviderSuccess(provider);
+      return {
+        object: sanitizeStructured(parsed),
+        provider,
+        model,
+      };
+    } catch (error) {
+      lastError = error;
+      await markProviderFailure(provider, error);
+      if (error instanceof AIUsageLimitError) throw error;
+    }
+  }
+
+  throw new AIAllProvidersFailedError(lastError instanceof Error ? lastError.message : undefined);
+}
+
+function sanitizeStructured<T>(value: T): T {
+  if (typeof value === "string") {
+    return sanitizeOutput(value, Math.max(80, value.length)) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeStructured(item)) as T;
+  }
+
+  if (value && typeof value === "object") {
+    const next: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      next[key] = sanitizeStructured(entry);
+    }
+    return next as T;
+  }
+
+  return value;
+}
+
+function fallbackTextFromContent(value: string, maxChars: number) {
+  const cleaned = stripHtml(value);
+  return cleaned ? sanitizeOutput(cleaned, maxChars) : "No summary available.";
+}
+
+function createSingleChunkStream(text: string) {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield text;
+    },
+  };
+}
+
+export async function classifyEmail(
+  subject: string,
+  snippet: string,
+  options?: { userId?: string },
+): Promise<{ tag: "work" | "personal" | "finance" | "travel" | "newsletter" | "update" | "social" | "other"; priority: "low" | "medium" | "high" | "urgent"; confidence: number }> {
+  const promptBody = `${wrapEmailContent(`Subject: ${subject}\nSnippet: ${snippet}`)}`;
+
+  try {
+    const { object } = await executeJsonTask(
+      promptBody,
+      {
+        schema: classificationSchema,
+      },
+      {
+        userId: options?.userId,
+        capability: "fast",
+        prompt: prompts.emailClassifier,
+      },
+    );
+    return object;
+  } catch {
+    return { tag: "other", priority: "medium", confidence: 0 };
+  }
+}
+
+export async function generateTLDR(subject: string, bodyText: string, options?: { userId?: string }) {
+  const promptBody = `${wrapEmailContent(`Subject: ${subject}\nBody: ${bodyText}`)}`;
+
+  try {
+    const { text } = await executeTextTask(promptBody, {
+      userId: options?.userId,
+      capability: "fast",
+      prompt: prompts.tldrGenerator,
+    });
+    return text;
+  } catch {
+    return fallbackTextFromContent(bodyText || subject, 160);
+  }
+}
+
+export async function generateAutoReplies(subject: string, bodyText: string, options?: { userId?: string }) {
+  const promptBody = `${wrapEmailContent(`Subject: ${subject}\nBody: ${bodyText}`)}`;
+
+  try {
+    const { object } = await executeJsonTask(
+      promptBody,
+      {
+        schema: autoRepliesSchema,
+      },
+      {
+        userId: options?.userId,
+        capability: "fast",
+        prompt: prompts.autoReplyGenerator,
+      },
+    );
+    return object;
+  } catch {
+    const short = fallbackTextFromContent(bodyText || subject, 180);
+    return {
+      direct: `Thanks for the note. ${short}`,
+      warm: `Thanks for reaching out. ${short}`,
+      boundary: `Thanks for the message. I will get back to you once I have more context.`,
+    };
+  }
+}
+
+export async function generateEmbedding(text: string, options?: { userId?: string }) {
+  const providerOrder = getProviderOrder("embedding");
+  let lastError: unknown = null;
+
+  for (const provider of providerOrder) {
+    if (await isProviderCircuitOpen(provider)) continue;
+
+    try {
+      await reserveUsage(options?.userId);
+      const model = getModelForCapability(provider, "embedding");
+      const embedding = await callEmbedding(provider, model, stripHtml(text));
+      await markProviderSuccess(provider);
+      return embedding;
+    } catch (error) {
+      lastError = error;
+      await markProviderFailure(provider, error);
+      if (error instanceof AIUsageLimitError) break;
+    }
+  }
+
+  return ZERO_EMBEDDING.slice();
+}
+
 export async function generateDigest(
-  emails: { from: string; subject: string; snippet: string; priority: string }[],
-  events: { title: string; startTime: Date; endTime: Date; location: string | null }[]
-): Promise<string> {
-  const model = getModel('smart');
+  emailRows: { from: string; subject: string; snippet: string; priority: string }[],
+  eventRows: { title: string; startTime: Date; endTime: Date; location: string | null }[],
+  options?: { userId?: string },
+) {
+  const promptBody = [
+    wrapEmailContent(
+      emailRows
+        .map((email) => `[${email.priority.toUpperCase()}] From: ${email.from} | Subject: ${email.subject} | Snippet: ${email.snippet}`)
+        .join("\n"),
+    ),
+    wrapCalendarContent(
+      eventRows
+        .map((event) => `${event.title} | ${event.startTime.toISOString()} - ${event.endTime.toISOString()} | ${event.location ?? "No location"}`)
+        .join("\n"),
+    ),
+  ].join("\n\n");
 
-  const emailList = emails
-    .map((e) => `- [${e.priority.toUpperCase()}] From: ${e.from}, Subject: ${e.subject}\n  Snippet: ${e.snippet}`)
-    .join('\n');
-
-  const eventList = events
-    .map(
-      (e) =>
-        `- ${e.title} (${e.startTime.toLocaleTimeString()} - ${e.endTime.toLocaleTimeString()}) ${
-          e.location ? `@ ${e.location}` : ''
-        }`
-    )
-    .join('\n');
-
-  const prompt = `Here are the unread emails and events for today. Provide a concise morning digest.
-
-<email_content>
-Emails:
-${emailList}
-</email_content>
-
-Events:
-${eventList}`;
-
-  const { text } = await generateText({
-    model,
-    system: prompts.morningDigest,
-    prompt,
-  });
-
-  return text;
+  try {
+    const { text } = await executeTextTask(promptBody, {
+      userId: options?.userId,
+      capability: "smart",
+      prompt: prompts.morningDigest,
+    });
+    return text;
+  } catch {
+    const topEmail = emailRows[0]?.subject ? `Top email: ${emailRows[0].subject}.` : "No urgent mail found.";
+    const nextEvent = eventRows[0]?.title ? `Next event: ${eventRows[0].title}.` : "No upcoming events found.";
+    return `${topEmail} ${nextEvent}`.trim();
+  }
 }
 
 export async function rewriteDraft(
   draft: string,
-  instruction: 'improve_tone' | 'make_shorter' | 'make_formal' | 'convert_to_bullets' | 'translate',
-  translateTo?: string
-): Promise<string> {
-  const model = getModel('fast');
-  const input = `<email_content>${draft}</email_content>`;
+  instruction: "improve_tone" | "make_shorter" | "make_formal" | "convert_to_bullets" | "translate",
+  translateTo?: string,
+  options?: { userId?: string },
+) {
+  const normalizedInstruction =
+    instruction === "translate" && translateTo
+      ? `Instruction: translate to ${translateTo}`
+      : `Instruction: ${instruction.replace(/_/g, " ")}`;
+  const promptBody = `${normalizedInstruction}\n${wrapEmailContent(draft)}`;
 
-  let promptInstruction = instruction.replace(/_/g, ' ');
-  if (instruction === 'translate' && translateTo) {
-    promptInstruction = `translate to ${translateTo}`;
+  try {
+    const { text } = await executeTextTask(promptBody, {
+      userId: options?.userId,
+      capability: "fast",
+      prompt: prompts.rewriteDraft,
+    });
+    return text;
+  } catch {
+    return sanitizeOutput(draft, 4000);
   }
-
-  const { text } = await generateText({
-    model,
-    system: prompts.rewriteDraft,
-    prompt: `Rewrite this draft to satisfy this instruction: ${promptInstruction}.\n\n${input}`,
-    maxOutputTokens: 1000,
-  });
-
-  return text;
 }
 
-export async function smartFillFromThread(content: string): Promise<{
-  suggestedTitle: string;
-  suggestedTime: string;
-  suggestedDuration: number;
-  suggestedDescription: string;
-  confidence: number;
-}> {
-  const model = getModel('fast');
-  const input = `<email_content>${content}</email_content>`;
-
-  const { object } = await generateObject({
-    model,
-    system: prompts.calendarSmartFill,
-    prompt: input,
-    schema: z.object({
-      suggestedTitle: z.string(),
-      suggestedTime: z.string(),
-      suggestedDuration: z.number(),
-      suggestedDescription: z.string(),
-      confidence: z.number(),
-    }),
-  });
-
-  return object;
+export async function smartFillFromThread(content: string, options?: { userId?: string }) {
+  try {
+    const { object } = await executeJsonTask(
+      wrapEmailContent(content),
+      {
+        schema: smartFillSchema,
+      },
+      {
+        userId: options?.userId,
+        capability: "fast",
+        prompt: prompts.calendarSmartFill,
+      },
+    );
+    return object;
+  } catch {
+    return {
+      suggestedTitle: "Meeting",
+      suggestedTime: "",
+      suggestedDuration: 30,
+      suggestedDescription: fallbackTextFromContent(content, 180),
+      confidence: 0,
+    };
+  }
 }
 
-export async function generateMeetingPrepBrief(content: string): Promise<{
-  summary: string;
-  attendees: string[];
-  recentEmails: { sender: string; subject: string; snippet: string; receivedAt: string }[];
-  openQuestions: string[];
-  talkingPoints: string[];
-}> {
-  const model = getModel('fast');
-  const input = `<email_content>${content}</email_content>`;
-
-  const { object } = await generateObject({
-    model,
-    system: prompts.meetingPrepBrief,
-    prompt: input,
-    schema: z.object({
-      summary: z.string(),
-      attendees: z.array(z.string()),
-      recentEmails: z.array(
-        z.object({
-          sender: z.string(),
-          subject: z.string(),
-          snippet: z.string(),
-          receivedAt: z.string(),
-        })
-      ),
-      openQuestions: z.array(z.string()),
-      talkingPoints: z.array(z.string()),
-    }),
-  });
-
-  return object;
+export async function generateMeetingPrepBrief(content: string, options?: { userId?: string }) {
+  try {
+    const { object } = await executeJsonTask(
+      wrapEmailContent(content),
+      {
+        schema: meetingPrepSchema,
+      },
+      {
+        userId: options?.userId,
+        capability: "smart",
+        prompt: prompts.meetingPrepBrief,
+      },
+    );
+    return object;
+  } catch {
+    return {
+      summary: "Prep brief unavailable right now.",
+      attendees: [],
+      recentEmails: [],
+      openQuestions: [],
+      talkingPoints: [],
+    };
+  }
 }
 
-export async function generateContactSummary(snippets: string[]): Promise<string> {
-  const model = getModel('fast');
-  const content = snippets.join('\n');
-  const input = `<email_content>${content}</email_content>`;
-
-  const { text } = await generateText({
-    model,
-    system: prompts.contactRelationship,
-    prompt: input,
-    maxOutputTokens: 60,
-  });
-
-  return text;
+export async function generateContactSummary(snippets: string[], options?: { userId?: string }) {
+  try {
+    const { text } = await executeTextTask(wrapEmailContent(snippets.join("\n")), {
+      userId: options?.userId,
+      capability: "fast",
+      prompt: prompts.contactRelationship,
+    });
+    return text;
+  } catch {
+    return "No relationship summary available yet.";
+  }
 }
 
 async function vectorSearchInternal(userId: string, query: string) {
-  const queryEmbedding = await generateEmbedding(query);
+  const queryEmbedding = await generateEmbedding(query, { userId });
   const embeddingStr = JSON.stringify(queryEmbedding);
 
   return db.query.emails.findMany({
@@ -256,65 +630,54 @@ async function vectorSearchInternal(userId: string, query: string) {
       eq(emails.userId, userId),
       eq(emails.is_archived, false),
       eq(emails.is_deleted, false),
-      isNotNull(emails.embedding)
+      isNotNull(emails.embedding),
     ),
     extras: {
-      similarity: sql<number>`1 - (${emails.embedding} <=> ${embeddingStr})`.as('similarity'),
+      similarity: sql<number>`1 - (${emails.embedding} <=> ${embeddingStr})`.as("similarity"),
     },
     orderBy: sql`${emails.embedding} <=> ${embeddingStr} ASC`,
     limit: 10,
   });
 }
 
-export async function streamAgentResponse(
-  userId: string,
-  sessionId: string,
-  messages: { role: 'user' | 'assistant'; content: string }[],
-  hitlInterceptor: (action: any) => Promise<boolean>
-) {
-  // Build our custom tools that wrap HITL
-  const aethraTools: any = {
+function buildAgentTools(userId: string, hitlInterceptor: (action: unknown) => Promise<boolean>) {
+  return {
     searchEmails: tool({
-      description: 'Search emails semantically using local search',
+      description: "Search emails semantically using local search",
       parameters: z.object({ query: z.string() }),
       execute: async ({ query }: { query: string }) => {
-        // Use our pgvector search — NOT Corsair for search
-        // Filters out ai_triage_skipped emails (Privacy Gate respected)
         const results = await vectorSearchInternal(userId, query);
         return results
-          .filter(e => !e.ai_triage_skipped)
-          .map(e => ({
-            id: e.id,
-            subject: e.subject,
-            from: e.from_name || e.from_address,
-            // Wrap in XML tags — prompt injection defense
-            snippet: '<email_content>' + e.snippet + '</email_content>',
+          .filter((email) => !email.ai_triage_skipped)
+          .map((email) => ({
+            id: email.id,
+            subject: sanitizeOutput(email.subject ?? "", 180),
+            from: sanitizeOutput(email.from_name || email.from_address, 120),
+            snippet: wrapEmailContent(email.snippet ?? ""),
           }));
       },
     } as any),
     sendEmail: tool({
-      description: 'Send an email. ALWAYS requires user approval first.',
+      description: "Send an email. ALWAYS requires user approval first.",
       parameters: z.object({
         to: z.array(z.string().email()),
         subject: z.string(),
         body: z.string(),
       }),
-      execute: async (params: { to: string[], subject: string, body: string }) => {
-        // HITL intercept — agent parks here until approved/rejected
+      execute: async (params: { to: string[]; subject: string; body: string }) => {
         const approved = await hitlInterceptor({
-          actionType: 'send_email',
-          payload: { to: params.to, subject: params.subject },
-          // body NOT in payload sent to client — privacy
-          humanReadable: `Send to ${params.to.join(', ')}: "${params.subject}"`,
+          actionType: "send_email",
+          payload: { to: params.to, subject: sanitizeOutput(params.subject, 180) },
+          humanReadable: `Send to ${params.to.join(", ")}: "${sanitizeOutput(params.subject, 120)}"`,
         });
-        if (!approved) return { status: 'cancelled by user' };
+        if (!approved) return { status: "cancelled by user" };
         const result = await sendEmail(userId, params);
-        if (result.needsConnect) return { error: 'Gmail not connected' };
-        return { status: 'sent' };
+        if (result.needsConnect) return { error: "Gmail not connected" };
+        return { status: "sent" };
       },
     } as any),
     createCalendarEvent: tool({
-      description: 'Create a calendar event. Requires user approval.',
+      description: "Create a calendar event. Requires user approval.",
       parameters: z.object({
         title: z.string(),
         startTime: z.string(),
@@ -324,29 +687,71 @@ export async function streamAgentResponse(
         location: z.string().optional(),
         addMeetLink: z.boolean().default(true),
       }),
-      execute: async (params: { title: string, startTime: string, endTime: string, attendees: string[]; description?: string; location?: string; addMeetLink?: boolean }) => {
+      execute: async (params: { title: string; startTime: string; endTime: string; attendees: string[]; description?: string; location?: string; addMeetLink?: boolean }) => {
         const approved = await hitlInterceptor({
-          actionType: 'create_event',
+          actionType: "create_event",
           payload: {
             ...params,
-            durationMinutes: Math.max(15, Math.round((new Date(params.endTime).getTime() - new Date(params.startTime).getTime()) / 60000)),
+            title: sanitizeOutput(params.title, 180),
+            description: params.description ? sanitizeOutput(params.description, 240) : undefined,
+            durationMinutes: Math.max(
+              15,
+              Math.round((new Date(params.endTime).getTime() - new Date(params.startTime).getTime()) / 60000),
+            ),
           },
-          humanReadable: `Create "${params.title}" on ${params.startTime}`,
+          humanReadable: `Create "${sanitizeOutput(params.title, 120)}" on ${params.startTime}`,
         });
-        if (!approved) return { status: 'cancelled by user' };
+        if (!approved) return { status: "cancelled by user" };
         const result = await createCalendarEvent(userId, params);
-        if (result.needsConnect) return { error: 'Calendar not connected' };
-        return { status: 'created' };
+        if (result.needsConnect) return { error: "Calendar not connected" };
+        return { status: "created" };
       },
     } as any),
   };
+}
 
-  const result = streamText({
-    model: getModel('smart'),
-    system: prompts.agentSystem,
-    messages: messages as any, // Cast messages for type matching
-    tools: aethraTools,
-  });
+export async function streamAgentResponse(
+  userId: string,
+  _sessionId: string,
+  messages: Message[],
+  hitlInterceptor: (action: unknown) => Promise<boolean>,
+) {
+  const providerOrder = getProviderOrder("agent");
+  const openAiCandidate = providerOrder.find((provider) => provider === "openai" && getProviderApiKey(provider));
 
-  return result;
+  if (openAiCandidate) {
+    try {
+      await reserveUsage(userId);
+      const result = streamText({
+        model: openai(getModelForCapability(openAiCandidate, "agent")),
+        system: prompts.agentSystem.system,
+        messages: messages as Array<{ role: "user" | "assistant"; content: string }>,
+        tools: buildAgentTools(userId, hitlInterceptor),
+      });
+      void markProviderSuccess(openAiCandidate);
+      return result;
+    } catch (error) {
+      await markProviderFailure(openAiCandidate, error);
+    }
+  }
+
+  const lastUserMessage = messages[messages.length - 1]?.content ?? "";
+
+  try {
+    const { text } = await executeTextTask(lastUserMessage, {
+      userId,
+      capability: "smart",
+      prompt: prompts.agentSystem,
+    });
+
+    return {
+      textStream: createSingleChunkStream(text),
+    };
+  } catch {
+    return {
+      textStream: createSingleChunkStream(
+        "AI assistance is temporarily unavailable. You can still use Inbox, Calendar, and manual actions safely.",
+      ),
+    };
+  }
 }
