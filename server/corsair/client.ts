@@ -509,39 +509,38 @@ function isAuthError(err: any): boolean {
 }
 
 export async function disconnectIntegration(userId: string, integrationId: string) {
-  const integration = await db.query.corsairIntegrations.findFirst({
-    where: eq(corsairIntegrations.name, integrationId),
-    columns: { id: true, name: true },
-  })
+  try {
+    const integration = await db.query.corsairIntegrations.findFirst({
+      where: eq(corsairIntegrations.name, integrationId),
+      columns: { id: true, name: true },
+    })
 
-  if (!integration) {
-    return { success: false, reason: 'integration_not_found' as const }
-  }
+    if (!integration) {
+      return { success: false, reason: 'integration_not_found' as const }
+    }
 
-  const account = await db.query.corsairAccounts.findFirst({
-    where: and(eq(corsairAccounts.tenantId, userId), eq(corsairAccounts.integrationId, integration.id)),
-    columns: { id: true },
-  })
+    const account = await db.query.corsairAccounts.findFirst({
+      where: and(eq(corsairAccounts.tenantId, userId), eq(corsairAccounts.integrationId, integration.id)),
+      columns: { id: true },
+    })
 
-  if (!account) {
+    if (account) {
+      await db.delete(corsairEntities).where(eq(corsairEntities.accountId, account.id))
+      await db.delete(corsairEvents).where(eq(corsairEvents.accountId, account.id))
+      await db.delete(corsairAccounts).where(eq(corsairAccounts.id, account.id))
+    }
+
     await saveSafeUserSettings(userId, {
       ...(integrationId === 'gmail' ? { gmailConnected: false } : {}),
       ...(integrationId === 'googlecalendar' ? { calendarConnected: false } : {}),
     })
 
-    return { success: true, revoked: false }
+    return { success: true, revoked: Boolean(account) }
+  } catch {
+    console.error('[disconnectIntegration] Failed to disconnect integration', {
+      integrationId,
+      userId: userId.slice(0, 8),
+    })
+    return { success: false, reason: 'disconnect_failed' as const }
   }
-
-  await db.transaction(async (tx) => {
-    await tx.delete(corsairEntities).where(eq(corsairEntities.accountId, account.id))
-    await tx.delete(corsairEvents).where(eq(corsairEvents.accountId, account.id))
-    await tx.delete(corsairAccounts).where(eq(corsairAccounts.id, account.id))
-  })
-
-  await saveSafeUserSettings(userId, {
-    ...(integrationId === 'gmail' ? { gmailConnected: false } : {}),
-    ...(integrationId === 'googlecalendar' ? { calendarConnected: false } : {}),
-  })
-
-  return { success: true, revoked: true }
 }

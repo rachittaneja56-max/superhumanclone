@@ -32,7 +32,10 @@ async function disconnectAndRefresh(integration: 'gmail' | 'googlecalendar', red
   const userId = session.userId
   if (!userId) return
 
-  await disconnectIntegration(userId, integration)
+  const result = await disconnectIntegration(userId, integration)
+  if (!result.success) {
+    throw new Error(result.reason)
+  }
   await saveSafeUserSettings(userId, {
     ...(integration === 'gmail' ? { gmailConnected: false } : {}),
     ...(integration === 'googlecalendar' ? { calendarConnected: false } : {}),
@@ -61,8 +64,17 @@ export async function disconnectAll() {
   const userId = session.userId
   if (!userId) return
 
-  await disconnectIntegration(userId, 'gmail')
-  await disconnectIntegration(userId, 'googlecalendar')
+  const [gmailResult, calendarResult] = await Promise.all([
+    disconnectIntegration(userId, 'gmail'),
+    disconnectIntegration(userId, 'googlecalendar'),
+  ])
+
+  if (!gmailResult.success) {
+    throw new Error(gmailResult.reason)
+  }
+  if (!calendarResult.success) {
+    throw new Error(calendarResult.reason)
+  }
 
   await saveSafeUserSettings(userId, {
     gmailConnected: false,
