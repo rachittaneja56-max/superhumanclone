@@ -1,6 +1,7 @@
 import { OAuth2RequestError } from "oslo/oauth2";
 import { assertGoogleOAuthConfig, createGoogleOAuthClient } from "@/lib/oauth";
 import { isFixedSuperadminEmail } from "@/server/admin/access-utils";
+import { getUsersColumnPresence } from "@/server/db/users-compat";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -123,6 +124,7 @@ export async function GET(request: Request) {
 
     let userId: string;
     try {
+      const columns = await getUsersColumnPresence();
       const isSuperadmin = isFixedSuperadminEmail(googleUser.email);
       const existingUsers = await db
         .select({
@@ -136,47 +138,14 @@ export async function GET(request: Request) {
 
       if (!existingUser) {
         userId = crypto.randomUUID();
-        if (isSuperadmin) {
-          try {
-            await db.execute(sql`
-              insert into "users" ("id", "email", "name", "image", "role", "isAdmin")
-              values (
-                ${userId},
-                ${googleUser.email},
-                ${googleUser.name},
-                ${googleUser.picture},
-                'superadmin',
-                true
-              )
-            `);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : "";
-            if (!message.includes(`column "role" does not exist`)) {
-              throw error;
-            }
-
-            await db.execute(sql`
-              insert into "users" ("id", "email", "name", "image", "isAdmin")
-              values (
-                ${userId},
-                ${googleUser.email},
-                ${googleUser.name},
-                ${googleUser.picture},
-                true
-              )
-            `);
-          }
-        } else {
-          await db.execute(sql`
-            insert into "users" ("id", "email", "name", "image")
-            values (
-              ${userId},
-              ${googleUser.email},
-              ${googleUser.name},
-              ${googleUser.picture}
-            )
-          `);
-        }
+        await db.insert(users).values({
+          id: userId,
+          email: googleUser.email,
+          name: googleUser.name,
+          image: googleUser.picture,
+          ...(isSuperadmin && columns.hasRole ? { role: "superadmin" as const } : {}),
+          ...(isSuperadmin && columns.hasIsAdmin ? { isAdmin: true } : {}),
+        });
 
         const { ensureTenantProvisioned } = await import('@/server/corsair/provision');
         await ensureTenantProvisioned(userId).catch((error) =>
@@ -187,41 +156,12 @@ export async function GET(request: Request) {
         );
       } else {
         userId = existingUser.id;
-        if (isSuperadmin) {
-          try {
-            await db.execute(sql`
-              update "users"
-              set
-                "name" = ${googleUser.name},
-                "image" = ${googleUser.picture},
-                "role" = 'superadmin',
-              "isAdmin" = true
-              where "id" = ${userId}
-            `);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : "";
-            if (!message.includes(`column "role" does not exist`)) {
-              throw error;
-            }
-
-            await db.execute(sql`
-              update "users"
-              set
-                "name" = ${googleUser.name},
-                "image" = ${googleUser.picture},
-              "isAdmin" = true
-              where "id" = ${userId}
-            `);
-          }
-        } else {
-          await db.execute(sql`
-            update "users"
-            set
-              "name" = ${googleUser.name},
-              "image" = ${googleUser.picture}
-            where "id" = ${userId}
-          `);
-        }
+        await db.update(users).set({
+          name: googleUser.name,
+          image: googleUser.picture,
+          ...(isSuperadmin && columns.hasRole ? { role: "superadmin" as const } : {}),
+          ...(isSuperadmin && columns.hasIsAdmin ? { isAdmin: true } : {}),
+        }).where(eq(users.id, userId));
       }
 
       await ensureUserSettings(userId);

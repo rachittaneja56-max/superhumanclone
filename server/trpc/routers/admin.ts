@@ -1,8 +1,8 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 
 import { getUserAdminState } from "@/server/admin/access";
-import { FIXED_SUPERADMIN_EMAIL, normalizeEmail, resolveUserRole } from "@/server/admin/access-utils";
+import { FIXED_SUPERADMIN_EMAIL, normalizeEmail, resolveAdminAccess, resolveUserRole } from "@/server/admin/access-utils";
 import { ADMIN_ACCESS_ID, ADMIN_ACCESS_PASSWORD } from "@/server/admin/credentials";
 import { getPlanConfig, PLAN_CONFIGS } from "@/server/billing/plans";
 import { getUsage, resetUsage } from "@/server/billing/usage";
@@ -10,6 +10,7 @@ import { prompts } from "@/server/ai/prompts";
 import { sanitisePayload } from "@/lib/sanitise-payload";
 import { getSession, setAdminUnlocked } from "@/lib/auth";
 import { auditLogs, agentSessions, hitlActions, users } from "@/server/db/schema";
+import { getUsersColumnPresence } from "@/server/db/users-compat";
 import {
   changeUserPlanSchema,
   demoteUserToUserByEmailSchema,
@@ -75,6 +76,52 @@ async function logRoleAudit(ctx: { db: any; userId: string }, details: {
   }
 }
 
+async function getSafeUserLookupColumns() {
+  const columns = await getUsersColumnPresence();
+  return {
+    id: true,
+    email: true,
+    ...(columns.hasRole ? { role: true } : {}),
+    ...(columns.hasIsAdmin ? { isAdmin: true } : {}),
+  } as const;
+}
+
+async function getSafeAdminDashboardColumns() {
+  const columns = await getUsersColumnPresence();
+  return {
+    id: true,
+    name: true,
+    email: true,
+    ...(columns.hasRole ? { role: true } : {}),
+    ...(columns.hasPlan ? { plan: true } : {}),
+    ...(columns.hasIsAdmin ? { isAdmin: true } : {}),
+    ...(columns.hasIsFlagged ? { isFlagged: true } : {}),
+    ...(columns.hasAiDisabled ? { aiDisabled: true } : {}),
+    createdAt: true,
+  } as const;
+}
+
+async function updateUserAccessColumns(ctx: { db: any }, userId: string, role: "user" | "admin" | "superadmin") {
+  const columns = await getUsersColumnPresence();
+  const setValues: Record<string, unknown> = {};
+
+  if (columns.hasRole) {
+    setValues.role = role;
+  }
+  if (columns.hasIsAdmin) {
+    setValues.isAdmin = role !== "user";
+  }
+
+  if (Object.keys(setValues).length === 0) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: "Role columns are not migrated yet",
+    });
+  }
+
+  await ctx.db.update(users).set(setValues).where(eq(users.id, userId));
+}
+
 export const adminRouter = router({
   unlockDashboard: protectedProcedure
     .input(unlockAdminDashboardSchema)
@@ -94,56 +141,21 @@ export const adminRouter = router({
     .query(async ({ ctx, input }) => {
       const adminState = await requireAdmin(ctx.userId!);
       await requireAdminUnlock();
-
-      let userRows: Array<{
+      const userRows = await ctx.db.query.users.findMany({
+        columns: await getSafeAdminDashboardColumns(),
+        orderBy: [desc(users.createdAt)],
+        limit: input.limit,
+      }) as Array<{
         id: string;
         name: string | null;
         email: string;
         role?: "user" | "admin" | "superadmin" | null;
-        plan: "free" | "pro" | "team";
-        isAdmin: boolean;
-        isFlagged: boolean;
-        aiDisabled: boolean;
+        plan?: "free" | "pro" | "team";
+        isAdmin?: boolean;
+        isFlagged?: boolean;
+        aiDisabled?: boolean;
         createdAt: Date | null;
       }>;
-
-      try {
-        userRows = await ctx.db.query.users.findMany({
-          columns: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            plan: true,
-            isAdmin: true,
-            isFlagged: true,
-            aiDisabled: true,
-            createdAt: true,
-          },
-          orderBy: [desc(users.createdAt)],
-          limit: input.limit,
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (!message.includes(`column "role" does not exist`)) {
-          throw error;
-        }
-
-        userRows = await ctx.db.query.users.findMany({
-          columns: {
-            id: true,
-            name: true,
-            email: true,
-            plan: true,
-            isAdmin: true,
-            isFlagged: true,
-            aiDisabled: true,
-            createdAt: true,
-          },
-          orderBy: [desc(users.createdAt)],
-          limit: input.limit,
-        });
-      }
 
       const now = new Date();
       const providerDate = now.toISOString().slice(0, 10);
@@ -188,9 +200,9 @@ export const adminRouter = router({
             email: user.email,
             role: resolveUserRole({ email: user.email, role: user.role, isAdmin: user.isAdmin }),
             plan: getPlanConfig(user.plan).id,
-            isAdmin: user.isAdmin,
-            isFlagged: user.isFlagged,
-            aiDisabled: user.aiDisabled,
+            isAdmin: resolveAdminAccess({ email: user.email, role: user.role, isAdmin: user.isAdmin }),
+            isFlagged: user.isFlagged ?? false,
+            aiDisabled: user.aiDisabled ?? false,
             createdAt: user.createdAt,
             aiUsage,
             triageUsage,
@@ -249,6 +261,10 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       await requireAdmin(ctx.userId!);
       await requireAdminUnlock();
+      const columns = await getUsersColumnPresence();
+      if (!columns.hasPlan) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Plan column is not migrated yet" });
+      }
       await ctx.db.update(users).set({ plan: input.plan }).where(eq(users.id, input.userId));
       return { updated: true };
     }),
@@ -258,6 +274,10 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       await requireAdmin(ctx.userId!);
       await requireAdminUnlock();
+      const columns = await getUsersColumnPresence();
+      if (!columns.hasIsFlagged) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Flag column is not migrated yet" });
+      }
       await ctx.db.update(users).set({ isFlagged: input.flagged }).where(eq(users.id, input.userId));
       return { updated: true };
     }),
@@ -267,6 +287,10 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       await requireAdmin(ctx.userId!);
       await requireAdminUnlock();
+      const columns = await getUsersColumnPresence();
+      if (!columns.hasAiDisabled) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "AI access column is not migrated yet" });
+      }
       await ctx.db.update(users).set({ aiDisabled: !input.enabled }).where(eq(users.id, input.userId));
       return { updated: true };
     }),
@@ -288,40 +312,17 @@ export const adminRouter = router({
       await requireAdminUnlock();
 
       const targetEmail = normalizeEmail(input.email);
-      let targetUser:
+      const targetUser = await ctx.db.query.users.findFirst({
+        where: sql`lower(${users.email}) = ${targetEmail}`,
+        columns: await getSafeUserLookupColumns(),
+      }) as
         | {
             id: string;
             email: string;
             role?: "user" | "admin" | "superadmin" | null;
-            isAdmin: boolean;
+            isAdmin?: boolean;
           }
         | undefined;
-
-      try {
-        targetUser = await ctx.db.query.users.findFirst({
-          where: sql`lower(${users.email}) = ${targetEmail}`,
-          columns: {
-            id: true,
-            email: true,
-            role: true,
-            isAdmin: true,
-          },
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (!message.includes(`column "role" does not exist`)) {
-          throw error;
-        }
-
-        targetUser = await ctx.db.query.users.findFirst({
-          where: sql`lower(${users.email}) = ${targetEmail}`,
-          columns: {
-            id: true,
-            email: true,
-            isAdmin: true,
-          },
-        });
-      }
 
       if (!targetUser) {
         throw new TRPCError({ code: "NOT_FOUND", message: "User not found for that email" });
@@ -337,20 +338,7 @@ export const adminRouter = router({
         return { updated: true, role: "superadmin" as const };
       }
 
-      try {
-        await ctx.db.update(users)
-          .set({ role: "admin", isAdmin: true })
-          .where(eq(users.id, targetUser.id));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (!message.includes(`column "role" does not exist`)) {
-          throw error;
-        }
-
-        await ctx.db.update(users)
-          .set({ isAdmin: true })
-          .where(eq(users.id, targetUser.id));
-      }
+      await updateUserAccessColumns(ctx, targetUser.id, "admin");
 
       await logRoleAudit({
         db: ctx.db,
@@ -378,40 +366,17 @@ export const adminRouter = router({
         throw new TRPCError({ code: "FORBIDDEN", message: "Fixed superadmin cannot be demoted" });
       }
 
-      let targetUser:
+      const targetUser = await ctx.db.query.users.findFirst({
+        where: sql`lower(${users.email}) = ${targetEmail}`,
+        columns: await getSafeUserLookupColumns(),
+      }) as
         | {
             id: string;
             email: string;
             role?: "user" | "admin" | "superadmin" | null;
-            isAdmin: boolean;
+            isAdmin?: boolean;
           }
         | undefined;
-
-      try {
-        targetUser = await ctx.db.query.users.findFirst({
-          where: sql`lower(${users.email}) = ${targetEmail}`,
-          columns: {
-            id: true,
-            email: true,
-            role: true,
-            isAdmin: true,
-          },
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (!message.includes(`column "role" does not exist`)) {
-          throw error;
-        }
-
-        targetUser = await ctx.db.query.users.findFirst({
-          where: sql`lower(${users.email}) = ${targetEmail}`,
-          columns: {
-            id: true,
-            email: true,
-            isAdmin: true,
-          },
-        });
-      }
 
       if (!targetUser) {
         throw new TRPCError({ code: "NOT_FOUND", message: "User not found for that email" });
@@ -423,20 +388,7 @@ export const adminRouter = router({
         isAdmin: targetUser.isAdmin,
       });
 
-      try {
-        await ctx.db.update(users)
-          .set({ role: "user", isAdmin: false })
-          .where(eq(users.id, targetUser.id));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (!message.includes(`column "role" does not exist`)) {
-          throw error;
-        }
-
-        await ctx.db.update(users)
-          .set({ isAdmin: false })
-          .where(eq(users.id, targetUser.id));
-      }
+      await updateUserAccessColumns(ctx, targetUser.id, "user");
 
       await logRoleAudit({
         db: ctx.db,

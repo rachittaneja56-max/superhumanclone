@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { resolveAdminAccess } from "@/server/admin/access-utils";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
+import { getUsersColumnPresence } from "@/server/db/users-compat";
 import { getPlanConfig } from "./plans";
 import { shouldBlockAiUsage } from "./policy-utils";
 
@@ -29,46 +30,27 @@ export async function getUserBillingPolicy(userId?: string): Promise<UserBilling
     };
   }
 
-  let user:
+  const columns = await getUsersColumnPresence();
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: {
+      email: true,
+      ...(columns.hasPlan ? { plan: true } : {}),
+      ...(columns.hasAiDisabled ? { aiDisabled: true } : {}),
+      ...(columns.hasIsFlagged ? { isFlagged: true } : {}),
+      ...(columns.hasRole ? { role: true } : {}),
+      ...(columns.hasIsAdmin ? { isAdmin: true } : {}),
+    },
+  }) as
     | {
-        plan: "free" | "pro" | "team";
-        aiDisabled: boolean;
-        isFlagged: boolean;
+        plan?: "free" | "pro" | "team";
+        aiDisabled?: boolean;
+        isFlagged?: boolean;
         email: string;
         role?: "user" | "admin" | "superadmin" | null;
-        isAdmin: boolean;
+        isAdmin?: boolean;
       }
     | undefined;
-
-  try {
-    user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: {
-        plan: true,
-        aiDisabled: true,
-        isFlagged: true,
-        email: true,
-        role: true,
-        isAdmin: true,
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (!message.includes(`column "role" does not exist`)) {
-      throw error;
-    }
-
-    user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: {
-        plan: true,
-        aiDisabled: true,
-        isFlagged: true,
-        email: true,
-        isAdmin: true,
-      },
-    });
-  }
 
   const plan = (user?.plan === "pro" || user?.plan === "team" ? user.plan : "free") as "free" | "pro" | "team";
   const config = getPlanConfig(plan);

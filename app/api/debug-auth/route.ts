@@ -1,5 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { db } from '@/server/db'
+import { getUsersColumnPresence } from '@/server/db/users-compat'
 import { NextResponse } from 'next/server'
 
 export async function GET(req: Request) {
@@ -9,33 +10,17 @@ export async function GET(req: Request) {
 
     let dbUser = null
     if (userId) {
-      try {
-        dbUser = await db.query.users.findFirst({
-          where: (users, { eq }) => eq(users.id, userId),
-          columns: {
-            id: true,
-            email: true,
-            name: true,
-            role: true,
-            isAdmin: true,
-          },
-        })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : ''
-        if (!message.includes(`column "role" does not exist`)) {
-          throw error
-        }
-
-        dbUser = await db.query.users.findFirst({
-          where: (users, { eq }) => eq(users.id, userId),
-          columns: {
-            id: true,
-            email: true,
-            name: true,
-            isAdmin: true,
-          },
-        })
-      }
+      const columns = await getUsersColumnPresence()
+      dbUser = await db.query.users.findFirst({
+        where: (users, { eq }) => eq(users.id, userId),
+        columns: {
+          id: true,
+          email: true,
+          name: true,
+          ...(columns.hasRole ? { role: true } : {}),
+          ...(columns.hasIsAdmin ? { isAdmin: true } : {}),
+        },
+      })
     }
 
     return NextResponse.json({

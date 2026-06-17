@@ -21,8 +21,12 @@ export function resolveUserRole(params: {
     return "superadmin";
   }
 
-  if (params.role === "admin" || params.role === "superadmin") {
-    return params.role === "superadmin" ? "admin" : params.role;
+  if (params.role === "superadmin") {
+    return "superadmin";
+  }
+
+  if (params.role === "admin") {
+    return "admin";
   }
 
   if (params.isAdmin) {

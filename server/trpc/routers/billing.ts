@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { getBillingMode, getPlanConfig, isRazorpayConfigured, PLAN_CONFIGS } from "@/server/billing/plans";
 import { getUsage } from "@/server/billing/usage";
 import { users } from "@/server/db/schema";
+import { getUsersColumnPresence } from "@/server/db/users-compat";
 import { getBillingOverviewSchema, simulatePlanChangeSchema } from "@/lib/schemas";
 import { protectedProcedure, router } from "../trpc";
 
@@ -11,15 +12,21 @@ export const billingRouter = router({
   getOverview: protectedProcedure
     .input(getBillingOverviewSchema)
     .query(async ({ ctx }) => {
+      const columns = await getUsersColumnPresence();
       const user = await ctx.db.query.users.findFirst({
         where: eq(users.id, ctx.userId!),
         columns: {
           id: true,
-          plan: true,
-          aiDisabled: true,
-          isFlagged: true,
+          ...(columns.hasPlan ? { plan: true } : {}),
+          ...(columns.hasAiDisabled ? { aiDisabled: true } : {}),
+          ...(columns.hasIsFlagged ? { isFlagged: true } : {}),
         },
-      });
+      }) as {
+        id: string;
+        plan?: "free" | "pro" | "team";
+        aiDisabled?: boolean;
+        isFlagged?: boolean;
+      } | undefined;
 
       if (!user) {
         throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
@@ -35,8 +42,8 @@ export const billingRouter = router({
         mode: getBillingMode(),
         razorpayReady: isRazorpayConfigured(),
         currentPlan: planConfig.id,
-        aiDisabled: user.aiDisabled,
-        isFlagged: user.isFlagged,
+        aiDisabled: user.aiDisabled ?? false,
+        isFlagged: user.isFlagged ?? false,
         usage: {
           ai: aiUsage,
           triage: triageUsage,
@@ -60,6 +67,14 @@ export const billingRouter = router({
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: "Billing simulation is only available in dummy mode.",
+        });
+      }
+
+      const columns = await getUsersColumnPresence();
+      if (!columns.hasPlan) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Plan column is not migrated yet.",
         });
       }
 

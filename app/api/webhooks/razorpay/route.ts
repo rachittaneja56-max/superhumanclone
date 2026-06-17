@@ -1,5 +1,6 @@
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
+import { getUsersColumnPresence } from "@/server/db/users-compat";
 import { verifyRazorpaySignature } from "@/lib/razorpay";
 import { getBillingMode, isRazorpayConfigured } from "@/server/billing/plans";
 import { eq } from "drizzle-orm";
@@ -33,6 +34,11 @@ export async function POST(request: Request) {
 
   if (!notes?.userId || !notes.plan) {
     return Response.json({ ok: true, ignored: true });
+  }
+
+  const columns = await getUsersColumnPresence();
+  if (!columns.hasPlan) {
+    return Response.json({ ok: true, ignored: true, reason: "plan_column_missing" });
   }
 
   await db.update(users).set({ plan: notes.plan }).where(eq(users.id, notes.userId));

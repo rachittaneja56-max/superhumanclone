@@ -4,42 +4,26 @@ import { resolveAdminAccess, resolveUserRole } from "./access-utils";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { getUsersColumnPresence } from "@/server/db/users-compat";
 
 export async function getUserAdminState(userId: string) {
-  let user:
+  const columns = await getUsersColumnPresence();
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: {
+      id: true,
+      email: true,
+      ...(columns.hasIsAdmin ? { isAdmin: true } : {}),
+      ...(columns.hasRole ? { role: true } : {}),
+    },
+  }) as
     | {
         id: string;
         email: string;
-        isAdmin: boolean;
+        isAdmin?: boolean;
         role?: "user" | "admin" | "superadmin" | null;
       }
     | undefined;
-
-  try {
-    user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: {
-        id: true,
-        email: true,
-        isAdmin: true,
-        role: true,
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    if (!message.includes(`column "role" does not exist`)) {
-      throw error;
-    }
-
-    user = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-      columns: {
-        id: true,
-        email: true,
-        isAdmin: true,
-      },
-    });
-  }
 
   if (!user) {
     return { role: "user" as const, isAdmin: false, isSuperadmin: false };
