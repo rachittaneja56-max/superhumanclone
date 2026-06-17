@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { Archive, Forward, MailCheck, MailOpen, Reply, ReplyAll, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, Calendar, Forward, MailCheck, MailOpen, Reply, ReplyAll, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { EmailThreadClientItem } from "@/lib/email-client";
+import { SmartSchedulerModal } from "@/components/calendar/SmartSchedulerModal";
 
 export function ThreadView({
   threadId,
@@ -42,6 +43,7 @@ export function ThreadView({
     onSuccess: () => toast.success("Restored from trash"),
     onError: () => toast.error("Failed to restore"),
   });
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const typedThread = (thread as EmailThreadClientItem[] | undefined) ?? [];
   const firstEmailId = typedThread[0]?.id;
@@ -130,6 +132,7 @@ export function ThreadView({
           <ActionButton onClick={() => handleReplyCompose("reply")} icon={<Reply className="h-4 w-4" />} label="Reply" />
           <ActionButton onClick={() => handleReplyCompose("replyAll")} icon={<ReplyAll className="h-4 w-4" />} label="Reply all" />
           <ActionButton onClick={() => handleReplyCompose("forward")} icon={<Forward className="h-4 w-4" />} label="Forward" />
+          <ActionButton onClick={() => setScheduleOpen(true)} icon={<Calendar className="h-4 w-4" />} label="Schedule this" />
           {mailbox === "trash" ? (
             <ActionButton
               onClick={() => restoreMutation.mutate({ emailId: primaryEmailId })}
@@ -178,6 +181,12 @@ export function ThreadView({
           ))}
         </div>
       </div>
+
+      <SmartSchedulerModal
+        isOpen={scheduleOpen}
+        onClose={() => setScheduleOpen(false)}
+        threadId={threadId}
+      />
     </div>
   );
 }

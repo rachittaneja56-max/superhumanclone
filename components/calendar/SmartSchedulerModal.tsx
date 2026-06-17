@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import React, { useEffect, useMemo, useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Calendar as CalendarIcon, Clock3, Link2, Users } from "lucide-react";
 
 export function SmartSchedulerModal({
   isOpen,
@@ -21,8 +22,11 @@ export function SmartSchedulerModal({
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [duration, setDuration] = useState("30");
-  const [participants, setParticipants] = useState<string[]>([]);
+  const [attendees, setAttendees] = useState("");
+  const [location, setLocation] = useState("");
+  const [description, setDescription] = useState("");
   const [confidence, setConfidence] = useState<number | null>(null);
+  const [addMeetLink, setAddMeetLink] = useState(true);
 
   const smartFillMutation = trpc.calendar.smartFillFromThread.useMutation();
   const createEventMutation = trpc.calendar.createEvent.useMutation();
@@ -34,7 +38,7 @@ export function SmartSchedulerModal({
         {
           onSuccess: (data) => {
             setTitle(data.suggestedTitle || "Sync");
-            
+
             if (data.suggestedTime) {
               const d = new Date(data.suggestedTime);
               if (!isNaN(d.getTime())) {
@@ -42,10 +46,12 @@ export function SmartSchedulerModal({
                 setTime(d.toTimeString().slice(0, 5));
               }
             }
-            
+
             setDuration(data.suggestedDuration ? String(data.suggestedDuration) : "30");
-            setParticipants(data.participants || []);
+            setAttendees((data.participants || []).join(", "));
+            setDescription(data.suggestedDescription || "");
             setConfidence(data.confidence);
+            setAddMeetLink(true);
           },
           onError: (err) => {
             if (err.data?.code === "FORBIDDEN") {
@@ -61,113 +67,198 @@ export function SmartSchedulerModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, threadId]);
 
+  const startDateTime = useMemo(() => {
+    if (!date || !time) return null;
+    const value = new Date(`${date}T${time}:00`);
+    return Number.isNaN(value.getTime()) ? null : value;
+  }, [date, time]);
+
+  const endDateTime = useMemo(() => {
+    if (!startDateTime) return null;
+    const mins = Number.parseInt(duration, 10);
+    if (!Number.isFinite(mins)) return null;
+    return new Date(startDateTime.getTime() + mins * 60_000);
+  }, [duration, startDateTime]);
+
+  const previewAttendees = attendees
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!date || !time) {
+    if (!startDateTime || !endDateTime) {
       toast.error("Date and time are required.");
       return;
     }
 
-    const startDateTime = new Date(`${date}T${time}:00`);
-    const endDateTime = new Date(startDateTime.getTime() + parseInt(duration) * 60000);
-
     try {
       await createEventMutation.mutateAsync({
-        title,
+        title: title.trim(),
         startTime: startDateTime.toISOString(),
         endTime: endDateTime.toISOString(),
-        attendees: participants,
+        attendees: previewAttendees,
+        description: description.trim() || undefined,
+        location: location.trim() || undefined,
+        addMeetLink,
       });
       toast.success("Event scheduled successfully");
       onClose();
-    } catch (err) {
+    } catch {
       toast.error("Failed to schedule event.");
     }
   };
 
-  const getConfidenceBadge = () => {
+  const confidenceBadge = useMemo(() => {
     if (confidence === null) return null;
     if (confidence >= 0.7) {
-      return <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-green-500/10 text-green-600">High Confidence</span>;
+      return <span className="rounded-full bg-green-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-green-500">High confidence</span>;
     }
     if (confidence >= 0.4) {
-      return <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-amber-500/10 text-amber-600">Medium Confidence</span>;
+      return <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-500">Medium confidence</span>;
     }
-    return <span className="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-red-500/10 text-red-600">Low Confidence</span>;
-  };
+    return <span className="rounded-full bg-red-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-red-500">Low confidence</span>;
+  }, [confidence]);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md font-sans">
+      <DialogContent className="sm:max-w-2xl font-sans">
         <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle>Schedule from Thread</DialogTitle>
-            {getConfidenceBadge()}
+          <div className="flex items-center justify-between gap-3">
+            <DialogTitle>Schedule from thread</DialogTitle>
+            {confidenceBadge}
           </div>
+          <DialogDescription>
+            Review the details before creating the event.
+          </DialogDescription>
         </DialogHeader>
 
         {smartFillMutation.isPending ? (
-          <div className="p-6 flex flex-col items-center justify-center space-y-3">
-            <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          <div className="flex flex-col items-center justify-center space-y-3 p-8">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
             <div className="text-sm text-muted-foreground animate-pulse">Analyzing thread context...</div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-muted-foreground">Title</label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div className="grid gap-4">
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-muted-foreground">Date</label>
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+                <label className="text-xs font-semibold text-muted-foreground">Title</label>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
               </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground">Date</label>
+                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground">Start time</label>
+                  <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-muted-foreground">Duration</label>
+                  <select
+                    value={duration}
+                    onChange={(e) => setDuration(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="15">15 mins</option>
+                    <option value="30">30 mins</option>
+                    <option value="45">45 mins</option>
+                    <option value="60">60 mins</option>
+                    <option value="90">90 mins</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-muted-foreground">Time</label>
-                <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} required />
+                <label className="text-xs font-semibold text-muted-foreground">Attendees</label>
+                <Input
+                  value={attendees}
+                  onChange={(e) => setAttendees(e.target.value)}
+                  placeholder="email1@domain.com, email2@domain.com"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Location</label>
+                <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Optional location" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted-foreground">Description</label>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="min-h-[9rem]"
+                  placeholder="Short summary of the meeting"
+                />
+              </div>
+
+              <label className="flex items-center gap-2 text-sm text-foreground">
+                <input
+                  type="checkbox"
+                  checked={addMeetLink}
+                  onChange={(e) => setAddMeetLink(e.target.checked)}
+                  className="h-4 w-4 rounded border-border bg-background"
+                />
+                Add Google Meet link
+              </label>
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-border bg-surface p-4">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground-subtle">Preview</div>
+              <div className="space-y-3">
+                <PreviewRow icon={<CalendarIcon className="h-4 w-4" />} label="Title" value={title || "Untitled event"} />
+                <PreviewRow
+                  icon={<Clock3 className="h-4 w-4" />}
+                  label="Time"
+                  value={startDateTime && endDateTime ? `${startDateTime.toLocaleString()} - ${endDateTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Pick a date and time"}
+                />
+                <PreviewRow icon={<Users className="h-4 w-4" />} label="Attendees" value={previewAttendees.length ? previewAttendees.join(", ") : "No attendees"} />
+                <PreviewRow icon={<Link2 className="h-4 w-4" />} label="Meet" value={addMeetLink ? "Will generate a Google Meet link" : "Meet link disabled"} />
+                <div className="rounded-xl border border-border bg-background p-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground-subtle">Description</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground-muted">
+                    {description.trim() || "No description yet."}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-muted-foreground">Duration (mins)</label>
-              <select 
-                value={duration} 
-                onChange={(e) => setDuration(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="15">15 mins</option>
-                <option value="30">30 mins</option>
-                <option value="45">45 mins</option>
-                <option value="60">60 mins</option>
-                <option value="90">90 mins</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-muted-foreground">Attendees</label>
-              <div className="flex flex-wrap gap-2 p-2 border border-border rounded-md bg-muted/20 min-h-10">
-                {participants.length > 0 ? participants.map((p) => (
-                  <span key={p} className="px-2 py-1 bg-surface border border-border rounded-md text-xs">
-                    {p}
-                  </span>
-                )) : (
-                  <span className="text-xs text-muted-foreground self-center">No attendees found.</span>
-                )}
+            <DialogFooter className="lg:col-span-2 gap-2 sm:justify-between">
+              <div>
+                <Button type="button" variant="outline" onClick={onClose} disabled={createEventMutation.isPending}>
+                  Cancel
+                </Button>
               </div>
-            </div>
-
-            <div className="pt-4 flex justify-end space-x-2">
-              <Button type="button" variant="ghost" onClick={onClose} disabled={createEventMutation.isPending}>
-                Cancel
-              </Button>
               <Button type="submit" disabled={createEventMutation.isPending}>
-                {createEventMutation.isPending ? "Scheduling..." : "Schedule Event"}
+                {createEventMutation.isPending ? "Creating..." : "Create event"}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function PreviewRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-background p-3">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-foreground-subtle">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-2 text-sm leading-6 text-foreground">{value}</div>
+    </div>
   );
 }

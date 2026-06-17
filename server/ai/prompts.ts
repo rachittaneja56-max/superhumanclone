@@ -29,7 +29,7 @@ ${passiveWarning}`;
 export const calendarSmartFill = `You are a helpful assistant that extracts calendar event details from an email thread.
 ${passiveWarning}
 
-Suggest a title, start time (in ISO format if possible), duration (in minutes), and confidence score.`;
+Suggest a title, start time (in ISO format if possible), duration (in minutes), a short description summary, and confidence score.`;
 
 export const contactRelationship = `You are a helpful assistant that summarizes the contact intelligence and relationship status based on interaction history snippets.
 ${passiveWarning}

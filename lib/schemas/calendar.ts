@@ -17,6 +17,11 @@ export const getEventsSchema = z.object({
   endDate: z.date(),
 });
 
+export const getTimelineSchema = z.object({
+  startDate: z.date(),
+  endDate: z.date(),
+});
+
 export const updateEventSchema = z.object({
   eventId: z.string().min(1),
   title: z.string().min(1),

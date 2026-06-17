@@ -1,9 +1,14 @@
-import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { router, protectedProcedure } from '../trpc';
 import { emails, calendarEvents, users } from '../../db/schema';
 import { smartFillFromThread } from '../../ai/provider';
-import { createCalendarEvent, deleteCalendarEvent, getCalendarEvents, updateCalendarEvent } from '../../corsair/client';
+import {
+  createCalendarEvent,
+  deleteCalendarEvent,
+  getCalendarEvents,
+  updateCalendarEvent,
+} from '../../corsair/client';
 import {
   cacheTtls,
   calendarCacheKey,
@@ -15,6 +20,7 @@ import {
   createEventSchema,
   deleteEventSchema,
   getEventsSchema,
+  getTimelineSchema,
   updateEventSchema,
 } from '@/lib/schemas';
 
@@ -31,7 +37,6 @@ function mapDbEvent(row: typeof calendarEvents.$inferSelect) {
     is_all_day: row.is_all_day,
     status: row.status,
     meetLink: null,
-    attendees: [] as string[],
   };
 }
 
@@ -73,22 +78,24 @@ async function upsertRemoteEvents(ctx: any, items: Record<string, unknown>[]) {
 
   if (rows.length === 0) return;
 
-  await ctx.db
-    .insert(calendarEvents)
-    .values(rows)
-    .onConflictDoUpdate({
-      target: calendarEvents.corsair_event_id,
-      set: {
-        title: sql`excluded.title`,
-        description: sql`excluded.description`,
-        start_time: sql`excluded.start_time`,
-        end_time: sql`excluded.end_time`,
-        location: sql`excluded.location`,
-        is_all_day: sql`excluded.is_all_day`,
-        status: sql`excluded.status`,
-        updated_at: new Date(),
-      },
-    });
+  for (const row of rows) {
+    await ctx.db
+      .insert(calendarEvents)
+      .values(row)
+      .onConflictDoUpdate({
+        target: calendarEvents.corsair_event_id,
+        set: {
+          title: sql`excluded.title`,
+          description: sql`excluded.description`,
+          start_time: sql`excluded.start_time`,
+          end_time: sql`excluded.end_time`,
+          location: sql`excluded.location`,
+          is_all_day: sql`excluded.is_all_day`,
+          status: sql`excluded.status`,
+          updated_at: new Date(),
+        },
+      });
+  }
 }
 
 function serializeEvent(row: ReturnType<typeof mapDbEvent>) {
@@ -99,15 +106,19 @@ function serializeEvent(row: ReturnType<typeof mapDbEvent>) {
   };
 }
 
+function parseRecipientList(value: string | null | undefined) {
+  return (value ?? '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 export const calendarRouter = router({
   smartFillFromThread: protectedProcedure
     .input(smartFillFromThreadSchema)
     .mutation(async ({ ctx, input }) => {
       const threadEmails = await ctx.db.query.emails.findMany({
-        where: and(
-          eq(emails.userId, ctx.userId!),
-          eq(emails.thread_id, input.threadId)
-        ),
+        where: and(eq(emails.userId, ctx.userId!), eq(emails.thread_id, input.threadId)),
         orderBy: [asc(emails.created_at)],
       });
 
@@ -115,22 +126,21 @@ export const calendarRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Thread not found' });
       }
 
-      const hasBlocked = threadEmails.some((e) => e.ai_triage_skipped);
-      if (hasBlocked) {
+      if (threadEmails.some((e) => e.ai_triage_skipped)) {
         throw new TRPCError({
           code: 'FORBIDDEN',
           message: 'Thread contains emails from privacy-protected domains. Smart Fill is unavailable.',
         });
       }
 
-      const participantSet = new Set<string>();
+      const participants = new Set<string>();
       for (const e of threadEmails) {
-        if (e.from_address) participantSet.add(e.from_address);
-        if (e.to_address) participantSet.add(e.to_address);
+        if (e.from_address) participants.add(e.from_address);
+        if (e.to_address) parseRecipientList(e.to_address).forEach((item) => participants.add(item));
       }
 
       const currentUser = await ctx.db.query.users.findFirst({ where: eq(users.id, ctx.userId!) });
-      if (currentUser?.email) participantSet.delete(currentUser.email);
+      if (currentUser?.email) participants.delete(currentUser.email);
 
       const content = threadEmails
         .map((e) => `From: ${e.from_name || e.from_address}\nSubject: ${e.subject}\n${e.snippet || ''}`)
@@ -140,8 +150,82 @@ export const calendarRouter = router({
 
       return {
         ...aiResult,
-        participants: Array.from(participantSet),
+        participants: Array.from(participants),
       };
+    }),
+
+  getTimeline: protectedProcedure
+    .input(getTimelineSchema)
+    .query(async ({ ctx, input }) => {
+      const version = Number((await ctx.redis.get<string>(calendarVersionKey(ctx.userId!))) ?? '0');
+      const cacheKey = `user:${ctx.userId}:timeline:v1:${version}:${input.startDate.toISOString()}:${input.endDate.toISOString()}`;
+      const cached = await ctx.redis.get<string>(cacheKey);
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {
+          // fall through
+        }
+      }
+
+      const [events, mails] = await Promise.all([
+        ctx.db
+          .select()
+          .from(calendarEvents)
+          .where(
+            and(
+              eq(calendarEvents.userId, ctx.userId!),
+              gte(calendarEvents.start_time, input.startDate),
+              lte(calendarEvents.start_time, input.endDate),
+            ),
+          )
+          .orderBy(asc(calendarEvents.start_time)),
+        ctx.db
+          .select({
+            id: emails.id,
+            thread_id: emails.thread_id,
+            from_name: emails.from_name,
+            from_address: emails.from_address,
+            subject: emails.subject,
+            snippet: emails.snippet,
+            is_read: emails.is_read,
+            created_at: emails.created_at,
+          })
+          .from(emails)
+          .where(
+            and(
+              eq(emails.userId, ctx.userId!),
+              eq(emails.is_deleted, false),
+              gte(emails.created_at, input.startDate),
+              lte(emails.created_at, input.endDate),
+            ),
+          )
+          .orderBy(desc(emails.created_at)),
+      ]);
+
+      const timeline = [
+        ...events.map((event) => ({
+          type: 'event' as const,
+          id: event.id,
+          time: event.start_time,
+          title: event.title,
+          subtitle: event.location || event.status,
+          attendees: [],
+          event: serializeEvent(mapDbEvent(event)),
+        })),
+        ...mails.map((mail) => ({
+          type: 'email' as const,
+          id: mail.id,
+          time: mail.created_at,
+          sender: mail.from_name || mail.from_address || 'Unknown sender',
+          subject: mail.subject || '(no subject)',
+          snippet: mail.snippet || 'No preview available.',
+          unread: !mail.is_read,
+        })),
+      ].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+      await ctx.redis.set(cacheKey, JSON.stringify(timeline), { ex: cacheTtls.calendar });
+      return timeline;
     }),
 
   getEvents: protectedProcedure

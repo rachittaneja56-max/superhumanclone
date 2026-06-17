@@ -177,6 +177,7 @@ export async function smartFillFromThread(content: string): Promise<{
   suggestedTitle: string;
   suggestedTime: string;
   suggestedDuration: number;
+  suggestedDescription: string;
   confidence: number;
 }> {
   const model = getModel('fast');
@@ -190,6 +191,7 @@ export async function smartFillFromThread(content: string): Promise<{
       suggestedTitle: z.string(),
       suggestedTime: z.string(),
       suggestedDuration: z.number(),
+      suggestedDescription: z.string(),
       confidence: z.number(),
     }),
   });

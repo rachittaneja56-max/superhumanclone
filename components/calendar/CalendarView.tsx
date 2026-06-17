@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-type ViewMode = "month" | "week" | "day";
+type ViewMode = "month" | "week" | "day" | "timeline";
+type TimelineFilter = "today" | "tomorrow" | "week";
 
 export type CalendarEvent = {
   id: string;
@@ -38,6 +39,26 @@ type EventEditorState = {
   addMeetLink: boolean;
 };
 
+type TimelineItem =
+  | {
+      type: "email";
+      id: string;
+      time: Date;
+      sender: string;
+      subject: string;
+      snippet: string;
+      unread: boolean;
+    }
+  | {
+      type: "event";
+      id: string;
+      time: Date;
+      title: string;
+      attendees: string[];
+      location?: string | null;
+      event: CalendarEvent;
+    };
+
 const HOUR_HEIGHT = 72;
 
 function parseDate(value: Date | string) {
@@ -63,11 +84,16 @@ function endOfVisibleRange(date: Date, view: ViewMode) {
 function moveDate(date: Date, view: ViewMode, direction: 1 | -1) {
   if (view === "day") return addDays(date, direction);
   if (view === "week") return direction > 0 ? addWeeks(date, 1) : subWeeks(date, 1);
+  if (view === "timeline") return addDays(date, direction);
   return direction > 0 ? addMonths(date, 1) : subMonths(date, 1);
 }
 
 function timeLabel(date: Date) {
   return format(date, "h:mm a");
+}
+
+function formatTimelineDate(date: Date) {
+  return format(date, "EEE, MMM d");
 }
 
 export function CalendarView({
@@ -79,6 +105,7 @@ export function CalendarView({
 }) {
   const utils = trpc.useUtils();
   const [view, setView] = useState<ViewMode>("month");
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("today");
   const [currentDate, setCurrentDate] = useState(() => parseDate(initialDate));
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -91,9 +118,29 @@ export function CalendarView({
     return { startDate, endDate };
   }, [currentDate, view]);
 
+  const timelineRange = useMemo(() => {
+    const base = startOfDay(currentDate);
+    if (timelineFilter === "tomorrow") {
+      const startDate = startOfDay(addDays(base, 1));
+      return { startDate, endDate: endOfDay(startDate) };
+    }
+    if (timelineFilter === "week") {
+      const startDate = startOfWeek(base, { weekStartsOn: 1 });
+      return { startDate, endDate: endOfWeek(base, { weekStartsOn: 1 }) };
+    }
+    const startDate = startOfDay(base);
+    return { startDate, endDate: endOfDay(base) };
+  }, [currentDate, timelineFilter]);
+
   const { data: rawEvents = initialEvents, isLoading, isError, refetch } = trpc.calendar.getEvents.useQuery(range, {
     initialData: initialEvents,
     placeholderData: initialEvents,
+    refetchOnWindowFocus: false,
+  });
+
+  const { data: rawTimeline = [], isFetching: isTimelineFetching } = trpc.calendar.getTimeline.useQuery(timelineRange, {
+    enabled: view === "timeline",
+    placeholderData: [],
     refetchOnWindowFocus: false,
   });
 
@@ -104,6 +151,38 @@ export function CalendarView({
       endTime: parseDate(event.endTime),
     })) as CalendarEvent[];
   }, [rawEvents]);
+
+  const timelineItems = useMemo(() => {
+    const items = (rawTimeline ?? []).map((item: any) => {
+      if (item.type === "email") {
+        return {
+          type: "email",
+          id: item.id,
+          time: new Date(item.time),
+          sender: item.sender,
+          subject: item.subject,
+          snippet: item.snippet,
+          unread: Boolean(item.unread),
+        } as TimelineItem;
+      }
+
+      return {
+        type: "event",
+        id: item.id,
+        time: new Date(item.time),
+        title: item.title,
+        attendees: Array.isArray(item.attendees) ? item.attendees : [],
+        location: item.location ?? null,
+        event: {
+          ...(item.event as CalendarEvent),
+          startTime: parseDate((item.event as CalendarEvent).startTime),
+          endTime: parseDate((item.event as CalendarEvent).endTime),
+        },
+      } as TimelineItem;
+    });
+
+    return items.sort((a: TimelineItem, b: TimelineItem) => a.time.getTime() - b.time.getTime());
+  }, [rawTimeline]);
 
   const eventsByDay = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {};
@@ -261,6 +340,20 @@ export function CalendarView({
   };
 
   const isBusy = createEventMutation.isPending || updateEventMutation.isPending || deleteEventMutation.isPending;
+  const shiftVisibleDate = (direction: 1 | -1) => {
+    if (view === "timeline") {
+      if (timelineFilter === "week") {
+        setCurrentDate((date) => (direction > 0 ? addWeeks(date, 1) : subWeeks(date, 1)));
+        return;
+      }
+      setCurrentDate((date) => addDays(date, direction));
+      return;
+    }
+
+    setCurrentDate((date) => moveDate(date, view, direction));
+  };
+
+  const hasVisibleContent = view === "timeline" ? timelineItems.length > 0 : events.length > 0;
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-4 text-foreground">
@@ -283,7 +376,7 @@ export function CalendarView({
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex overflow-hidden rounded-xl border border-border bg-background p-1">
-            {(["month", "week", "day"] as ViewMode[]).map((mode) => (
+            {(["month", "week", "day", "timeline"] as ViewMode[]).map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -293,13 +386,13 @@ export function CalendarView({
                   view === mode ? "bg-accent text-accent-foreground" : "text-foreground-muted hover:bg-surface-raised hover:text-foreground",
                 ].join(" ")}
               >
-                {mode[0].toUpperCase() + mode.slice(1)}
+                {mode === "timeline" ? "Timeline" : mode[0].toUpperCase() + mode.slice(1)}
               </button>
             ))}
           </div>
 
           <div className="inline-flex items-center gap-1 rounded-xl border border-border bg-background p-1">
-            <button type="button" onClick={() => setCurrentDate((date) => moveDate(date, view, -1))} className="rounded-lg p-2 hover:bg-surface-raised">
+            <button type="button" onClick={() => shiftVisibleDate(-1)} className="rounded-lg p-2 hover:bg-surface-raised">
               <ChevronLeft className="h-4 w-4" />
             </button>
             <button
@@ -312,7 +405,7 @@ export function CalendarView({
             >
               Today
             </button>
-            <button type="button" onClick={() => setCurrentDate((date) => moveDate(date, view, 1))} className="rounded-lg p-2 hover:bg-surface-raised">
+            <button type="button" onClick={() => shiftVisibleDate(1)} className="rounded-lg p-2 hover:bg-surface-raised">
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
@@ -322,13 +415,32 @@ export function CalendarView({
             New event
           </Button>
         </div>
+        {view === "timeline" && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(["today", "tomorrow", "week"] as TimelineFilter[]).map((filter) => (
+              <button
+                key={filter}
+                type="button"
+                onClick={() => setTimelineFilter(filter)}
+                className={[
+                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                  timelineFilter === filter
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border bg-background text-foreground-muted hover:bg-surface-raised hover:text-foreground",
+                ].join(" ")}
+              >
+                {filter === "week" ? "This week" : filter[0].toUpperCase() + filter.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {isLoading && events.length === 0 ? (
+      {((view === "timeline" && isTimelineFetching && timelineItems.length === 0) || (view !== "timeline" && isLoading && events.length === 0)) ? (
         <CalendarLoading />
       ) : isError ? (
         <CalendarError onRetry={() => void refetch()} />
-      ) : events.length === 0 ? (
+      ) : !hasVisibleContent ? (
         <CalendarEmpty onCreate={openNewEvent} />
       ) : (
         <div className="grid min-h-0 flex-1 min-w-0 gap-4 px-4 pb-4 xl:grid-cols-[minmax(0,1fr)_18rem] xl:px-6">
@@ -341,6 +453,15 @@ export function CalendarView({
                 selectedDay={selectedDay}
                 onPickDay={setSelectedDay}
                 onOpenEvent={setSelectedEvent}
+              />
+            ) : view === "timeline" ? (
+              <UnifiedTimelineFeed
+                items={timelineItems}
+                onOpenEvent={setSelectedEvent}
+                onPickDay={(day) => {
+                  setSelectedDay(day);
+                  if (day) setCurrentDate(day);
+                }}
               />
             ) : (
               <TimelineView
@@ -565,6 +686,106 @@ function TimelineView({
                 );
               })}
             </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UnifiedTimelineFeed({
+  items,
+  onOpenEvent,
+  onPickDay,
+}: {
+  items: TimelineItem[];
+  onOpenEvent: (event: CalendarEvent) => void;
+  onPickDay: (date: Date | null) => void;
+}) {
+  const grouped = useMemo(() => {
+    const buckets: Record<string, TimelineItem[]> = {};
+    for (const item of items) {
+      const key = formatTimelineDate(item.time);
+      (buckets[key] ||= []).push(item);
+    }
+    return buckets;
+  }, [items]);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b border-border px-4 py-3 text-sm text-foreground-muted">
+        Unified timeline of emails and events, sorted by time.
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="space-y-5 p-4">
+          {Object.entries(grouped).map(([day, dayItems]) => (
+            <section key={day} className="space-y-2">
+              <button
+                type="button"
+                onClick={() => onPickDay(dayItems[0]?.time ?? null)}
+                className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-foreground-subtle hover:text-foreground"
+              >
+                {day}
+              </button>
+              <div className="space-y-2">
+                {dayItems.map((item) => (
+                  <div
+                    key={`${item.type}:${item.id}`}
+                    className="rounded-2xl border border-border bg-background p-4 transition-colors hover:bg-surface-raised"
+                  >
+                    {item.type === "email" ? (
+                      <button
+                        type="button"
+                        onClick={() => onPickDay(item.time)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-foreground">{item.sender}</div>
+                            <div className="mt-1 truncate text-sm text-foreground">{item.subject}</div>
+                            <div className="mt-1 line-clamp-2 text-xs leading-5 text-foreground-muted">{item.snippet}</div>
+                          </div>
+                          <div className="shrink-0 text-xs text-foreground-subtle">
+                            {format(item.time, "h:mm a")}
+                          </div>
+                        </div>
+                        {item.unread && (
+                          <div className="mt-3 inline-flex rounded-full bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent">
+                            Unread
+                          </div>
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onOpenEvent(item.event)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-foreground">{item.title}</div>
+                            <div className="mt-1 text-sm text-foreground-muted">
+                              {item.event.is_all_day ? "All day" : `${format(item.time, "h:mm a")} - ${format(parseDate(item.event.endTime), "h:mm a")}`}
+                            </div>
+                            <div className="mt-1 line-clamp-2 text-xs leading-5 text-foreground-muted">
+                              {item.attendees.length > 0 ? item.attendees.slice(0, 3).join(", ") : "No attendees"}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-xs text-foreground-subtle">
+                            {format(item.time, "h:mm a")}
+                          </div>
+                        </div>
+                        {item.location && (
+                          <div className="mt-3 inline-flex rounded-full border border-border bg-surface px-2.5 py-1 text-[10px] font-medium text-foreground-muted">
+                            {item.location}
+                          </div>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       </div>
