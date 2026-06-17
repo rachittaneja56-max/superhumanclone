@@ -7,7 +7,13 @@ function normaliseBaseUrl(value: string | undefined | null): string | null {
   if (!trimmed) return null
 
   const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
-  return withProtocol.replace(/\/$/, '')
+
+  try {
+    const parsed = new URL(withProtocol)
+    return parsed.origin
+  } catch {
+    return withProtocol.replace(/\/$/, '')
+  }
 }
 
 function isLocalUrl(value: string | null): boolean {
