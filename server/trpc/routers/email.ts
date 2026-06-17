@@ -354,6 +354,8 @@ export const emailRouter = router({
           is_read: true,
           tldr: true,
           ai_triage_skipped: true,
+          tag: true,
+          priority: true,
           created_at: true,
           is_archived: true,
           is_deleted: true,

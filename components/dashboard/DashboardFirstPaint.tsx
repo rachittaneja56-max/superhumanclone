@@ -3,11 +3,14 @@ import { format, formatDistanceToNow, isSameDay, endOfWeek } from "date-fns";
 import {
   Activity,
   ArrowRight,
+  BriefcaseBusiness,
   CalendarDays,
   Clock3,
+  Landmark,
   Inbox,
   Mail,
   MessageSquareReply,
+  Newspaper,
   Send,
   ShieldCheck,
   Sparkles,
@@ -101,7 +104,7 @@ export function DashboardShell({
   const aiEnabled = Boolean(settings?.aiEnabled);
 
   return (
-    <section className="overflow-hidden rounded-[2rem] border border-border bg-[radial-gradient(circle_at_top_right,rgba(217,119,6,0.14),transparent_35%),linear-gradient(180deg,rgba(22,22,22,0.96),rgba(12,12,12,0.98))] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.35)] sm:p-8">
+    <section className="overflow-hidden rounded-[2rem] border border-border bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(244,238,229,0.96))] p-6 shadow-[0_24px_60px_rgba(38,28,14,0.08)] sm:p-8 dark:bg-[radial-gradient(circle_at_top_right,rgba(217,119,6,0.14),transparent_35%),linear-gradient(180deg,rgba(22,22,22,0.96),rgba(12,12,12,0.98))] dark:shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.9fr)]">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-foreground-subtle">
@@ -139,7 +142,7 @@ export function DashboardShell({
           </div>
         </div>
 
-        <div className="flex h-full flex-col justify-between gap-4 rounded-[1.5rem] border border-border bg-background/60 p-5">
+        <div className="flex h-full flex-col justify-between gap-4 rounded-[1.5rem] border border-border bg-white/70 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] dark:bg-background/60 dark:shadow-none">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
               Quick actions
@@ -162,7 +165,7 @@ export function DashboardShell({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-border bg-background/60 p-4">
+          <div className="rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] p-4 dark:bg-background/60">
             <div className="flex items-start gap-3">
               <ShieldCheck className="mt-0.5 h-5 w-5 text-accent" />
               <div>
@@ -225,9 +228,14 @@ export async function DashboardData({
   const privacyReady = Boolean(settings?.privacyConfigured);
   const gmailConnected = connectionState.gmailConnected;
   const calendarConnected = connectionState.calendarConnected;
-  const urgentThreads = inboxItems.filter((thread: InboxThread) => isUrgentThread(thread));
-  const replyThreads = inboxItems.filter((thread: InboxThread) => !thread.isRead).slice(0, 4);
-  const priorityThreads = [...urgentThreads, ...inboxItems.filter((thread: InboxThread) => !thread.isRead && !isUrgentThread(thread))]
+  const urgentThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Urgent") || isUrgentThread(thread));
+  const replyThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Needs reply")).slice(0, 4);
+  const financeThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Finance")).slice(0, 4);
+  const calendarThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Calendar")).slice(0, 4);
+  const workThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Work")).slice(0, 4);
+  const updatesThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Updates")).slice(0, 4);
+  const followUpThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Follow-up")).slice(0, 4);
+  const priorityThreads = [...urgentThreads, ...replyThreads, ...financeThreads, ...calendarThreads, ...workThreads]
     .filter((thread: InboxThread, index: number, items: InboxThread[]) => items.findIndex((candidate) => candidate.id === thread.id) === index)
     .slice(0, 4);
   const todayEvents = normalizedCalendarEvents.filter((event) => isSameDay(event.startTime, today));
@@ -236,10 +244,20 @@ export async function DashboardData({
     .find((event) => event.endTime >= today) ?? null;
   const inboxUnread = unreadCounts?.inbox ?? replyThreads.length;
   const archivedNoise = (unreadCounts?.spam ?? 0) + (unreadCounts?.trash ?? 0);
-  const fyiThreads = inboxItems.filter((thread: InboxThread) => thread.isRead).slice(0, 3);
+  const fyiThreads = inboxItems.filter((thread: InboxThread) => !hasBadge(thread, "Needs reply") && thread.isRead).slice(0, 3);
   const recentActions = normalizedAuditLogs.slice(0, 4);
   const aiUsage = billing?.usage?.ai ?? null;
   const plan = billing?.currentPlan ?? null;
+  const intelligenceBuckets = [
+    { label: "Urgent", value: urgentThreads.length, icon: Mail },
+    { label: "Needs reply", value: replyThreads.length, icon: MessageSquareReply },
+    { label: "Finance / banking", value: financeThreads.length, icon: Landmark },
+    { label: "Work / hiring", value: workThreads.length, icon: BriefcaseBusiness },
+    { label: "Calendar-related", value: calendarThreads.length, icon: CalendarDays },
+    { label: "Follow-up", value: followUpThreads.length, icon: Sparkles },
+    { label: "Social / updates", value: updatesThreads.length, icon: Newspaper },
+    { label: "Archived noise", value: archivedNoise, icon: Inbox },
+  ].filter((bucket) => bucket.value > 0);
 
   return (
     <>
@@ -251,16 +269,16 @@ export async function DashboardData({
           tone={gmailConnected && calendarConnected ? "good" : "warn"}
         />
         <SummaryCard
-          label="Urgent items"
-          value={String(urgentThreads.length)}
-          helper="Threads needing quick attention"
-          tone={urgentThreads.length > 0 ? "warn" : "muted"}
+          label="Needs reply"
+          value={String(replyThreads.length)}
+          helper={replyThreads.length > 0 ? "Unread threads with reply signals" : "No immediate replies needed"}
+          tone={replyThreads.length > 0 ? "warn" : "good"}
         />
         <SummaryCard
-          label="Replies pending"
-          value={String(replyThreads.length)}
-          helper={`${inboxUnread} unread in inbox`}
-          tone={replyThreads.length > 0 ? "warn" : "good"}
+          label="Finance / alerts"
+          value={String(financeThreads.length)}
+          helper={financeThreads.length > 0 ? "Invoices, billing, and banking messages" : "No finance alerts today"}
+          tone={financeThreads.length > 0 ? "warn" : "muted"}
         />
         <SummaryCard
           label="Meetings today"
@@ -289,7 +307,7 @@ export async function DashboardData({
         </div>
       ) : null}
 
-      <div className="mt-5 grid gap-4 xl:grid-cols-3">
+      <div className="mt-5 grid items-stretch gap-4 xl:grid-cols-3">
         <PanelCard title="Priority threads" icon={<Mail className="h-4 w-4" />} description="Top items from the inbox right now." className="xl:col-span-1">
           <ThreadList threads={priorityThreads} emptyLabel="No priority threads yet." />
         </PanelCard>
@@ -350,17 +368,19 @@ export async function DashboardData({
         </PanelCard>
       </div>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-3">
+      <div className="mt-4 grid items-stretch gap-4 xl:grid-cols-3">
         <PanelCard title="Inbox intelligence" icon={<Inbox className="h-4 w-4" />} description="Useful counts without the noise." className="xl:col-span-1">
           <div className="space-y-3">
-            <CountRow label="Urgent" value={String(urgentThreads.length)} />
-            <CountRow label="Needs reply" value={String(replyThreads.length)} />
-            <CountRow label="FYI" value={String(fyiThreads.length)} />
-            <CountRow label="Archived noise" value={String(archivedNoise)} />
+            {(intelligenceBuckets.length > 0 ? intelligenceBuckets : [
+              { label: "FYI", value: fyiThreads.length, icon: Inbox },
+              { label: "Archived noise", value: archivedNoise, icon: Inbox },
+            ]).map((bucket) => (
+              <CountRow key={bucket.label} label={bucket.label} value={String(bucket.value)} />
+            ))}
           </div>
         </PanelCard>
 
-        <PanelCard title="Reply obligations" icon={<MessageSquareReply className="h-4 w-4" />} description="Unread items that likely need action." className="xl:col-span-1">
+        <PanelCard title="Needs reply" icon={<MessageSquareReply className="h-4 w-4" />} description="Unread items that look like they need a response." className="xl:col-span-1">
           <ThreadList
             threads={replyThreads}
             emptyLabel="No reply obligations right now."
@@ -369,14 +389,32 @@ export async function DashboardData({
           />
         </PanelCard>
 
-        <PanelCard title="Recent actions" icon={<Send className="h-4 w-4" />} description="Latest approvals, sends, and mailbox changes." className="xl:col-span-1">
-          <ActionList actions={recentActions} emptyLabel="No recent actions." />
+        <PanelCard title="Finance / important alerts" icon={<Landmark className="h-4 w-4" />} description="Messages tagged as finance, work, or scheduling signals." className="xl:col-span-1">
+          <ThreadList
+            threads={financeThreads.length > 0 ? financeThreads : calendarThreads.length > 0 ? calendarThreads : workThreads}
+            emptyLabel="No finance or important alerts."
+            compact
+            showSnippet
+          />
         </PanelCard>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 grid items-stretch gap-4 xl:grid-cols-3">
+        <PanelCard title="Calendar-related threads" icon={<CalendarDays className="h-4 w-4" />} description="Inbox items tied to scheduling and meeting coordination." className="xl:col-span-1">
+          <ThreadList
+            threads={calendarThreads.length > 0 ? calendarThreads : updatesThreads}
+            emptyLabel="No calendar-related threads."
+            compact
+            showSnippet
+          />
+        </PanelCard>
+
+        <PanelCard title="Recent actions" icon={<Send className="h-4 w-4" />} description="Latest approvals, sends, and mailbox changes." className="xl:col-span-1">
+          <ActionList actions={recentActions} emptyLabel="No recent actions." />
+        </PanelCard>
+
         <PanelCard title="Usage" icon={<Sparkles className="h-4 w-4" />} description="Plan and AI usage at a glance." className="xl:col-span-1">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid h-full content-start gap-3 sm:grid-cols-2 xl:grid-cols-1">
             <MiniStat label="Plan" value={plan ? plan.toUpperCase() : "Unavailable"} />
             <MiniStat
               label="AI calls this month"
@@ -433,7 +471,7 @@ function PanelCard({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-[1.5rem] border border-border bg-surface p-5 shadow-sm", className)}>
+    <section className={cn("h-full rounded-[1.5rem] border border-border bg-surface p-5 shadow-[0_16px_34px_rgba(28,20,12,0.06)] dark:shadow-sm", className)}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -450,10 +488,10 @@ function PanelCard({
 
 function SummaryCard({ label, value, helper, tone = "default" }: SummaryCardProps) {
   const toneClasses = {
-    default: "border-border bg-background/60",
+    default: "border-border bg-white/80 dark:bg-background/60",
     good: "border-emerald-500/30 bg-emerald-500/10",
     warn: "border-amber-500/30 bg-amber-500/10",
-    muted: "border-border bg-background/50",
+    muted: "border-border bg-[rgba(255,255,255,0.72)] dark:bg-background/50",
   }[tone];
 
   return (
@@ -475,7 +513,7 @@ function StatusCard({
   tone: "good" | "warn";
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] px-4 py-3 dark:bg-background">
       <div className="text-sm text-foreground-muted">{label}</div>
       <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]", tone === "good" ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300")}>
         {value}
@@ -494,7 +532,7 @@ function StatusRow({
   tone: "good" | "warn";
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] px-4 py-3 dark:bg-background">
       <div className="text-sm text-foreground-muted">{label}</div>
       <span
         className={cn(
@@ -510,7 +548,7 @@ function StatusRow({
 
 function MiniStat({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-background/60 p-4">
+    <div className="rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] p-4 dark:bg-background/60">
       <div className="text-[11px] uppercase tracking-[0.18em] text-foreground-subtle">{label}</div>
       <div className="mt-2 text-lg font-semibold text-foreground">{value}</div>
       {helper ? <div className="mt-1 text-xs text-foreground-muted">{helper}</div> : null}
@@ -520,7 +558,7 @@ function MiniStat({ label, value, helper }: { label: string; value: string; help
 
 function CountRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] px-4 py-3 dark:bg-background">
       <div className="text-sm text-foreground-muted">{label}</div>
       <div className="text-base font-semibold text-foreground">{value}</div>
     </div>
@@ -548,7 +586,7 @@ function ThreadList({
         <Link
           key={thread.id}
           href={`/inbox/${thread.threadId}`}
-          className="block rounded-2xl border border-border bg-background px-4 py-3 transition-colors hover:bg-surface-raised"
+          className="block rounded-2xl border border-border bg-[rgba(255,255,255,0.82)] px-4 py-3 transition-colors hover:bg-surface-raised dark:bg-background"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -562,7 +600,7 @@ function ThreadList({
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {thread.badges.slice(0, 3).map((badge) => (
-              <span key={badge} className="rounded-full border border-border bg-surface px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-foreground-subtle">
+              <span key={badge} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em]", badgeTone(badge))}>
                 {badge}
               </span>
             ))}
@@ -614,6 +652,30 @@ function EmptyState({ label }: { label: string }) {
 function isUrgentThread(thread: InboxThread) {
   const haystack = `${thread.subject} ${thread.snippet} ${thread.tldr ?? ""}`.toLowerCase();
   return /\b(urgent|asap|action required|needs reply|follow up|important|deadline|today)\b/.test(haystack);
+}
+
+function hasBadge(thread: InboxThread, badge: string) {
+  return thread.badges.some((item) => item.toLowerCase() === badge.toLowerCase());
+}
+
+function badgeTone(badge: string) {
+  const normalized = badge.toLowerCase();
+  if (normalized === "urgent" || normalized === "needs reply") {
+    return "border-amber-300/60 bg-amber-50 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300";
+  }
+  if (normalized === "finance" || normalized === "work") {
+    return "border-blue-300/60 bg-blue-50 text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300";
+  }
+  if (normalized === "calendar" || normalized === "follow-up") {
+    return "border-emerald-300/60 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300";
+  }
+  if (normalized === "private") {
+    return "border-violet-300/60 bg-violet-50 text-violet-800 dark:border-violet-500/20 dark:bg-violet-500/10 dark:text-violet-300";
+  }
+  if (normalized === "updates") {
+    return "border-stone-300/60 bg-stone-100 text-stone-700 dark:border-border dark:bg-surface dark:text-foreground-subtle";
+  }
+  return "border-border bg-surface-raised text-foreground-subtle dark:bg-surface dark:text-foreground-subtle";
 }
 
 function humanizeAction(action: string) {

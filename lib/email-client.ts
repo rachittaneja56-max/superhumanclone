@@ -132,6 +132,8 @@ export function mapEmailForListClient(row: {
   ai_triage_skipped?: boolean | null
   created_at?: string | Date | null
   mailbox?: 'inbox' | 'drafts' | 'sent' | 'spam' | 'trash'
+  tag?: string | null
+  priority?: string | null
 }): EmailListClientItem {
   const subject = redactSensitiveForClient(row.subject) || '(no subject)'
   const snippet = redactSensitiveForClient(row.snippet) || 'No preview available.'
@@ -189,12 +191,43 @@ function buildBadges(row: {
   mailbox?: 'inbox' | 'drafts' | 'sent' | 'spam' | 'trash'
   is_read?: boolean | null
   ai_triage_skipped?: boolean | null
+  subject?: string | null
+  snippet?: string | null
+  tldr?: string | null
+  from_address?: string | null
+  tag?: string | null
+  priority?: string | null
 }) {
   const badges: string[] = []
+  const haystack = `${row.subject ?? ''} ${row.snippet ?? ''} ${row.tldr ?? ''}`.toLowerCase()
+  const sender = (row.from_address ?? '').toLowerCase()
+
   if (!row.is_read) badges.push('Unread')
+  if (row.priority === 'urgent' || row.priority === 'high' || /\b(urgent|asap|action required|deadline|today)\b/.test(haystack)) {
+    badges.push('Urgent')
+  }
+  if (!row.is_read && /\b(reply|respond|revert|let me know|can you|could you|review|approve|\?)\b/.test(haystack)) {
+    badges.push('Needs reply')
+  }
+  if (row.tag === 'finance' || /\b(invoice|payment|bank|banking|statement|upi|card|refund|salary|expense|tax)\b/.test(haystack) || /bank|payments|billing|stripe|razorpay/.test(sender)) {
+    badges.push('Finance')
+  }
+  if (row.tag === 'work' || /\b(interview|candidate|resume|application|hiring|recruiter|offer|team|project)\b/.test(haystack)) {
+    badges.push('Work')
+  }
+  if (/\b(meeting|calendar|invite|reschedule|availability|schedule|call|zoom|meet)\b/.test(haystack)) {
+    badges.push('Calendar')
+  }
+  if (/\b(follow up|following up|check-in|checking in|reminder|nudge|circling back)\b/.test(haystack)) {
+    badges.push('Follow-up')
+  }
+  if (row.tag === 'social' || row.tag === 'newsletter' || row.tag === 'update' || /\b(newsletter|digest|announcement|social|update)\b/.test(haystack)) {
+    badges.push('Updates')
+  }
   if (row.mailbox && row.mailbox !== 'inbox') {
     badges.push(row.mailbox.charAt(0).toUpperCase() + row.mailbox.slice(1))
   }
   if (row.ai_triage_skipped) badges.push('Private')
-  return badges
+
+  return Array.from(new Set(badges))
 }
