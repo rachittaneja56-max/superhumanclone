@@ -1,6 +1,6 @@
 import 'server-only'
 import { db } from '@/server/db'
-import { corsairAccounts, corsairEntities, corsairEvents, corsairIntegrations } from '@/server/db/schema'
+import { corsairAccounts, corsairEntities, corsairEvents, corsairIntegrations, users } from '@/server/db/schema'
 import { eq, and } from 'drizzle-orm'
 
 // Type helper — plugins are dynamically attached, need 'as any'
@@ -55,23 +55,42 @@ function encodeBase64Url(input: string): string {
     .replace(/=+$/g, '')
 }
 
+function sanitiseHeaderValue(value: string | undefined): string {
+  return (value ?? '').replace(/[\r\n]+/g, ' ').trim()
+}
+
+function sanitiseAddressList(addresses: string[] | undefined): string[] {
+  return (addresses ?? [])
+    .map((address) => sanitiseHeaderValue(address))
+    .filter(Boolean)
+}
+
 function buildMimeMessage(payload: {
+  from?: string
   to: string[]
   cc?: string[]
   bcc?: string[]
   subject: string
   body: string
 }): string {
+  const to = sanitiseAddressList(payload.to)
+  const cc = sanitiseAddressList(payload.cc)
+  const bcc = sanitiseAddressList(payload.bcc)
+  const from = sanitiseHeaderValue(payload.from)
+  const subject = sanitiseHeaderValue(payload.subject)
+  const body = (payload.body ?? '').replace(/\r?\n/g, '\r\n')
+
   const headers = [
-    `To: ${payload.to.join(', ')}`,
-    payload.cc?.length ? `Cc: ${payload.cc.join(', ')}` : null,
-    payload.bcc?.length ? `Bcc: ${payload.bcc.join(', ')}` : null,
-    `Subject: ${payload.subject}`,
+    from ? `From: ${from}` : null,
+    `To: ${to.join(', ')}`,
+    cc.length ? `Cc: ${cc.join(', ')}` : null,
+    bcc.length ? `Bcc: ${bcc.join(', ')}` : null,
+    `Subject: ${subject}`,
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset="UTF-8"',
     'Content-Transfer-Encoding: 7bit',
     '',
-    payload.body,
+    body,
   ].filter(Boolean)
 
   return encodeBase64Url(headers.join('\r\n'))
@@ -214,13 +233,24 @@ export async function sendEmail(userId: string, payload: {
 }) {
   const t = await getTenant(userId)
   try {
+    const currentUser = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { email: true, name: true },
+    })
+    const fromHeader = currentUser?.name
+      ? `${sanitiseHeaderValue(currentUser.name)} <${sanitiseHeaderValue(currentUser.email)}>`
+      : sanitiseHeaderValue(currentUser?.email)
+    const body = typeof payload.body === 'string' ? payload.body.trimEnd() : ''
+
     const result = await t.gmail.api.messages.send({
-      to: payload.to,
-      ...(payload.cc?.length ? { cc: payload.cc } : {}),
-      ...(payload.bcc?.length ? { bcc: payload.bcc } : {}),
-      subject: payload.subject,
-      body: payload.body,
-      raw: buildMimeMessage(payload),
+      raw: buildMimeMessage({
+        from: fromHeader,
+        to: payload.to,
+        cc: payload.cc,
+        bcc: payload.bcc,
+        subject: payload.subject,
+        body,
+      }),
       ...(payload.threadId ? { threadId: payload.threadId } : {}),
     })
     return { success: true, data: result, needsConnect: false }
