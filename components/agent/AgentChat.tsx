@@ -110,19 +110,28 @@ export function AgentChat({
   };
 
   return (
-    <div className="flex h-full w-full flex-col rounded-2xl border border-border bg-surface shadow-sm">
-        <div className="border-b border-border px-5 py-4">
+    <div className="flex h-full w-full min-w-0 flex-col rounded-2xl border border-border bg-surface shadow-sm">
+      <div className="border-b border-border px-4 py-4 sm:px-5">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-base font-semibold text-foreground">AI Assistant</div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <Bot className="h-4 w-4 text-accent" aria-hidden="true" />
+              <span>AI Assistant</span>
+            </div>
             <p className="mt-1 text-sm text-foreground-muted">Ask Aethra about mail, schedules, and follow-ups.</p>
           </div>
         </div>
+
         {threadContext && (
-          <div className="mt-3 flex items-start justify-between gap-3 rounded-xl border border-accent/20 bg-accent-subtle px-3 py-2 text-xs">
-            <div className="min-w-0">
-              <div className="font-medium text-foreground">Thread context attached</div>
-              <div className="mt-1 line-clamp-2 whitespace-pre-wrap text-foreground-muted">
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-accent/20 bg-accent-subtle px-3 py-2 text-xs">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-foreground">Context</span>
+                <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-foreground-muted">
+                  attached
+                </span>
+              </div>
+              <div className="mt-1 line-clamp-2 whitespace-pre-wrap break-words text-foreground-muted">
                 {threadContext}
               </div>
             </div>
@@ -130,33 +139,37 @@ export function AgentChat({
               <button
                 type="button"
                 onClick={() => {
-                  onClearThreadContext()
-                  toast.message("Thread context removed")
+                  onClearThreadContext();
+                  toast.message("Thread context removed");
                 }}
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted hover:bg-surface-raised hover:text-foreground"
+                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground"
                 aria-label="Remove thread context"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
           </div>
         )}
-        </div>
-      <div className="flex min-h-0 flex-1 flex-col px-4 py-5">
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5 sm:py-5">
       
       {!hasStarted && messages.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center space-y-8 animate-in fade-in zoom-in-95 duration-500">
-          <div className="w-16 h-16 bg-accent/20 text-accent rounded-2xl flex items-center justify-center">
-            <Bot className="w-8 h-8" />
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 py-4 text-center animate-in fade-in zoom-in-95 duration-500">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/20 text-accent">
+            <Bot className="h-8 w-8" aria-hidden="true" />
           </div>
-          <h2 className="text-2xl font-display font-medium text-foreground">How can I help you today?</h2>
+          <div className="max-w-sm space-y-1">
+            <h2 className="text-2xl font-display font-medium text-foreground">How can I help you today?</h2>
+            <p className="text-sm text-foreground-muted">Pick a prompt or start from the box below.</p>
+          </div>
           
-          <div className="grid grid-cols-2 gap-4 w-full max-w-2xl">
+          <div className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
             {SUGGESTED_PROMPTS.map((prompt, i) => (
               <button
                 key={i}
                 onClick={() => sendMessage(prompt)}
-                className="rounded-xl border border-border bg-background p-4 text-left text-sm text-foreground transition-colors hover:bg-surface-raised"
+                className="min-h-20 rounded-xl border border-border bg-background p-4 text-left text-sm text-foreground transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               >
                 {prompt}
               </button>
@@ -172,7 +185,7 @@ export function AgentChat({
             <div 
               key={i} 
               className={cn(
-                "max-w-[85%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed",
+                "max-w-[85%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed break-words",
                 msg.role === "user" 
                   ? "ml-auto bg-accent/10 text-foreground rounded-br-sm" 
                   : "mr-auto border border-border bg-background text-foreground rounded-bl-sm"
@@ -195,17 +208,17 @@ export function AgentChat({
       )}
 
       {/* Input Area */}
-      <div className="flex flex-col gap-3 mt-auto pt-4 relative">
+      <div className="relative mt-auto flex flex-col gap-3 pt-4">
         {/* HITL Card placed above the input area in the flow */}
         {activeHITLAction && (
-          <div className="absolute bottom-full mb-4 right-0 z-10 w-full flex justify-end">
-             <HITLCard className="w-full max-w-md animate-in slide-in-from-bottom-2 shadow-xl" />
+          <div className="absolute bottom-full right-0 z-10 mb-4 flex w-full justify-end">
+            <HITLCard className="w-full max-w-md animate-in slide-in-from-bottom-2 shadow-xl" />
           </div>
         )}
 
-        <div className="relative flex items-end w-full overflow-hidden rounded-2xl border border-border bg-background transition-shadow focus-within:ring-2 focus-within:ring-accent">
+        <div className="relative flex w-full items-end overflow-hidden rounded-2xl border border-border bg-background transition-shadow focus-within:ring-2 focus-within:ring-accent">
           <textarea
-            className="w-full max-h-48 min-h-[56px] resize-none bg-transparent px-4 py-4 text-sm focus:outline-none disabled:opacity-50"
+            className="min-h-[56px] w-full max-h-48 resize-none bg-transparent px-4 py-4 text-sm focus:outline-none disabled:opacity-50"
             placeholder={activeHITLAction ? "Awaiting your approval..." : "Ask Aethra AI..."}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
