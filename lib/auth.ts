@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 
 export interface SessionData {
   userId?: string
+  adminUnlocked?: boolean
 }
 
 export const sessionOptions = {
@@ -20,6 +21,12 @@ export async function getSession() {
 export async function setSession(userId: string) {
   const session = await getSession()
   session.userId = userId
+  await session.save()
+}
+
+export async function setAdminUnlocked(adminUnlocked: boolean) {
+  const session = await getSession()
+  session.adminUnlocked = adminUnlocked
   await session.save()
 }
 

@@ -23,3 +23,8 @@ export const setUserAiAccessSchema = adminUserMutationSchema.extend({
 export const resetUsageCounterSchema = adminUserMutationSchema.extend({
   kind: z.enum(["ai", "email-triage"]),
 });
+
+export const unlockAdminDashboardSchema = z.object({
+  accessId: z.string().min(1).max(80),
+  password: z.string().min(8).max(120),
+});

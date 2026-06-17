@@ -13,6 +13,27 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - name: Set build/test env
+        run: |
+          echo "DATABASE_URL=postgres://user:pass@localhost:5432/aethra" >> $GITHUB_ENV
+          echo "DATABASE_URL_UNPOOLED=postgres://user:pass@localhost:5432/aethra" >> $GITHUB_ENV
+          echo "ENCRYPTION_KEY=0123456789abcdef0123456789abcdef" >> $GITHUB_ENV
+          echo "NEXT_PUBLIC_APP_URL=http://localhost:3000" >> $GITHUB_ENV
+          echo "GOOGLE_CLIENT_ID=test-google-client-id" >> $GITHUB_ENV
+          echo "GOOGLE_CLIENT_SECRET=test-google-client-secret" >> $GITHUB_ENV
+          echo "CORSAIR_KEK=test-corsair-kek" >> $GITHUB_ENV
+          echo "UPSTASH_REDIS_REST_URL=https://example.upstash.io" >> $GITHUB_ENV
+          echo "UPSTASH_REDIS_REST_TOKEN=test-upstash-token" >> $GITHUB_ENV
+          echo "QSTASH_TOKEN=test-qstash-token" >> $GITHUB_ENV
+          echo "ABLY_API_KEY=test:ably:key" >> $GITHUB_ENV
+          echo "WORKER_SECRET=test-worker-secret" >> $GITHUB_ENV
+          echo "AI_PRIMARY_PROVIDER=openai" >> $GITHUB_ENV
+          echo "AI_FALLBACK_PROVIDER=mistral" >> $GITHUB_ENV
+          echo "OPENAI_API_KEY=test-openai-key" >> $GITHUB_ENV
+          echo "MISTRAL_API_KEY=test-mistral-key" >> $GITHUB_ENV
+          echo "AI_FAST_MODEL=gpt-4o-mini" >> $GITHUB_ENV
+          echo "AI_SMART_MODEL=gpt-4o" >> $GITHUB_ENV
+          echo "BILLING_MODE=dummy" >> $GITHUB_ENV
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint

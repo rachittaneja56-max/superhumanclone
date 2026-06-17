@@ -2,16 +2,19 @@ import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 
 import { getUserAdminState } from "@/server/admin/access";
+import { ADMIN_ACCESS_ID, ADMIN_ACCESS_PASSWORD } from "@/server/admin/credentials";
 import { getPlanConfig, PLAN_CONFIGS } from "@/server/billing/plans";
 import { getUsage, resetUsage } from "@/server/billing/usage";
 import { prompts } from "@/server/ai/prompts";
 import { sanitisePayload } from "@/lib/sanitise-payload";
+import { getSession, setAdminUnlocked } from "@/lib/auth";
 import { auditLogs, agentSessions, hitlActions, users } from "@/server/db/schema";
 import {
   changeUserPlanSchema,
   flagUserSchema,
   getAdminDashboardSchema,
   resetUsageCounterSchema,
+  unlockAdminDashboardSchema,
   setUserAiAccessSchema,
 } from "@/lib/schemas";
 import { protectedProcedure, router } from "../trpc";
@@ -23,11 +26,32 @@ async function requireAdmin(userId: string) {
   }
 }
 
+async function requireAdminUnlock() {
+  const session = await getSession();
+  if (!session.adminUnlocked) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Admin unlock required" });
+  }
+}
+
 export const adminRouter = router({
+  unlockDashboard: protectedProcedure
+    .input(unlockAdminDashboardSchema)
+    .mutation(async ({ ctx, input }) => {
+      await requireAdmin(ctx.userId!);
+
+      if (input.accessId !== ADMIN_ACCESS_ID || input.password !== ADMIN_ACCESS_PASSWORD) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid admin credentials" });
+      }
+
+      await setAdminUnlocked(true);
+      return { unlocked: true };
+    }),
+
   getDashboard: protectedProcedure
     .input(getAdminDashboardSchema)
     .query(async ({ ctx, input }) => {
       await requireAdmin(ctx.userId!);
+      await requireAdminUnlock();
 
       const userRows = await ctx.db.query.users.findMany({
         columns: {
@@ -142,6 +166,7 @@ export const adminRouter = router({
     .input(changeUserPlanSchema)
     .mutation(async ({ ctx, input }) => {
       await requireAdmin(ctx.userId!);
+      await requireAdminUnlock();
       await ctx.db.update(users).set({ plan: input.plan }).where(eq(users.id, input.userId));
       return { updated: true };
     }),
@@ -150,6 +175,7 @@ export const adminRouter = router({
     .input(flagUserSchema)
     .mutation(async ({ ctx, input }) => {
       await requireAdmin(ctx.userId!);
+      await requireAdminUnlock();
       await ctx.db.update(users).set({ isFlagged: input.flagged }).where(eq(users.id, input.userId));
       return { updated: true };
     }),
@@ -158,6 +184,7 @@ export const adminRouter = router({
     .input(setUserAiAccessSchema)
     .mutation(async ({ ctx, input }) => {
       await requireAdmin(ctx.userId!);
+      await requireAdminUnlock();
       await ctx.db.update(users).set({ aiDisabled: !input.enabled }).where(eq(users.id, input.userId));
       return { updated: true };
     }),
@@ -166,6 +193,7 @@ export const adminRouter = router({
     .input(resetUsageCounterSchema)
     .mutation(async ({ ctx, input }) => {
       await requireAdmin(ctx.userId!);
+      await requireAdminUnlock();
       await resetUsage(ctx.redis, input.userId, input.kind);
       return { reset: true };
     }),

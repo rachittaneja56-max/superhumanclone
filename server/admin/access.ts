@@ -21,11 +21,7 @@ export async function getUserAdminState(userId: string) {
 
   return {
     isAdmin: resolveAdminAccess({
-      userId: user.id,
-      email: user.email,
       isAdmin: user.isAdmin,
-      adminUserIds: process.env.ADMIN_USER_IDS ?? process.env.AI_ADMIN_USER_IDS ?? "",
-      adminEmails: process.env.ADMIN_EMAILS ?? "",
     }),
   };
 }

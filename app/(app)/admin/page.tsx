@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AdminDashboardClient } from "@/components/admin/AdminDashboardClient";
+import { AdminUnlockClient } from "@/components/admin/AdminUnlockClient";
 import { getUserAdminState } from "@/server/admin/access";
 import { getSession } from "@/lib/auth";
 import { serverTrpc } from "@/lib/trpc/server";
@@ -11,6 +12,7 @@ export default async function AdminPage() {
 
   const { isAdmin } = await getUserAdminState(session.userId);
   if (!isAdmin) redirect("/inbox");
+  if (!session.adminUnlocked) return <AdminUnlockClient />;
 
   const trpc = await serverTrpc();
   const dashboard = await trpc.admin.getDashboard({ limit: 25 });
