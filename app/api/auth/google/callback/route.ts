@@ -113,7 +113,7 @@ export async function GET(request: Request) {
       return redirectToLogin(request, "oauth_userinfo");
     }
 
-    const [{ db, users }, { ensureUserSettings }, { setSession }, { eq }] = await Promise.all([
+    const [{ db, users }, { ensureUserSettings }, { setSession }, { eq, sql }] = await Promise.all([
       import("@/server/db"),
       import("@/server/auth/helpers"),
       import("@/lib/auth"),
@@ -122,36 +122,53 @@ export async function GET(request: Request) {
 
     let userId: string;
     try {
-      let existingUser = await db.query.users.findFirst({
-        where: eq(users.email, googleUser.email)
-      });
+      const existingUsers = await db
+        .select({
+          id: sql<string>`"id"`,
+          emailVerified: sql<Date | null>`"emailVerified"`,
+        })
+        .from(users)
+        .where(eq(users.email, googleUser.email))
+        .limit(1);
+
+      const existingUser = existingUsers[0];
 
       if (!existingUser) {
-        const [newUser] = await db.insert(users).values({
-          id: crypto.randomUUID(),
-          email: googleUser.email,
-          name: googleUser.name,
-          image: googleUser.picture,
-          emailVerified: googleUser.email_verified ? new Date() : null,
-        }).returning();
-        existingUser = newUser;
+        userId = crypto.randomUUID();
+        await db.execute(sql`
+          insert into "users" ("id", "email", "name", "image", "emailVerified")
+          values (
+            ${userId},
+            ${googleUser.email},
+            ${googleUser.name},
+            ${googleUser.picture},
+            ${googleUser.email_verified ? new Date() : null}
+          )
+        `);
 
         const { ensureTenantProvisioned } = await import('@/server/corsair/provision');
-        await ensureTenantProvisioned(existingUser.id).catch((error) =>
+        await ensureTenantProvisioned(userId).catch((error) =>
           console.error("[Auth] Corsair tenant provisioning failed", {
             stage: "corsair_provision",
             message: error instanceof Error ? error.message : "Unknown error",
           })
         );
       } else {
-        await db.update(users).set({
-          name: googleUser.name,
-          image: googleUser.picture,
-          emailVerified: googleUser.email_verified && !existingUser.emailVerified ? new Date() : existingUser.emailVerified,
-        }).where(eq(users.id, existingUser.id));
+        userId = existingUser.id;
+        await db.execute(sql`
+          update "users"
+          set
+            "name" = ${googleUser.name},
+            "image" = ${googleUser.picture},
+            "emailVerified" = ${
+              googleUser.email_verified && !existingUser.emailVerified
+                ? new Date()
+                : existingUser.emailVerified
+            }
+          where "id" = ${userId}
+        `);
       }
 
-      userId = existingUser.id;
       await ensureUserSettings(userId);
     } catch (error) {
       logGoogleAuthFailure("oauth_db", error);
