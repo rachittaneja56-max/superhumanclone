@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useUIStore } from "@/store/ui-store";
 
 export function useKeyboardShortcuts() {
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     let sequenceTimeout: NodeJS.Timeout | null = null;
@@ -36,6 +37,7 @@ export function useKeyboardShortcuts() {
 
       const { focusLayer } = useUIStore.getState();
       if (focusLayer !== 0) return;
+      const isMailWorkspace = pathname.startsWith("/inbox");
 
       // Handle sequence
       if (e.key === "g") {
@@ -70,39 +72,48 @@ export function useKeyboardShortcuts() {
       // Single keys
       switch (e.key) {
         case "j":
+          if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:thread-next"));
           break;
         case "k":
+          if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:thread-prev"));
           break;
         case "e":
+          if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:thread-archive"));
           break;
         case "r":
+          if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:thread-open"));
           break;
         case "c":
+          if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:compose-open"));
           break;
         case "u":
+          if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:thread-toggle-read"));
           break;
         case "Enter":
+          if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:thread-open"));
           break;
         case "Delete":
         case "Backspace":
+          if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:thread-trash"));
           break;
         case "/":
+          if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:focus-mail-search"));
           break;
@@ -118,5 +129,5 @@ export function useKeyboardShortcuts() {
       window.removeEventListener("keydown", handleKeyDown);
       if (sequenceTimeout) clearTimeout(sequenceTimeout);
     };
-  }, [router]);
+  }, [pathname, router]);
 }

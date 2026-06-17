@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 
 const SHORTCUTS = [
   ["c", "Compose"],
-  ["/", "Focus search"],
+  ["/", "Focus mail search"],
   ["j", "Move down"],
   ["k", "Move up"],
   ["Enter", "Open selected thread"],

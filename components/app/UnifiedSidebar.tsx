@@ -2,11 +2,10 @@
 
 import type { ComponentType } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Bot, Calendar, DraftingCompass, Inbox, Search, Send, Settings, ShieldAlert, Trash2, LogOut } from 'lucide-react'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { Calendar, DraftingCompass, Inbox, Send, Settings, ShieldAlert, Trash2, LogOut } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { signOutAction } from '@/app/actions/auth'
-import { useUIStore } from '@/store/ui-store'
 
 type MailFolder = 'inbox' | 'drafts' | 'sent' | 'spam' | 'trash'
 
@@ -20,8 +19,6 @@ const MAILBOX_ITEMS: Array<{ folder: MailFolder; label: string; icon: ComponentT
 
 const APP_ITEMS = [
   { href: '/calendar', label: 'Calendar', icon: Calendar },
-  { href: '/agent', label: 'Agent', icon: Bot },
-  { href: '/search', label: 'Search', icon: Search },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
@@ -33,10 +30,7 @@ export function UnifiedSidebar({
   email?: string | null
 }) {
   const pathname = usePathname()
-  const router = useRouter()
   const searchParams = useSearchParams()
-  const agentPanelOpen = useUIStore((state) => state.agentPanelOpen)
-  const openAgentPanel = useUIStore((state) => state.openAgentPanel)
   const activeFolder = normalizeFolder(searchParams.get('folder'))
   const initial = (firstName || email || 'U').charAt(0).toUpperCase()
 
@@ -87,34 +81,7 @@ export function UnifiedSidebar({
           </div>
           {APP_ITEMS.map((item) => {
             const Icon = item.icon
-            const isActive =
-              pathname === item.href ||
-              pathname.startsWith(`${item.href}/`) ||
-              (item.href === '/agent' && agentPanelOpen)
-
-            if (item.href === '/agent') {
-              return (
-                <button
-                  key={item.href}
-                  type="button"
-                  onClick={() => {
-                    openAgentPanel()
-                    if (!pathname.startsWith('/inbox')) {
-                      router.push('/inbox')
-                    }
-                  }}
-                  className={[
-                    'flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-100',
-                    isActive
-                      ? 'bg-accent/10 text-accent font-medium border-l-2 border-accent pl-[10px]'
-                      : 'text-foreground-muted hover:bg-surface-overlay hover:text-foreground',
-                  ].join(' ')}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{item.label}</span>
-                </button>
-              )
-            }
+            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`)
 
             return (
               <Link
@@ -133,9 +100,9 @@ export function UnifiedSidebar({
             )
           })}
         </div>
-      </div>
+  </div>
 
-      <div className="border-t border-border p-3">
+  <div className="border-t border-border p-3">
         <div className="rounded-xl border border-border bg-background/40 p-3">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-sm font-semibold text-accent">
