@@ -2,7 +2,6 @@ import 'server-only'
 import { db } from '@/server/db'
 import { corsairAccounts, corsairEntities, corsairEvents, corsairIntegrations } from '@/server/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { saveSafeUserSettings } from '@/server/db/user-settings-compat'
 
 // Type helper — plugins are dynamically attached, need 'as any'
 type CorsairTenant = {
@@ -529,11 +528,6 @@ export async function disconnectIntegration(userId: string, integrationId: strin
       await db.delete(corsairEvents).where(eq(corsairEvents.accountId, account.id))
       await db.delete(corsairAccounts).where(eq(corsairAccounts.id, account.id))
     }
-
-    await saveSafeUserSettings(userId, {
-      ...(integrationId === 'gmail' ? { gmailConnected: false } : {}),
-      ...(integrationId === 'googlecalendar' ? { calendarConnected: false } : {}),
-    })
 
     return { success: true, revoked: Boolean(account) }
   } catch {

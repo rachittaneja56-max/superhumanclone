@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Loader2, Mail, Calendar, RefreshCw, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Calendar, Loader2, Mail, RefreshCw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
-import { continueToDashboard, disconnectCalendar, disconnectGmail } from "@/app/onboarding/connect/actions";
 import { useFormStatus } from "react-dom";
+
+import { continueToDashboard, disconnectCalendar, disconnectGmail } from "@/app/onboarding/connect/actions";
 
 type IntegrationState = {
   gmailConnected: boolean;
@@ -32,14 +33,19 @@ export function ConnectWorkspace({
   });
   const [pending, setPending] = useState<"gmail" | "calendar" | null>(null);
 
-  const canContinue = state.gmailConnected;
   const allConnected = state.gmailConnected && state.calendarConnected;
+  const canContinue = allConnected;
 
   const statusText = useMemo(() => {
-    if (allConnected) return "All integrations active. You are ready to proceed.";
-    if (state.gmailConnected) return "Gmail connected. Calendar is optional but recommended.";
-    return "Please connect Gmail to continue.";
-  }, [allConnected, state.gmailConnected]);
+    if (allConnected) return "Gmail and Calendar are connected. You can continue to the dashboard.";
+    if (state.gmailConnected || state.calendarConnected) return "One connection is ready. Finish the second one to continue.";
+    return "Connect Gmail and Calendar to finish setup.";
+  }, [allConnected, state.calendarConnected, state.gmailConnected]);
+
+  const handleConnect = (url: string, integration: "gmail" | "calendar") => {
+    setPending(integration);
+    window.location.assign(url);
+  };
 
   const handleDisconnect = async (integration: "gmail" | "calendar") => {
     const confirmText = integration === "gmail" ? "Disconnect Gmail?" : "Disconnect Calendar?";
@@ -58,6 +64,7 @@ export function ConnectWorkspace({
       } else {
         await disconnectCalendar();
       }
+
       toast.success(`${integration === "gmail" ? "Gmail" : "Calendar"} disconnected.`);
       router.refresh();
     } catch {
@@ -68,23 +75,18 @@ export function ConnectWorkspace({
     }
   };
 
-  const handleConnect = (url: string, integration: "gmail" | "calendar") => {
-    setPending(integration);
-    window.location.assign(url);
-  };
-
   return (
-    <div className="flex flex-1 flex-col items-center justify-center bg-background px-4 font-sans">
+    <div className="flex flex-1 flex-col items-center justify-center bg-background px-4 py-10 font-sans">
       <div className="mb-10 text-center">
         <h1 className="mb-4 text-4xl font-heading font-bold tracking-tight text-foreground md:text-5xl">
           Welcome, <span className="text-accent">{firstName}</span>
         </h1>
         <p className="mx-auto max-w-lg text-base text-muted-foreground md:text-lg">
-          Let&apos;s connect your workspace accounts to bootstrap your integrations and prepare your AI workflows.
+          Let&apos;s connect Gmail and Calendar so Aethra can sync your inbox, schedule meetings, and unlock the workspace.
         </p>
       </div>
 
-      <div className="mb-8 w-full max-w-2xl rounded-3xl border border-border bg-card p-6 shadow-[0_18px_60px_rgba(0,0,0,0.18)] md:p-8">
+      <div className="w-full max-w-3xl rounded-3xl border border-border bg-card p-6 shadow-[0_18px_60px_rgba(0,0,0,0.18)] md:p-8">
         <div className="mb-6 flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent">
             <Mail className="h-6 w-6" aria-hidden="true" />
@@ -97,55 +99,59 @@ export function ConnectWorkspace({
           </div>
         </div>
 
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <h2 className="text-xl font-heading font-bold text-foreground">Google Workspace</h2>
-          {allConnected && (
-            <span className="rounded-full bg-tag-green/10 px-2.5 py-1 text-xs font-medium text-tag-green">
-              Connected
-            </span>
-          )}
+          <span
+            className={
+              allConnected
+                ? "rounded-full bg-tag-green/10 px-2.5 py-1 text-xs font-medium text-tag-green"
+                : "rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400"
+            }
+          >
+            {allConnected ? "Connected" : "Setup required"}
+          </span>
         </div>
 
-        <p className="mb-8 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-          Connect Gmail to power inbox sync. Calendar is optional and unlocks meeting scheduling and Google Meet links.
+        <p className="mb-6 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
+          Connect Gmail and Google Calendar in one place. Gmail powers inbox sync, and Calendar unlocks scheduling and meeting links.
         </p>
 
-        <div className="mb-6 grid gap-3 rounded-2xl border border-border bg-background p-4 sm:grid-cols-2">
-          <StatusRow label="Gmail" active={state.gmailConnected} />
-          <StatusRow label="Calendar" active={state.calendarConnected} />
+        <div className="grid gap-3 md:grid-cols-2">
+          <ServiceCard
+            label="Gmail"
+            description="Inbox sync, sends, replies, and thread actions."
+            connected={state.gmailConnected}
+            pending={pending === "gmail"}
+            onConnect={() => handleConnect(gmailConnectUrl, "gmail")}
+            onDisconnect={() => void handleDisconnect("gmail")}
+          />
+          <ServiceCard
+            label="Calendar"
+            description="Meetings, availability, and Google Meet links."
+            connected={state.calendarConnected}
+            pending={pending === "calendar"}
+            onConnect={() => handleConnect(calendarConnectUrl, "calendar")}
+            onDisconnect={() => void handleDisconnect("calendar")}
+          />
         </div>
 
-        <div className="flex flex-col justify-between gap-4 border-t border-border pt-6 sm:flex-row sm:items-center">
-          <div className="flex w-full flex-col gap-4 sm:w-auto sm:flex-row">
-            <IntegrationChip
-              label="Gmail connected"
-              connected={state.gmailConnected}
-              pending={pending === "gmail"}
-              onConnect={() => handleConnect(gmailConnectUrl, "gmail")}
-              onDisconnect={() => void handleDisconnect("gmail")}
-            />
-            <IntegrationChip
-              label="Calendar connected"
-              connected={state.calendarConnected}
-              pending={pending === "calendar"}
-              onConnect={() => handleConnect(calendarConnectUrl, "calendar")}
-              onDisconnect={() => void handleDisconnect("calendar")}
-            />
+        <div className="mt-6 rounded-2xl border border-border bg-background/60 p-4">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="mt-0.5 h-5 w-5 text-accent" />
+            <div>
+              <h3 className="mb-1 text-sm font-semibold text-foreground">Setup status</h3>
+              <p className="text-sm leading-6 text-muted-foreground">{statusText}</p>
+            </div>
           </div>
+        </div>
 
+        <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-foreground-muted">
+            {canContinue ? "Everything is ready." : "Both services are required before you can continue."}
+          </p>
           <form action={continueToDashboard} className="w-full sm:w-auto">
             <ContinueButton disabled={!canContinue} />
           </form>
-        </div>
-      </div>
-
-      <div className="w-full max-w-2xl rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <div className="flex items-start gap-3">
-          <ShieldAlert className="mt-0.5 h-5 w-5 text-accent" />
-          <div>
-            <h3 className="mb-1 text-base font-semibold text-foreground">Onboarding Status</h3>
-            <p className="text-sm text-muted-foreground">{statusText}</p>
-          </div>
         </div>
       </div>
     </div>
@@ -154,70 +160,78 @@ export function ConnectWorkspace({
 
 function ContinueButton({ disabled }: { disabled: boolean }) {
   const { pending: formPending } = useFormStatus();
-  const isPending = formPending;
 
   return (
     <button
       type="submit"
-      disabled={disabled || isPending}
-      className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-accent-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+      disabled={disabled || formPending}
+      className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-accent-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
       style={{ backgroundColor: "var(--accent)" }}
     >
-      {isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-      {isPending ? "Continuing…" : "Continue to Dashboard"}
+      {formPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+      {formPending ? "Continuing…" : "Continue to Dashboard"}
     </button>
   );
 }
 
-function StatusRow({ label, active }: { label: string; active: boolean }) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3">
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      <span className={active ? "text-sm font-medium text-accent" : "text-sm text-foreground-muted"}>
-        {active ? "Connected" : "Not connected"}
-      </span>
-    </div>
-  );
-}
-
-function IntegrationChip({
+function ServiceCard({
   label,
+  description,
   connected,
   pending,
   onConnect,
   onDisconnect,
 }: {
   label: string;
+  description: string;
   connected: boolean;
   pending: boolean;
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
-  return connected ? (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-tag-green">
-        <CheckCircle2 className="h-5 w-5" />
-        <span>{label}</span>
+  return (
+    <div className="rounded-2xl border border-border bg-background p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">{label}</span>
+            <span
+              className={
+                connected
+                  ? "rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400"
+                  : "rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400"
+              }
+            >
+              {connected ? "Connected" : "Not connected"}
+            </span>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-foreground-muted">{description}</p>
+        </div>
       </div>
-      <button
-        type="button"
-        onClick={onDisconnect}
-        disabled={pending}
-        className="inline-flex items-center gap-2 rounded-lg border border-destructive/20 bg-background px-3 py-2 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-        Disconnect
-      </button>
+
+      <div className="mt-4">
+        {connected ? (
+          <button
+            type="button"
+            onClick={onDisconnect}
+            disabled={pending}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-background px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Disconnect
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onConnect}
+            disabled={pending}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {label === "Gmail" ? "Connect Gmail" : "Connect Calendar"}
+          </button>
+        )}
+      </div>
     </div>
-  ) : (
-    <button
-      type="button"
-      onClick={onConnect}
-      disabled={pending}
-      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-6 py-3 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-    >
-      {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-      {label.includes("Gmail") ? "Connect Gmail" : "Connect Calendar"}
-    </button>
   );
 }

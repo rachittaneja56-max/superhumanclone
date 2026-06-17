@@ -14,15 +14,20 @@ export async function continueToDashboard() {
   const userId = session.userId
   if (!userId) return
 
-  const { gmailConnected } = await reconcileGoogleConnectionState(userId).catch(() => ({
+  const { gmailConnected, calendarConnected } = await reconcileGoogleConnectionState(userId).catch(() => ({
     gmailConnected: false,
+    calendarConnected: false,
   }))
 
-  if (!gmailConnected) {
-    redirect('/onboarding/connect?error=gmail_required')
+  if (!gmailConnected || !calendarConnected) {
+    redirect('/onboarding/connect?error=workspace_required')
   }
 
-  await saveSafeUserSettings(userId, { onboardingCompleted: true })
+  await saveSafeUserSettings(userId, {
+    onboardingCompleted: true,
+    gmailConnected: true,
+    calendarConnected: true,
+  })
 
   redirect('/dashboard')
 }

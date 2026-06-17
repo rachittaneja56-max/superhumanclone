@@ -34,7 +34,7 @@ export default async function ConnectPage({
   const gmailConnected = liveConnections.gmailConnected;
   const calendarConnected = liveConnections.calendarConnected;
 
-  if (gmailConnected && !settings.privacyConfigured) {
+  if (gmailConnected && calendarConnected && !settings.privacyConfigured) {
     redirect("/onboarding/privacy");
   }
 
@@ -51,8 +51,10 @@ export default async function ConnectPage({
       )}
       {(resolvedSearchParams.error || resolvedSearchParams.connected === "false") && (
         <div className="mx-auto mt-4 w-full max-w-2xl rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-center text-sm text-destructive">
-          {resolvedSearchParams.error === "gmail_required"
-            ? "Connect Gmail before continuing to the dashboard."
+          {resolvedSearchParams.error === "workspace_required"
+            ? "Connect both Gmail and Calendar before continuing to the dashboard."
+            : resolvedSearchParams.error === "gmail_required"
+              ? "Connect Gmail before continuing to the dashboard."
             : "Connection failed. Please try again."}
         </div>
       )}
