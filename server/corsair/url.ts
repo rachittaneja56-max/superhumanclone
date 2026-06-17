@@ -40,6 +40,27 @@ export function getConfiguredAuthUrl(): string {
   ])
 }
 
+export function getAuthRequestBaseUrl(req: Request): string {
+  const configuredAuthUrl = normaliseBaseUrl(process.env.AUTH_URL)
+  if (configuredAuthUrl) {
+    return configuredAuthUrl
+  }
+
+  const forwardedHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host')
+  const forwardedProto = req.headers.get('x-forwarded-proto') ?? 'https'
+  if (forwardedHost) {
+    const forwardedUrl = normaliseBaseUrl(`${forwardedProto}://${forwardedHost}`)
+    if (forwardedUrl) return forwardedUrl
+  }
+
+  const requestOrigin = normaliseBaseUrl(new URL(req.url).origin)
+  if (requestOrigin) {
+    return requestOrigin
+  }
+
+  return getConfiguredAuthUrl()
+}
+
 export function getRequestBaseUrl(
   req: Request,
   options?: { preferAuthUrl?: boolean }

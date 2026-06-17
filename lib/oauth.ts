@@ -1,6 +1,6 @@
 import 'server-only';
 import { OAuth2Client } from "oslo/oauth2";
-import { getConfiguredAuthUrl, getRequestBaseUrl } from "@/server/corsair/url";
+import { getAuthRequestBaseUrl, getConfiguredAuthUrl } from "@/server/corsair/url";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -14,9 +14,7 @@ function getRequiredEnv(name: "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET" | "ENC
 }
 
 export function getGoogleOAuthRedirectUri(request?: Request) {
-  const baseUrl = request
-    ? getRequestBaseUrl(request, { preferAuthUrl: true })
-    : getConfiguredAuthUrl();
+  const baseUrl = request ? getAuthRequestBaseUrl(request) : getConfiguredAuthUrl();
   return `${baseUrl}/api/auth/google/callback`;
 }
 

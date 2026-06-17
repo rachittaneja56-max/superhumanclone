@@ -1,5 +1,14 @@
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  oauth_state: 'Google sign-in expired or was interrupted. Please try again.',
+  oauth_config: 'Google sign-in is misconfigured in production. Check AUTH_URL and Google OAuth settings.',
+  oauth_token: 'Google sign-in could not complete the token exchange. Please try again.',
+  oauth_userinfo: 'Google sign-in could not read your profile. Please try again.',
+  oauth_db: 'Your account could not be created or updated. Please try again.',
+  oauth_session: 'Your login completed, but the session could not be saved. Please try again.',
+}
+
 export default async function LoginPage({
   searchParams,
 }: {
@@ -7,7 +16,7 @@ export default async function LoginPage({
 }) {
   const { error, callbackUrl } = await searchParams
 
-  const errorMessage = error ? 'Sign-in failed. Please try again.' : ''
+  const errorMessage = error ? (AUTH_ERROR_MESSAGES[error] ?? 'Sign-in failed. Please try again.') : ''
   const targetUrl = callbackUrl ? `/api/auth/google?callbackUrl=${encodeURIComponent(callbackUrl)}` : '/api/auth/google'
 
   return (
