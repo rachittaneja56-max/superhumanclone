@@ -2,6 +2,7 @@ import "server-only";
 
 import { eq } from "drizzle-orm";
 
+import { resolveAdminAccess } from "@/server/admin/access-utils";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { getPlanConfig } from "./plans";
@@ -28,15 +29,46 @@ export async function getUserBillingPolicy(userId?: string): Promise<UserBilling
     };
   }
 
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, userId),
-    columns: {
-      plan: true,
-      aiDisabled: true,
-      isFlagged: true,
-      isAdmin: true,
-    },
-  });
+  let user:
+    | {
+        plan: "free" | "pro" | "team";
+        aiDisabled: boolean;
+        isFlagged: boolean;
+        email: string;
+        role?: "user" | "admin" | "superadmin" | null;
+        isAdmin: boolean;
+      }
+    | undefined;
+
+  try {
+    user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: {
+        plan: true,
+        aiDisabled: true,
+        isFlagged: true,
+        email: true,
+        role: true,
+        isAdmin: true,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes(`column "role" does not exist`)) {
+      throw error;
+    }
+
+    user = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: {
+        plan: true,
+        aiDisabled: true,
+        isFlagged: true,
+        email: true,
+        isAdmin: true,
+      },
+    });
+  }
 
   const plan = (user?.plan === "pro" || user?.plan === "team" ? user.plan : "free") as "free" | "pro" | "team";
   const config = getPlanConfig(plan);
@@ -46,6 +78,10 @@ export async function getUserBillingPolicy(userId?: string): Promise<UserBilling
     monthlyLimit: config.aiMonthlyLimit,
     aiDisabled: user?.aiDisabled ?? false,
     isFlagged: user?.isFlagged ?? false,
-    isAdmin: user?.isAdmin ?? false,
+    isAdmin: resolveAdminAccess({
+      email: user?.email,
+      role: user?.role,
+      isAdmin: user?.isAdmin,
+    }),
   };
 }

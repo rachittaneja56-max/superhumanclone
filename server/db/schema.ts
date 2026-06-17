@@ -42,7 +42,9 @@ export const auditActionEnum = pgEnum('audit_action', [
   'hitl_created',
   'hitl_resolved',
   'settings_changed',
-  'token_refreshed'
+  'token_refreshed',
+  'admin_promoted',
+  'admin_demoted'
 ]);
 
 export const hitlStatusEnum = pgEnum('hitl_status', [
@@ -56,8 +58,9 @@ export const users = pgTable('users', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text('name'),
   email: text('email').notNull().unique(),
-  emailVerified: timestamp('emailVerified', { mode: 'date' }),
+  emailVerified: timestamp('email_verified', { mode: 'date' }),
   image: text('image'),
+  role: text('role').$type<'user' | 'admin' | 'superadmin'>().default('user').notNull(),
   plan: text('plan').$type<'free' | 'pro' | 'team'>().default('free').notNull(),
   isAdmin: boolean('is_admin').default(false).notNull(),
   isFlagged: boolean('is_flagged').default(false).notNull(),

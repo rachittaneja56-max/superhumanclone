@@ -15,6 +15,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const localUser = await db.query.users.findFirst({
     where: eq(users.id, userId),
+    columns: {
+      email: true,
+      name: true,
+    },
   })
 
   if (!localUser) {

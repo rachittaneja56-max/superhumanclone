@@ -7,7 +7,7 @@ const logger = pino();
 
 export async function logAuditEvent(
   userId: string,
-  action: 'email_sent' | 'email_received' | 'email_archived' | 'hitl_created' | 'hitl_resolved' | 'settings_changed' | 'token_refreshed',
+  action: 'email_sent' | 'email_received' | 'email_archived' | 'hitl_created' | 'hitl_resolved' | 'settings_changed' | 'token_refreshed' | 'admin_promoted' | 'admin_demoted',
   metadata: any
 ) {
   try {

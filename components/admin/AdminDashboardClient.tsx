@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -16,10 +17,15 @@ export function AdminDashboardClient({ initialDashboard }: { initialDashboard: a
   const flagUser = trpc.admin.flagUser.useMutation({ onSuccess: refresh, onError: showError });
   const setAiAccess = trpc.admin.setUserAiAccess.useMutation({ onSuccess: refresh, onError: showError });
   const resetUsage = trpc.admin.resetUsageCounter.useMutation({ onSuccess: refresh, onError: showError });
+  const promoteUser = trpc.admin.promoteUserToAdminByEmail.useMutation({ onSuccess: refresh, onError: showError });
+  const demoteUser = trpc.admin.demoteUserToUserByEmail.useMutation({ onSuccess: refresh, onError: showError });
+  const [roleEmail, setRoleEmail] = useState("");
+  const isSuperadmin = Boolean(dashboard.currentAdmin?.isSuperadmin);
 
   async function refresh() {
     toast.success("Admin action saved");
     await utils.admin.getDashboard.invalidate();
+    setRoleEmail("");
   }
 
   function showError(error: { message?: string }) {
@@ -42,6 +48,43 @@ export function AdminDashboardClient({ initialDashboard }: { initialDashboard: a
         <StatCard label="DB size" value={dashboard.systemHealth.dbSize} />
       </div>
 
+      {isSuperadmin ? (
+        <section className="mb-6 rounded-2xl border border-border bg-surface p-5">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold text-foreground">Role management</h2>
+            <p className="mt-1 text-sm text-foreground-muted">
+              Promote or demote existing users by email. Only the fixed superadmin can manage roles.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <input
+              type="email"
+              value={roleEmail}
+              onChange={(event) => setRoleEmail(event.target.value)}
+              placeholder="user@example.com"
+              className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition focus:border-accent"
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                disabled={!roleEmail || promoteUser.isPending}
+                onClick={() => promoteUser.mutate({ email: roleEmail })}
+              >
+                Promote to admin
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!roleEmail || demoteUser.isPending}
+                onClick={() => demoteUser.mutate({ email: roleEmail })}
+              >
+                Demote to user
+              </Button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <div className="mb-6 grid gap-4 xl:grid-cols-[2fr_1fr]">
         <section className="rounded-2xl border border-border bg-surface p-5">
           <div className="mb-4 flex items-center justify-between">
@@ -57,7 +100,8 @@ export function AdminDashboardClient({ initialDashboard }: { initialDashboard: a
                     <div className="truncate text-xs text-foreground-muted">{user.email}</div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-foreground-subtle">
                       <Tag>{user.plan}</Tag>
-                      {user.isAdmin ? <Tag>admin</Tag> : null}
+                      <Tag>{user.role}</Tag>
+                      {user.isAdmin && user.role === "user" ? <Tag>legacy admin</Tag> : null}
                       {user.isFlagged ? <Tag>flagged</Tag> : null}
                       {user.aiDisabled ? <Tag>ai off</Tag> : null}
                     </div>

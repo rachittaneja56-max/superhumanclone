@@ -1,5 +1,6 @@
 import { OAuth2RequestError } from "oslo/oauth2";
 import { assertGoogleOAuthConfig, createGoogleOAuthClient } from "@/lib/oauth";
+import { isFixedSuperadminEmail } from "@/server/admin/access-utils";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -122,6 +123,7 @@ export async function GET(request: Request) {
 
     let userId: string;
     try {
+      const isSuperadmin = isFixedSuperadminEmail(googleUser.email);
       const existingUsers = await db
         .select({
           id: sql<string>`"id"`,
@@ -134,15 +136,47 @@ export async function GET(request: Request) {
 
       if (!existingUser) {
         userId = crypto.randomUUID();
-        await db.execute(sql`
-          insert into "users" ("id", "email", "name", "image")
-          values (
-            ${userId},
-            ${googleUser.email},
-            ${googleUser.name},
-            ${googleUser.picture}
-          )
-        `);
+        if (isSuperadmin) {
+          try {
+            await db.execute(sql`
+              insert into "users" ("id", "email", "name", "image", "role", "is_admin")
+              values (
+                ${userId},
+                ${googleUser.email},
+                ${googleUser.name},
+                ${googleUser.picture},
+                'superadmin',
+                true
+              )
+            `);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "";
+            if (!message.includes(`column "role" does not exist`)) {
+              throw error;
+            }
+
+            await db.execute(sql`
+              insert into "users" ("id", "email", "name", "image", "is_admin")
+              values (
+                ${userId},
+                ${googleUser.email},
+                ${googleUser.name},
+                ${googleUser.picture},
+                true
+              )
+            `);
+          }
+        } else {
+          await db.execute(sql`
+            insert into "users" ("id", "email", "name", "image")
+            values (
+              ${userId},
+              ${googleUser.email},
+              ${googleUser.name},
+              ${googleUser.picture}
+            )
+          `);
+        }
 
         const { ensureTenantProvisioned } = await import('@/server/corsair/provision');
         await ensureTenantProvisioned(userId).catch((error) =>
@@ -153,13 +187,41 @@ export async function GET(request: Request) {
         );
       } else {
         userId = existingUser.id;
-        await db.execute(sql`
-          update "users"
-          set
-            "name" = ${googleUser.name},
-            "image" = ${googleUser.picture}
-          where "id" = ${userId}
-        `);
+        if (isSuperadmin) {
+          try {
+            await db.execute(sql`
+              update "users"
+              set
+                "name" = ${googleUser.name},
+                "image" = ${googleUser.picture},
+                "role" = 'superadmin',
+                "is_admin" = true
+              where "id" = ${userId}
+            `);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "";
+            if (!message.includes(`column "role" does not exist`)) {
+              throw error;
+            }
+
+            await db.execute(sql`
+              update "users"
+              set
+                "name" = ${googleUser.name},
+                "image" = ${googleUser.picture},
+                "is_admin" = true
+              where "id" = ${userId}
+            `);
+          }
+        } else {
+          await db.execute(sql`
+            update "users"
+            set
+              "name" = ${googleUser.name},
+              "image" = ${googleUser.picture}
+            where "id" = ${userId}
+          `);
+        }
       }
 
       await ensureUserSettings(userId);

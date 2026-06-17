@@ -8,6 +8,10 @@ export const adminUserMutationSchema = z.object({
   userId: z.string().min(1),
 });
 
+export const adminEmailMutationSchema = z.object({
+  email: z.email().transform((value) => value.trim().toLowerCase()),
+});
+
 export const changeUserPlanSchema = adminUserMutationSchema.extend({
   plan: z.enum(["free", "pro", "team"]),
 });
@@ -28,3 +32,7 @@ export const unlockAdminDashboardSchema = z.object({
   accessId: z.string().min(1).max(80),
   password: z.string().min(8).max(120),
 });
+
+export const promoteUserToAdminByEmailSchema = adminEmailMutationSchema;
+
+export const demoteUserToUserByEmailSchema = adminEmailMutationSchema;

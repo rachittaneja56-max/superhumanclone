@@ -159,7 +159,10 @@ export const calendarRouter = router({
         if (e.to_address) parseRecipientList(e.to_address).forEach((item) => participants.add(item));
       }
 
-      const currentUser = await ctx.db.query.users.findFirst({ where: eq(users.id, ctx.userId!) });
+      const currentUser = await ctx.db.query.users.findFirst({
+        where: eq(users.id, ctx.userId!),
+        columns: { email: true },
+      });
       if (currentUser?.email) participants.delete(currentUser.email);
 
       const content = threadEmails

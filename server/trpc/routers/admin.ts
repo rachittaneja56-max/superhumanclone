@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 
 import { getUserAdminState } from "@/server/admin/access";
+import { FIXED_SUPERADMIN_EMAIL, normalizeEmail, resolveUserRole } from "@/server/admin/access-utils";
 import { ADMIN_ACCESS_ID, ADMIN_ACCESS_PASSWORD } from "@/server/admin/credentials";
 import { getPlanConfig, PLAN_CONFIGS } from "@/server/billing/plans";
 import { getUsage, resetUsage } from "@/server/billing/usage";
@@ -11,25 +12,66 @@ import { getSession, setAdminUnlocked } from "@/lib/auth";
 import { auditLogs, agentSessions, hitlActions, users } from "@/server/db/schema";
 import {
   changeUserPlanSchema,
+  demoteUserToUserByEmailSchema,
   flagUserSchema,
   getAdminDashboardSchema,
+  promoteUserToAdminByEmailSchema,
   resetUsageCounterSchema,
   unlockAdminDashboardSchema,
   setUserAiAccessSchema,
 } from "@/lib/schemas";
-import { protectedProcedure, router } from "../trpc";
+import { createRateLimitMiddleware, protectedProcedure, router } from "../trpc";
 
 async function requireAdmin(userId: string) {
-  const { isAdmin } = await getUserAdminState(userId);
-  if (!isAdmin) {
+  const state = await getUserAdminState(userId);
+  if (!state.isAdmin) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Admin access required" });
   }
+  return state;
+}
+
+async function requireSuperadmin(userId: string) {
+  const state = await requireAdmin(userId);
+  if (!state.isSuperadmin) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Superadmin access required" });
+  }
+  return state;
 }
 
 async function requireAdminUnlock() {
   const session = await getSession();
   if (!session.adminUnlocked) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Admin unlock required" });
+  }
+}
+
+async function logRoleAudit(ctx: { db: any; userId: string }, details: {
+  actingUserId: string;
+  targetUserId: string;
+  targetEmail: string;
+  fromRole: string;
+  toRole: string;
+}, action: "admin_promoted" | "admin_demoted") {
+  try {
+    await ctx.db.insert(auditLogs).values({
+      userId: ctx.userId,
+      action,
+      details: sanitisePayload(details),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.includes("invalid input value for enum")) {
+      throw error;
+    }
+
+    await ctx.db.insert(auditLogs).values({
+      userId: ctx.userId,
+      action: "settings_changed",
+      details: sanitisePayload({
+        ...details,
+        auditAction: action,
+      }),
+    });
   }
 }
 
@@ -50,23 +92,58 @@ export const adminRouter = router({
   getDashboard: protectedProcedure
     .input(getAdminDashboardSchema)
     .query(async ({ ctx, input }) => {
-      await requireAdmin(ctx.userId!);
+      const adminState = await requireAdmin(ctx.userId!);
       await requireAdminUnlock();
 
-      const userRows = await ctx.db.query.users.findMany({
-        columns: {
-          id: true,
-          name: true,
-          email: true,
-          plan: true,
-          isAdmin: true,
-          isFlagged: true,
-          aiDisabled: true,
-          createdAt: true,
-        },
-        orderBy: [desc(users.createdAt)],
-        limit: input.limit,
-      });
+      let userRows: Array<{
+        id: string;
+        name: string | null;
+        email: string;
+        role?: "user" | "admin" | "superadmin" | null;
+        plan: "free" | "pro" | "team";
+        isAdmin: boolean;
+        isFlagged: boolean;
+        aiDisabled: boolean;
+        createdAt: Date | null;
+      }>;
+
+      try {
+        userRows = await ctx.db.query.users.findMany({
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            plan: true,
+            isAdmin: true,
+            isFlagged: true,
+            aiDisabled: true,
+            createdAt: true,
+          },
+          orderBy: [desc(users.createdAt)],
+          limit: input.limit,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (!message.includes(`column "role" does not exist`)) {
+          throw error;
+        }
+
+        userRows = await ctx.db.query.users.findMany({
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+            plan: true,
+            isAdmin: true,
+            isFlagged: true,
+            aiDisabled: true,
+            createdAt: true,
+          },
+          orderBy: [desc(users.createdAt)],
+          limit: input.limit,
+        });
+      }
 
       const now = new Date();
       const providerDate = now.toISOString().slice(0, 10);
@@ -109,6 +186,7 @@ export const adminRouter = router({
             id: user.id,
             name: user.name || "Unknown",
             email: user.email,
+            role: resolveUserRole({ email: user.email, role: user.role, isAdmin: user.isAdmin }),
             plan: getPlanConfig(user.plan).id,
             isAdmin: user.isAdmin,
             isFlagged: user.isFlagged,
@@ -130,6 +208,10 @@ export const adminRouter = router({
       const recentRejections = allHitlRows.filter((row: { status: string }) => row.status === "rejected").length;
 
       return {
+        currentAdmin: {
+          role: adminState.role,
+          isSuperadmin: adminState.isSuperadmin,
+        },
         users: usersWithMetrics,
         plans: PLAN_CONFIGS,
         systemHealth: {
@@ -196,5 +278,177 @@ export const adminRouter = router({
       await requireAdminUnlock();
       await resetUsage(ctx.redis, input.userId, input.kind);
       return { reset: true };
+    }),
+
+  promoteUserToAdminByEmail: protectedProcedure
+    .use(createRateLimitMiddleware("admin-role-promote", 10, 60))
+    .input(promoteUserToAdminByEmailSchema)
+    .mutation(async ({ ctx, input }) => {
+      await requireSuperadmin(ctx.userId!);
+      await requireAdminUnlock();
+
+      const targetEmail = normalizeEmail(input.email);
+      let targetUser:
+        | {
+            id: string;
+            email: string;
+            role?: "user" | "admin" | "superadmin" | null;
+            isAdmin: boolean;
+          }
+        | undefined;
+
+      try {
+        targetUser = await ctx.db.query.users.findFirst({
+          where: sql`lower(${users.email}) = ${targetEmail}`,
+          columns: {
+            id: true,
+            email: true,
+            role: true,
+            isAdmin: true,
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (!message.includes(`column "role" does not exist`)) {
+          throw error;
+        }
+
+        targetUser = await ctx.db.query.users.findFirst({
+          where: sql`lower(${users.email}) = ${targetEmail}`,
+          columns: {
+            id: true,
+            email: true,
+            isAdmin: true,
+          },
+        });
+      }
+
+      if (!targetUser) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "User not found for that email" });
+      }
+
+      const previousRole = resolveUserRole({
+        email: targetUser.email,
+        role: targetUser.role,
+        isAdmin: targetUser.isAdmin,
+      });
+
+      if (previousRole === "superadmin") {
+        return { updated: true, role: "superadmin" as const };
+      }
+
+      try {
+        await ctx.db.update(users)
+          .set({ role: "admin", isAdmin: true })
+          .where(eq(users.id, targetUser.id));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (!message.includes(`column "role" does not exist`)) {
+          throw error;
+        }
+
+        await ctx.db.update(users)
+          .set({ isAdmin: true })
+          .where(eq(users.id, targetUser.id));
+      }
+
+      await logRoleAudit({
+        db: ctx.db,
+        userId: ctx.userId!,
+      }, {
+          actingUserId: ctx.userId!,
+          targetUserId: targetUser.id,
+          targetEmail: targetUser.email ?? targetEmail,
+          fromRole: previousRole,
+          toRole: "admin",
+      }, "admin_promoted");
+
+      return { updated: true, role: "admin" as const };
+    }),
+
+  demoteUserToUserByEmail: protectedProcedure
+    .use(createRateLimitMiddleware("admin-role-demote", 10, 60))
+    .input(demoteUserToUserByEmailSchema)
+    .mutation(async ({ ctx, input }) => {
+      await requireSuperadmin(ctx.userId!);
+      await requireAdminUnlock();
+
+      const targetEmail = normalizeEmail(input.email);
+      if (targetEmail === FIXED_SUPERADMIN_EMAIL) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Fixed superadmin cannot be demoted" });
+      }
+
+      let targetUser:
+        | {
+            id: string;
+            email: string;
+            role?: "user" | "admin" | "superadmin" | null;
+            isAdmin: boolean;
+          }
+        | undefined;
+
+      try {
+        targetUser = await ctx.db.query.users.findFirst({
+          where: sql`lower(${users.email}) = ${targetEmail}`,
+          columns: {
+            id: true,
+            email: true,
+            role: true,
+            isAdmin: true,
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (!message.includes(`column "role" does not exist`)) {
+          throw error;
+        }
+
+        targetUser = await ctx.db.query.users.findFirst({
+          where: sql`lower(${users.email}) = ${targetEmail}`,
+          columns: {
+            id: true,
+            email: true,
+            isAdmin: true,
+          },
+        });
+      }
+
+      if (!targetUser) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "User not found for that email" });
+      }
+
+      const previousRole = resolveUserRole({
+        email: targetUser.email,
+        role: targetUser.role,
+        isAdmin: targetUser.isAdmin,
+      });
+
+      try {
+        await ctx.db.update(users)
+          .set({ role: "user", isAdmin: false })
+          .where(eq(users.id, targetUser.id));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (!message.includes(`column "role" does not exist`)) {
+          throw error;
+        }
+
+        await ctx.db.update(users)
+          .set({ isAdmin: false })
+          .where(eq(users.id, targetUser.id));
+      }
+
+      await logRoleAudit({
+        db: ctx.db,
+        userId: ctx.userId!,
+      }, {
+          actingUserId: ctx.userId!,
+          targetUserId: targetUser.id,
+          targetEmail: targetUser.email ?? targetEmail,
+          fromRole: previousRole,
+          toRole: "user",
+      }, "admin_demoted");
+
+      return { updated: true, role: "user" as const };
     }),
 });
