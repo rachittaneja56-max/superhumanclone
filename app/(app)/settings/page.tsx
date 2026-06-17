@@ -61,7 +61,6 @@ export default async function SettingsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="font-display text-lg font-semibold text-foreground">Billing</h2>
-                  <p className="mt-1 text-sm text-foreground-muted">Dummy-only billing. No payment gateway is connected.</p>
                 </div>
                 <CreditCard className="h-5 w-5 text-accent" />
               </div>

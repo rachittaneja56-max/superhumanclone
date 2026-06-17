@@ -150,7 +150,13 @@ export async function DashboardShell({
         <div className="flex h-full flex-col justify-between gap-4 rounded-[1.5rem] border border-border bg-white/70 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] dark:bg-background/60 dark:shadow-none">
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
-              Quick actions
+              Trust / privacy
+            </div>
+            <div className="mt-4 space-y-2">
+              <StatusRow label="Gmail" value={settings?.gmailConnected ? "Connected" : "Disconnected"} tone={settings?.gmailConnected ? "good" : "warn"} />
+              <StatusRow label="Calendar" value={settings?.calendarConnected ? "Connected" : "Disconnected"} tone={settings?.calendarConnected ? "good" : "warn"} />
+              <StatusRow label="Privacy Gate" value={settings?.privacyConfigured ? "Configured" : "Needs setup"} tone={settings?.privacyConfigured ? "good" : "warn"} />
+              <StatusRow label="AI" value={settings?.aiEnabled ? "Enabled" : "Disabled"} tone={settings?.aiEnabled ? "good" : "warn"} />
             </div>
             <div className="mt-4 flex flex-col gap-2">
               <Link
@@ -213,10 +219,7 @@ export async function DashboardData({
   })) as AuditLog[];
 
   const inboxItems = inboxThreads.items ?? [];
-  const aiEnabled = Boolean(settings?.aiEnabled) && !(billing?.aiDisabled ?? false);
-  const privacyReady = Boolean(settings?.privacyConfigured);
-  const gmailConnected = connectionState.gmailConnected;
-  const calendarConnected = connectionState.calendarConnected;
+  const now = new Date();
   const urgentThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Urgent") || isUrgentThread(thread));
   const replyThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Needs reply")).slice(0, 4);
   const financeThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Finance")).slice(0, 4);
@@ -224,6 +227,15 @@ export async function DashboardData({
   const workThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Work")).slice(0, 4);
   const updatesThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Updates")).slice(0, 4);
   const followUpThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Follow-up")).slice(0, 4);
+  const privateThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Private")).slice(0, 4);
+  const staleThreads = inboxItems
+    .filter((thread: InboxThread) => {
+      if (thread.isRead || thread.receivedAt === null) return false;
+      const receivedAt = new Date(thread.receivedAt);
+      if (Number.isNaN(receivedAt.getTime())) return false;
+      return now.getTime() - receivedAt.getTime() >= 1000 * 60 * 60 * 24 * 3;
+    })
+    .slice(0, 4);
   const priorityThreads = [...urgentThreads, ...replyThreads, ...financeThreads, ...calendarThreads, ...workThreads]
     .filter((thread: InboxThread, index: number, items: InboxThread[]) => items.findIndex((candidate) => candidate.id === thread.id) === index)
     .slice(0, 4);
@@ -244,6 +256,8 @@ export async function DashboardData({
     { label: "Work / hiring", value: workThreads.length, icon: BriefcaseBusiness },
     { label: "Calendar-related", value: calendarThreads.length, icon: CalendarDays },
     { label: "Follow-up", value: followUpThreads.length, icon: Sparkles },
+    { label: "Private", value: privateThreads.length, icon: ShieldCheck },
+    { label: "Stale", value: staleThreads.length, icon: Clock3 },
     { label: "Social / updates", value: updatesThreads.length, icon: Newspaper },
     { label: "Archived noise", value: archivedNoise, icon: Inbox },
   ].filter((bucket) => bucket.value > 0);
@@ -319,7 +333,7 @@ export async function DashboardData({
             <div className="rounded-2xl border border-border bg-background p-4">
               <div className="text-xs uppercase tracking-[0.18em] text-foreground-subtle">Meeting prep</div>
               <div className="mt-2 text-sm text-foreground-muted">
-                {calendarConnected && privacyReady && aiEnabled
+                {connectionState.calendarConnected && settings?.privacyConfigured && settings?.aiEnabled
                   ? "Prep brief available for allowed attendees."
                   : "Enable calendar, privacy, and AI for meeting prep."}
               </div>
@@ -385,16 +399,6 @@ export async function DashboardData({
         </PanelCard>
       </div>
 
-      <div className="mt-4 grid items-stretch gap-4 xl:grid-cols-3">
-        <PanelCard title="Trust / privacy" icon={<ShieldCheck className="h-4 w-4" />} description="Connection and AI posture at a glance." className="xl:col-span-1">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <StatusRow label="Gmail" value={gmailConnected ? "Connected" : "Disconnected"} tone={gmailConnected ? "good" : "warn"} />
-            <StatusRow label="Calendar" value={calendarConnected ? "Connected" : "Disconnected"} tone={calendarConnected ? "good" : "warn"} />
-            <StatusRow label="Privacy Gate" value={privacyReady ? "Configured" : "Needs setup"} tone={privacyReady ? "good" : "warn"} />
-            <StatusRow label="AI" value={aiEnabled ? "Enabled" : "Disabled"} tone={aiEnabled ? "good" : "warn"} />
-          </div>
-        </PanelCard>
-      </div>
     </>
   );
 }

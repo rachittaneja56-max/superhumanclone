@@ -1,9 +1,9 @@
 "use client";
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronLeft, Loader2, RefreshCw, Search, SquarePen, X, Bot } from "lucide-react";
+import { Bot, ChevronDown, ChevronLeft, DraftingCompass, Inbox, Loader2, RefreshCw, Search, Send, ShieldAlert, SquarePen, Trash2, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
@@ -30,6 +30,14 @@ const FOLDER_LABELS: Record<Folder, string> = {
   spam: "Spam",
   trash: "Trash",
 };
+
+const MAILBOX_ITEMS: Array<{ folder: Folder; label: string; icon: ComponentType<{ className?: string }> }> = [
+  { folder: "inbox", label: "Inbox", icon: Inbox },
+  { folder: "drafts", label: "Drafts", icon: DraftingCompass },
+  { folder: "sent", label: "Sent", icon: Send },
+  { folder: "spam", label: "Spam", icon: ShieldAlert },
+  { folder: "trash", label: "Trash", icon: Trash2 },
+];
 
 const PAGE_SIZE = 20;
 type MailboxPage = {
@@ -177,6 +185,14 @@ export function MailWorkspace({
     const target = params.toString() ? `${pathname}?${params.toString()}` : pathname;
     router.replace(target);
   }, [pathname, router]);
+
+  const openFolder = useCallback((nextFolder: Folder) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("folder", nextFolder);
+    params.delete("thread");
+    params.delete("compose");
+    replaceSearch(params);
+  }, [replaceSearch, searchParams]);
 
   const closeCompose = useCallback(() => {
     setComposeOpen(false);
@@ -407,6 +423,29 @@ export function MailWorkspace({
                     ? "Drafts stay saved while you work."
                     : "Click a conversation to open the thread view."}
                 </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {MAILBOX_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = folder === item.folder;
+
+                    return (
+                      <button
+                        key={item.folder}
+                        type="button"
+                        onClick={() => openFolder(item.folder)}
+                        className={[
+                          "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                          isActive
+                            ? "border-accent/30 bg-accent/10 text-accent"
+                            : "border-border bg-background text-foreground-muted hover:bg-surface-raised hover:text-foreground",
+                        ].join(" ")}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
