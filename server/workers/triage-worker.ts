@@ -1,13 +1,14 @@
 import { z } from 'zod';
 import { workerDb } from '../db/worker-index';
 import { redis } from '../redis';
-import { emails, aiConsentRules, autoReplyDrafts, userSettings } from '../db/schema';
+import { emails, aiConsentRules, autoReplyDrafts } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { isDomainBlocked } from '@/lib/domain-matcher';
 import { classifyEmail, generateTLDR, generateAutoReplies, generateEmbedding } from '../ai/provider';
 import { AIUsageLimitError } from '../ai/errors';
 import { incrementUsage } from '../billing/usage';
 import pino from 'pino';
+import { getSafeUserSettings } from '../db/user-settings-compat';
 
 const logger = pino();
 
@@ -55,14 +56,7 @@ export async function processTriageJob(payload: unknown) {
     return { status: 'skipped', reason: 'privacy_gate' };
   }
 
-  const settings = await workerDb.query.userSettings.findFirst({
-    where: eq(userSettings.userId, userId),
-    columns: {
-      aiEnabled: true,
-      draftSuggestionsEnabled: true,
-      privacyConfigured: true,
-    },
-  });
+  const settings = await getSafeUserSettings(userId);
 
   // 3. AI classification with provider guardrails
   let finalTag = 'other';

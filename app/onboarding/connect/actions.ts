@@ -1,27 +1,20 @@
 'use server'
 
 import { getSession } from '@/lib/auth'
-import { db } from '@/server/db'
-import { userSettings } from '@/server/db/schema'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { disconnectIntegration } from '@/server/corsair/client'
-import { eq } from 'drizzle-orm'
 import { invalidateMailCache, invalidateSettingsCache } from '@/server/cache'
 import { redis } from '@/server/redis'
+import { saveSafeUserSettings } from '@/server/db/user-settings-compat'
 
 export async function continueToDashboard() {
   const session = await getSession()
   const userId = session.userId
   if (!userId) return
 
-  await db.insert(userSettings)
-    .values({ userId, onboardingCompleted: true })
-    .onConflictDoUpdate({
-      target: userSettings.userId,
-      set: { onboardingCompleted: true }
-    })
-    
+  await saveSafeUserSettings(userId, { onboardingCompleted: true })
+
   redirect('/inbox')
 }
 
@@ -31,12 +24,10 @@ async function disconnectAndRefresh(integration: 'gmail' | 'googlecalendar', red
   if (!userId) return
 
   await disconnectIntegration(userId, integration)
-  await db.update(userSettings)
-    .set({
-      ...(integration === 'gmail' ? { gmailConnected: false } : {}),
-      ...(integration === 'googlecalendar' ? { calendarConnected: false } : {}),
-    })
-    .where(eq(userSettings.userId, userId))
+  await saveSafeUserSettings(userId, {
+    ...(integration === 'gmail' ? { gmailConnected: false } : {}),
+    ...(integration === 'googlecalendar' ? { calendarConnected: false } : {}),
+  })
 
   await invalidateSettingsCache(redis, userId).catch(() => null)
   await invalidateMailCache(redis, userId).catch(() => null)
@@ -63,12 +54,10 @@ export async function disconnectAll() {
   await disconnectIntegration(userId, 'gmail')
   await disconnectIntegration(userId, 'googlecalendar')
 
-  await db.update(userSettings)
-    .set({
-      gmailConnected: false,
-      calendarConnected: false
-    })
-    .where(eq(userSettings.userId, userId))
+  await saveSafeUserSettings(userId, {
+    gmailConnected: false,
+    calendarConnected: false
+  })
 
   await invalidateSettingsCache(redis, userId).catch(() => null)
   await invalidateMailCache(redis, userId).catch(() => null)

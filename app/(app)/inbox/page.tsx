@@ -1,7 +1,6 @@
 import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { serverTrpc } from '@/lib/trpc/server'
-import { MorningDigestBanner } from '@/components/inbox/MorningDigestBanner'
 import { MailWorkspace } from '@/components/inbox/MailWorkspace'
 import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
 import Link from 'next/link'
@@ -79,7 +78,6 @@ export default async function InboxPage({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <MorningDigestBanner />
       <div className="flex-1 min-h-0 overflow-hidden">
         <MailWorkspace initialMailboxPage={initialMailboxPage} initialFolder={folder} initialComposeOpen={composeOpen} />
       </div>

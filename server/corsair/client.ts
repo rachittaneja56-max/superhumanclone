@@ -1,7 +1,8 @@
 import 'server-only'
 import { db } from '@/server/db'
-import { corsairAccounts, corsairEntities, corsairEvents, corsairIntegrations, userSettings } from '@/server/db/schema'
+import { corsairAccounts, corsairEntities, corsairEvents, corsairIntegrations } from '@/server/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { saveSafeUserSettings } from '@/server/db/user-settings-compat'
 
 // Type helper — plugins are dynamically attached, need 'as any'
 type CorsairTenant = {
@@ -523,12 +524,10 @@ export async function disconnectIntegration(userId: string, integrationId: strin
   })
 
   if (!account) {
-    await db.update(userSettings)
-      .set({
-        ...(integrationId === 'gmail' ? { gmailConnected: false } : {}),
-        ...(integrationId === 'googlecalendar' ? { calendarConnected: false } : {}),
-      })
-      .where(eq(userSettings.userId, userId))
+    await saveSafeUserSettings(userId, {
+      ...(integrationId === 'gmail' ? { gmailConnected: false } : {}),
+      ...(integrationId === 'googlecalendar' ? { calendarConnected: false } : {}),
+    })
 
     return { success: true, revoked: false }
   }
@@ -537,12 +536,11 @@ export async function disconnectIntegration(userId: string, integrationId: strin
     await tx.delete(corsairEntities).where(eq(corsairEntities.accountId, account.id))
     await tx.delete(corsairEvents).where(eq(corsairEvents.accountId, account.id))
     await tx.delete(corsairAccounts).where(eq(corsairAccounts.id, account.id))
-    await tx.update(userSettings)
-      .set({
-        ...(integrationId === 'gmail' ? { gmailConnected: false } : {}),
-        ...(integrationId === 'googlecalendar' ? { calendarConnected: false } : {}),
-      })
-      .where(eq(userSettings.userId, userId))
+  })
+
+  await saveSafeUserSettings(userId, {
+    ...(integrationId === 'gmail' ? { gmailConnected: false } : {}),
+    ...(integrationId === 'googlecalendar' ? { calendarConnected: false } : {}),
   })
 
   return { success: true, revoked: true }

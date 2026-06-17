@@ -1,10 +1,11 @@
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
-import { userSettings, users } from "@/server/db/schema";
+import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { reconcileGoogleConnectionState } from "@/server/auth/helpers";
 import { ConnectWorkspace } from "@/components/onboarding/ConnectWorkspace";
+import { ensureSafeUserSettings, getSafeUserSettings } from "@/server/db/user-settings-compat";
 
 export default async function ConnectPage({
   searchParams,
@@ -23,23 +24,17 @@ export default async function ConnectPage({
 
   const firstName = localUser?.name?.split(" ")[0] || "User";
 
-  let settings = await db.query.userSettings.findFirst({
-    where: eq(userSettings.userId, userId),
-  });
-
-  if (!settings) {
-    const [newSettings] = await db.insert(userSettings).values({ userId }).returning();
-    settings = newSettings;
-  }
+  await ensureSafeUserSettings(userId);
+  const settings = await getSafeUserSettings(userId);
 
   const liveConnections = await reconcileGoogleConnectionState(userId).catch(() => ({
     gmailConnected: settings.gmailConnected,
     calendarConnected: settings.calendarConnected,
   }));
-  settings.gmailConnected = liveConnections.gmailConnected;
-  settings.calendarConnected = liveConnections.calendarConnected;
+  const gmailConnected = liveConnections.gmailConnected;
+  const calendarConnected = liveConnections.calendarConnected;
 
-  if (settings.gmailConnected && !settings.privacyConfigured) {
+  if (gmailConnected && !settings.privacyConfigured) {
     redirect("/onboarding/privacy");
   }
 
@@ -64,8 +59,8 @@ export default async function ConnectPage({
         firstName={firstName}
         gmailConnectUrl="/api/corsair/connect?provider=gmail"
         calendarConnectUrl="/api/corsair/connect?provider=googlecalendar"
-        initialGmailConnected={settings.gmailConnected}
-        initialCalendarConnected={settings.calendarConnected}
+        initialGmailConnected={gmailConnected}
+        initialCalendarConnected={calendarConnected}
       />
     </div>
   );

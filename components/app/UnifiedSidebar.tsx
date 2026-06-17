@@ -3,7 +3,7 @@
 import type { ComponentType } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Calendar, CreditCard, DraftingCompass, Inbox, Send, Settings, ShieldAlert, Trash2, LogOut, Shield } from 'lucide-react'
+import { Calendar, CreditCard, DraftingCompass, Inbox, LayoutDashboard, LogOut, Send, Settings, Shield, ShieldAlert, Trash2 } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { signOutAction } from '@/app/actions/auth'
 
@@ -18,6 +18,7 @@ const MAILBOX_ITEMS: Array<{ folder: MailFolder; label: string; icon: ComponentT
 ]
 
 const APP_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/settings', label: 'Settings', icon: Settings },
@@ -40,7 +41,7 @@ export function UnifiedSidebar({
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col overflow-hidden border-r border-border bg-surface">
       <div className="border-b border-border px-4 py-4">
-        <Link href="/inbox" className="inline-flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+        <Link href="/dashboard" className="inline-flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
           <span className="font-display text-lg font-semibold tracking-tight text-foreground">
             aethra<span className="text-accent">.</span>
           </span>

@@ -1,8 +1,9 @@
 import { router, protectedProcedure } from '../trpc';
-import { aiConsentRules, userSettings } from '../../db/schema';
+import { aiConsentRules } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import { getUserSettingsSchema, updateSettingSchema, updatePrivacyRulesSchema } from '@/lib/schemas';
 import { cacheTtls, invalidateSettingsCache, settingsCacheKey, settingsVersionKey } from '@/server/cache';
+import { getSafeUserSettings, saveSafeUserSettings } from '@/server/db/user-settings-compat';
 
 export const settingsRouter = router({
   getUserSettings: protectedProcedure
@@ -17,9 +18,7 @@ export const settingsRouter = router({
         } catch {}
       }
 
-      const settings = await ctx.db.query.userSettings.findFirst({
-        where: eq(userSettings.userId, ctx.userId!),
-      });
+      const settings = await getSafeUserSettings(ctx.userId!);
 
       await ctx.redis.set(cacheKey, JSON.stringify(settings), { ex: cacheTtls.settings });
       return settings;
@@ -28,9 +27,7 @@ export const settingsRouter = router({
   updateSetting: protectedProcedure
     .input(updateSettingSchema)
     .mutation(async ({ ctx, input }) => {
-      await ctx.db.update(userSettings)
-        .set({ [input.key]: input.value })
-        .where(eq(userSettings.userId, ctx.userId!))
+      await saveSafeUserSettings(ctx.userId!, { [input.key]: input.value })
       await invalidateSettingsCache(ctx.redis, ctx.userId!)
       return { updated: true }
     }),
@@ -56,9 +53,7 @@ export const settingsRouter = router({
       // Invalidate consent cache
       await ctx.redis.incr('consent_version:' + ctx.userId)
       // Set privacyConfigured to true
-      await ctx.db.update(userSettings)
-        .set({ privacyConfigured: true })
-        .where(eq(userSettings.userId, ctx.userId!))
+      await saveSafeUserSettings(ctx.userId!, { privacyConfigured: true })
       await invalidateSettingsCache(ctx.redis, ctx.userId!)
       return { updated: true, count: input.rules.length }
     }),

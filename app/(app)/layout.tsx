@@ -3,9 +3,10 @@ import { AppClientShell } from '@/components/app-client-shell'
 import { UnifiedSidebar } from '@/components/app/UnifiedSidebar'
 import { getUserAdminState } from '@/server/admin/access'
 import { db } from '@/server/db'
-import { userSettings, users } from '@/server/db/schema'
+import { users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { getSession } from '@/lib/auth'
+import { getSafeUserSettings } from '@/server/db/user-settings-compat'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
@@ -25,11 +26,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/login')
   }
 
-  const settings = await db.query.userSettings.findFirst({
-    where: eq(userSettings.userId, userId),
-  })
+  const settings = await getSafeUserSettings(userId)
 
-  if (!settings || !settings.onboardingCompleted) {
+  if (!settings.hasRecord || !settings.onboardingCompleted) {
     redirect('/onboarding/connect')
   }
 

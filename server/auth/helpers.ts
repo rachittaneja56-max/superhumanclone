@@ -1,25 +1,12 @@
 // server/auth/helpers.ts
 import 'server-only'
 import { db } from '@/server/db'
-import { userSettings } from '@/server/db/schema'
-import { eq } from 'drizzle-orm'
 import { invalidateSettingsCache } from '@/server/cache'
 import { redis } from '@/server/redis'
+import { ensureSafeUserSettings, saveSafeUserSettings } from '@/server/db/user-settings-compat'
 
 export async function ensureUserSettings(userId: string): Promise<void> {
-  const existing = await db.query.userSettings.findFirst({
-    where: eq(userSettings.userId, userId),
-    columns: { userId: true },
-  })
-
-  if (!existing) {
-    await db.insert(userSettings).values({
-      userId,
-      onboardingCompleted: false,
-      gmailConnected: false,
-      calendarConnected: false,
-    }).onConflictDoNothing()
-  }
+  await ensureSafeUserSettings(userId)
 }
 
 export async function expireUserHITLActions(userId: string): Promise<void> {
@@ -45,12 +32,10 @@ export async function reconcileGoogleConnectionState(userId: string) {
     isUserConnected(userId, 'googlecalendar'),
   ])
 
-  await db.update(userSettings)
-    .set({
-      gmailConnected,
-      calendarConnected,
-    })
-    .where(eq(userSettings.userId, userId))
+  await saveSafeUserSettings(userId, {
+    gmailConnected,
+    calendarConnected,
+  })
 
   await invalidateSettingsCache(redis, userId).catch(() => null)
 
