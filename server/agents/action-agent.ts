@@ -1,8 +1,9 @@
 import 'server-only';
 import { db } from '../db';
-import { hitlActions } from '../db/schema';
+import { auditLogs, hitlActions } from '../db/schema';
 import { sanitisePayload } from '@/lib/sanitise-payload';
 import { redis } from '../redis';
+import { mapHitlActionForClient, mapHitlPayloadForClient } from '../ai/agents/action-agent';
 
 export async function hitlInterceptor(
   userId: string,
@@ -10,17 +11,38 @@ export async function hitlInterceptor(
   action: { actionType: string; payload: any; humanReadable: string }
 ): Promise<boolean> {
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  const safePayload = mapHitlPayloadForClient(action.actionType, action.payload ?? {});
 
   // 1. Insert HITL action into DB
   const [row] = await db.insert(hitlActions).values({
     userId,
     action_type: action.actionType,
-    payload: sanitisePayload(action.payload),
+    payload: sanitisePayload(safePayload),
     status: 'pending',
     expires_at: expiresAt,
   }).returning({ id: hitlActions.id });
 
   const actionId = row.id;
+  const safeCard = mapHitlActionForClient({
+    id: actionId,
+    action_type: action.actionType,
+    payload: safePayload,
+    expires_at: expiresAt,
+    humanReadable: action.humanReadable,
+  });
+
+  await redis.set(`hitl:pending:${actionId}`, safeCard, { ex: 60 * 5 });
+
+  await db.insert(auditLogs).values({
+    userId,
+    action: 'hitl_created',
+    details: sanitisePayload({
+      actionType: action.actionType,
+      sessionId,
+      riskLevel: safeCard.riskLevel,
+      payload: safePayload,
+    }),
+  }).catch(() => undefined);
 
   // 2. Publish to Ably via REST
   if (!process.env.ABLY_API_KEY) {
@@ -37,15 +59,9 @@ export async function hitlInterceptor(
     },
     body: JSON.stringify({
       name: 'hitl:action',
-      data: {
-        actionId,
-        actionType: action.actionType,
-        humanReadable: action.humanReadable,
-        expiresAt: expiresAt.toISOString(),
-        payload: sanitisePayload(action.payload),
-      },
+      data: safeCard,
     }),
-  }).catch((err) => console.error('Failed to publish hitl action to ably:', err));
+  }).catch(() => undefined);
 
   // 3. Wait for Redis pub/sub response
   return new Promise((resolve) => {
@@ -89,7 +105,7 @@ export async function hitlInterceptor(
         (redis as any).subscribe(channel, subscribeCallback);
       }
     } catch (e) {
-      console.error("Redis subscribe failed", e);
+      resolve(false);
     }
   });
 }

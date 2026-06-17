@@ -9,7 +9,25 @@ export function sanitisePayload(payload: any): any {
 
   if (typeof payload === 'object') {
     const sanitised: Record<string, any> = {};
-    const sensitiveKeys = ['body', 'content', 'text', 'html', 'snippet', 'subject'];
+    const sensitiveKeys = [
+      'body',
+      'content',
+      'text',
+      'html',
+      'snippet',
+      'prompt',
+      'raw',
+      'header',
+      'token',
+      'secret',
+      'providerid',
+      'provider_id',
+      'scope',
+      'refresh',
+      'access',
+      'credential',
+      'metadata',
+    ];
 
     for (const [key, value] of Object.entries(payload)) {
       const lowerKey = key.toLowerCase();

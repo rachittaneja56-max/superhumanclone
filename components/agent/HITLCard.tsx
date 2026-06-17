@@ -159,6 +159,11 @@ export function HITLCard({ className }: { className?: string }) {
 
         <div className="space-y-4 p-4">
           <p className="text-sm leading-relaxed text-foreground">{activeHITLAction.humanReadable}</p>
+          {activeHITLAction.riskLevel && (
+            <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-amber-500">
+              {activeHITLAction.riskLevel} risk
+            </div>
+          )}
 
           {activeHITLAction.payload && (
             <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
@@ -169,7 +174,7 @@ export function HITLCard({ className }: { className?: string }) {
                   {durationLabel && <DetailRow label="Duration" value={durationLabel} />}
                   <DetailRow
                     label="Attendees"
-                    value={calendarProposal.attendees?.length ? calendarProposal.attendees.join(", ") : "No attendees"}
+                    value={typeof activeHITLAction.payload.attendeesSummary === "string" ? activeHITLAction.payload.attendeesSummary : "No attendees"}
                   />
                   <DetailRow label="Meet" value={calendarProposal.addMeetLink ? "Google Meet enabled" : "Meet link off"} />
                   {calendarProposal.location && <DetailRow label="Location" value={calendarProposal.location} />}
@@ -177,16 +182,16 @@ export function HITLCard({ className }: { className?: string }) {
                 </>
               ) : (
                 <>
-                  {activeHITLAction.payload.to && (
+                  {activeHITLAction.payload.recipientSummary && (
                     <DetailRow
                       label="To"
-                      value={Array.isArray(activeHITLAction.payload.to) ? activeHITLAction.payload.to.join(", ") : String(activeHITLAction.payload.to)}
+                      value={String(activeHITLAction.payload.recipientSummary)}
                     />
                   )}
                   {activeHITLAction.payload.subject && (
                     <DetailRow label="Subject" value={String(activeHITLAction.payload.subject)} clamp />
                   )}
-                  {!activeHITLAction.payload.to && !activeHITLAction.payload.subject && (
+                  {!activeHITLAction.payload.recipientSummary && !activeHITLAction.payload.subject && (
                     <div className="flex items-center space-x-2 text-xs text-muted-foreground">
                       <Mail className="h-3.5 w-3.5" />
                       <span>Payload details hidden for privacy.</span>

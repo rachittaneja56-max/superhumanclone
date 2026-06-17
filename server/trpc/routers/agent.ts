@@ -5,6 +5,8 @@ import { hitlActions, auditLogs } from '../../db/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { redis } from '../../redis';
+import { mapHitlActionForClient } from '../../ai/agents/action-agent';
+import { sanitisePayload } from '@/lib/sanitise-payload';
 
 const resolveHitlLimit = createRateLimitMiddleware('hitl_resolve', 60, 60);
 const chatMessageLimit = createRateLimitMiddleware('agent_chat', 50, 3600);
@@ -22,7 +24,7 @@ export const agentRouter = router({
           gt(hitlActions.expires_at, new Date())
         ),
       });
-      return pendingAction || null;
+      return pendingAction ? mapHitlActionForClient(pendingAction) : null;
     }),
 
   resolveHITL: protectedProcedure
@@ -56,13 +58,14 @@ export const agentRouter = router({
 
       // Publish to Redis to resume the agent interceptor
       await redis.publish(`hitl:response:${input.actionId}`, input.decision);
+      await redis.del(`hitl:pending:${input.actionId}`);
 
       // Audit Log
       await db.insert(auditLogs).values({
         userId: ctx.userId!,
         action: 'hitl_resolved',
-        details: { actionType: row.action_type, decision: input.decision },
-      }).catch(console.error);
+        details: sanitisePayload({ actionType: row.action_type, decision: input.decision }),
+      }).catch(() => undefined);
 
       return { resolved: true, decision: input.decision };
     }),

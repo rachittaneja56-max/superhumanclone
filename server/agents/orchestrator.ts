@@ -2,9 +2,9 @@ import 'server-only';
 import { db } from '../db';
 import { agentSessions } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { streamAgentResponse } from '../ai/provider';
 import { hitlInterceptor } from './action-agent';
 import { redis } from '../redis';
+import { runRoutedAgentResponse } from '../ai/agents/orchestrator';
 
 export async function runAgentTurn(
   userId: string,
@@ -47,17 +47,18 @@ export async function runAgentTurn(
   // Keep last 20 messages to prevent context overflow
   const recentHistory = history.slice(-20) as { role: 'user' | 'assistant'; content: string }[];
   
-  const contextualMessage = threadContext?.trim()
-    ? `Thread context explicitly approved by the user:\n<email_content>${threadContext.trim()}</email_content>\n\nUser message:\n${userMessage}`
-    : userMessage;
-
-  const messages = [...recentHistory, { role: 'user' as const, content: contextualMessage }];
+  const messages = [...recentHistory, { role: 'user' as const, content: userMessage }];
 
   // 3. Build curried hitlInterceptor
   const hitlInterceptorForSession = (action: any) => hitlInterceptor(userId, sessionId, action);
 
   // 4. Call streamAgentResponse
-  const result = await streamAgentResponse(userId, sessionId, messages, hitlInterceptorForSession);
+  const result = await runRoutedAgentResponse({
+    userId,
+    sessionId,
+    userMessage,
+    threadContext,
+  }, messages, hitlInterceptorForSession);
   
   // 5. Stream chunks
   let fullResponse = '';
