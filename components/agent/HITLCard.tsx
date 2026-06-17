@@ -121,7 +121,7 @@ export function HITLCard({ className }: { className?: string }) {
       <div
         className={cn(
           "w-96 overflow-hidden rounded-lg border border-border border-l-4 border-l-amber-500 bg-surface font-sans shadow-2xl animate-in slide-in-from-bottom-5 z-50",
-          className || "fixed bottom-6 right-6",
+          className,
         )}
       >
         <div className="flex items-center justify-between border-b border-border bg-amber-500/5 p-4">

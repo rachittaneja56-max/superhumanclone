@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { AppClientShell } from '@/components/app-client-shell'
+import { AgentContextEntry } from '@/components/agent/AgentContextEntry'
 import { UnifiedSidebar } from '@/components/app/UnifiedSidebar'
 import { WorkspaceFrame } from '@/components/app/WorkspaceFrame'
 import { getUserAdminState } from '@/server/admin/access'
@@ -43,6 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <UnifiedSidebar firstName={firstName} email={email} isAdmin={isAdmin} />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <AgentContextEntry />
         <WorkspaceFrame>{children}</WorkspaceFrame>
       </main>
 

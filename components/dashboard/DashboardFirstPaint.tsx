@@ -148,32 +148,24 @@ export async function DashboardShell({
         </div>
 
         <div className="flex h-full flex-col justify-between gap-4 rounded-[1.5rem] border border-border bg-white/70 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] dark:bg-background/60 dark:shadow-none">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
-              Trust / privacy
-            </div>
-            <div className="mt-4 space-y-2">
-              <StatusRow label="Gmail" value={settings?.gmailConnected ? "Connected" : "Disconnected"} tone={settings?.gmailConnected ? "good" : "warn"} />
-              <StatusRow label="Calendar" value={settings?.calendarConnected ? "Connected" : "Disconnected"} tone={settings?.calendarConnected ? "good" : "warn"} />
-              <StatusRow label="Privacy Gate" value={settings?.privacyConfigured ? "Configured" : "Needs setup"} tone={settings?.privacyConfigured ? "good" : "warn"} />
-              <StatusRow label="AI" value={settings?.aiEnabled ? "Enabled" : "Disabled"} tone={settings?.aiEnabled ? "good" : "warn"} />
-            </div>
-            <div className="mt-4 flex flex-col gap-2">
-              <Link
-                href="/inbox?compose=true"
-                className="inline-flex h-9 items-center justify-between rounded-lg border border-transparent bg-primary px-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/80"
-              >
-                New message
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/agent"
-                className="inline-flex h-9 items-center justify-between rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-all hover:bg-muted"
-              >
-                Ask agent
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
+            Quick actions
+          </div>
+          <div className="flex flex-col gap-2">
+            <Link
+              href="/inbox?compose=true"
+              className="inline-flex h-9 items-center justify-between rounded-lg border border-transparent bg-primary px-3 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/80"
+            >
+              New message
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/agent"
+              className="inline-flex h-9 items-center justify-between rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-all hover:bg-muted"
+            >
+              Ask agent
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </div>
@@ -338,6 +330,15 @@ export async function DashboardData({
                   : "Enable calendar, privacy, and AI for meeting prep."}
               </div>
             </div>
+          </div>
+        </PanelCard>
+
+        <PanelCard title="Trust / privacy" icon={<ShieldCheck className="h-4 w-4" />} description="Connection and privacy posture at a glance." className="xl:col-span-1">
+          <div className="space-y-2">
+            <StatusRow label="Gmail" value={settings?.gmailConnected ? "Connected" : "Disconnected"} tone={settings?.gmailConnected ? "good" : "warn"} />
+            <StatusRow label="Calendar" value={settings?.calendarConnected ? "Connected" : "Disconnected"} tone={settings?.calendarConnected ? "good" : "warn"} />
+            <StatusRow label="Privacy Gate" value={settings?.privacyConfigured ? "Configured" : "Needs setup"} tone={settings?.privacyConfigured ? "good" : "warn"} />
+            <StatusRow label="AI" value={settings?.aiEnabled ? "Enabled" : "Disabled"} tone={settings?.aiEnabled ? "good" : "warn"} />
           </div>
         </PanelCard>
       </div>

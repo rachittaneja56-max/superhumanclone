@@ -3,15 +3,13 @@
 import { ChangeEvent, type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Bot, ChevronDown, ChevronLeft, DraftingCompass, Inbox, Loader2, RefreshCw, Search, Send, ShieldAlert, SquarePen, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, DraftingCompass, Inbox, Loader2, RefreshCw, Search, Send, ShieldAlert, SquarePen, Trash2, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
 import { mapEmailForListClient, type EmailListClientItem } from "@/lib/email-client";
 import { sendEmailSchema } from "@/lib/schemas";
 import { ThreadView } from "./ThreadView";
-import { AgentChat } from "@/components/agent/AgentChat";
-import { useUIStore } from "@/store/ui-store";
 
 type Folder = "inbox" | "drafts" | "sent" | "spam" | "trash";
 export type ComposeDraft = {
@@ -73,16 +71,14 @@ export function MailWorkspace({
   const [threads, setThreads] = useState<EmailListClientItem[]>(initialMailboxPage.items);
   const [nextPageToken, setNextPageToken] = useState<string | null>(initialMailboxPage.nextPageToken);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
-  const [agentSessionId] = useState(() => crypto.randomUUID());
-  const [approvedThreadContext, setApprovedThreadContext] = useState<string | null>(null);
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const { agentPanelOpen, closeAgentPanel } = useUIStore();
 
   const folder = normalizeFolder(searchParams.get("folder") ?? initialFolder);
   const composeFromUrl = searchParams.get("compose") === "true";
   const selectedThreadFromUrl = searchParams.get("thread");
+  const isSearchMode = debouncedQuery.length >= 2;
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -96,7 +92,6 @@ export function MailWorkspace({
     {
       enabled: debouncedQuery.length < 2,
       initialData: folder === initialFolder ? initialMailboxPage : undefined,
-      placeholderData: (prev: MailboxPage | undefined) => prev,
       refetchOnWindowFocus: false,
     }
   );
@@ -119,31 +114,29 @@ export function MailWorkspace({
     [searchQuery.data],
   );
   const currentMailboxPage = useMemo(() => {
-    if (debouncedQuery.length >= 2) {
+    if (isSearchMode) {
       return { items: searchThreads, nextPageToken: null };
     }
 
-    return (mailboxQuery.data ?? initialMailboxPage) as MailboxPage;
-  }, [debouncedQuery.length, initialMailboxPage, mailboxQuery.data, searchThreads]);
-  const hasMore = Boolean(nextPageToken);
+    if (mailboxQuery.data) {
+      return mailboxQuery.data as MailboxPage;
+    }
+
+    if (folder === initialFolder) {
+      return initialMailboxPage;
+    }
+
+    return { items: [], nextPageToken: null };
+  }, [folder, initialFolder, initialMailboxPage, isSearchMode, mailboxQuery.data, searchThreads]);
+  const hasMore = !isSearchMode && Boolean(nextPageToken);
   const isRefreshing = mailboxQuery.isFetching || searchQuery.isFetching;
+  const visibleThreads = isSearchMode ? searchThreads : threads;
+  const isInitialListLoading = isSearchMode ? searchQuery.isLoading : mailboxQuery.isLoading;
 
   const selected = useMemo(
-    () => threads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || null,
-    [threads, activeThreadId]
+    () => visibleThreads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || null,
+    [activeThreadId, visibleThreads]
   );
-  const selectedThreadContext = useMemo(() => {
-    if (!selected) return null;
-
-    return [
-      `Subject: ${selected.subject || "(no subject)"}`,
-      `From: ${selected.senderName || "Unknown sender"}`,
-      `Snippet: ${selected.snippet || "No preview available."}`,
-      selected.badges.length > 0 ? `Labels: ${selected.badges.slice(0, 3).join(", ")}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }, [selected]);
   const sendMutation = trpc.email.sendEmail.useMutation();
   const archiveMutation = trpc.email.archiveEmail.useMutation();
   const deleteMutation = trpc.email.deleteEmail.useMutation();
@@ -162,14 +155,18 @@ export function MailWorkspace({
   }, []);
 
   useEffect(() => {
-    setApprovedThreadContext(null);
-  }, [selected?.threadId, selected?.id]);
-
-  useEffect(() => {
     const incoming = currentMailboxPage;
     setThreads(incoming.items);
     setNextPageToken(incoming.nextPageToken);
   }, [currentMailboxPage, folder, initialMailboxPage]);
+
+  useEffect(() => {
+    if (isSearchMode) return;
+
+    setActiveThreadId(null);
+    setThreads(folder === initialFolder ? initialMailboxPage.items : []);
+    setNextPageToken(folder === initialFolder ? initialMailboxPage.nextPageToken : null);
+  }, [folder, initialFolder, initialMailboxPage, isSearchMode]);
 
   useEffect(() => {
     if (!selectedThreadFromUrl) {
@@ -177,9 +174,9 @@ export function MailWorkspace({
       return;
     }
 
-    const exists = threads.some((thread) => (thread.threadId || thread.id) === selectedThreadFromUrl);
+    const exists = visibleThreads.some((thread) => (thread.threadId || thread.id) === selectedThreadFromUrl);
     setActiveThreadId(exists ? selectedThreadFromUrl : null);
-  }, [selectedThreadFromUrl, threads]);
+  }, [selectedThreadFromUrl, visibleThreads]);
 
   const replaceSearch = useCallback((params: URLSearchParams) => {
     const target = params.toString() ? `${pathname}?${params.toString()}` : pathname;
@@ -229,30 +226,30 @@ export function MailWorkspace({
   }, [replaceSearch, searchParams]);
 
   const refreshMailbox = useCallback(() => {
-    if (debouncedQuery.length >= 2) {
+    if (isSearchMode) {
       void searchQuery.refetch();
       return;
     }
 
     void mailboxQuery.refetch();
-  }, [debouncedQuery.length, mailboxQuery, searchQuery]);
+  }, [isSearchMode, mailboxQuery, searchQuery]);
 
   useEffect(() => {
     const openCompose = () => setComposeOpen(true);
     const moveThread = (direction: 1 | -1) => {
-      if (!threads.length) return;
-      const currentId = activeThreadId ?? selected?.threadId ?? selected?.id ?? threads[0].threadId ?? threads[0].id;
-      const currentIndex = threads.findIndex((thread) => (thread.threadId || thread.id) === currentId);
+      if (!visibleThreads.length) return;
+      const currentId = activeThreadId ?? selected?.threadId ?? selected?.id ?? visibleThreads[0].threadId ?? visibleThreads[0].id;
+      const currentIndex = visibleThreads.findIndex((thread) => (thread.threadId || thread.id) === currentId);
       const startIndex = currentIndex >= 0 ? currentIndex : 0;
-      const nextIndex = Math.min(threads.length - 1, Math.max(0, startIndex + direction));
-      const nextThread = threads[nextIndex];
+      const nextIndex = Math.min(visibleThreads.length - 1, Math.max(0, startIndex + direction));
+      const nextThread = visibleThreads[nextIndex];
       const nextId = nextThread?.threadId || nextThread?.id;
       if (nextId) {
         openThread(nextId);
       }
     };
     const openCurrent = () => {
-      const id = activeThreadId ?? selected?.threadId ?? selected?.id ?? threads[0]?.threadId ?? threads[0]?.id;
+      const id = activeThreadId ?? selected?.threadId ?? selected?.id ?? visibleThreads[0]?.threadId ?? visibleThreads[0]?.id;
       if (id) openThread(id);
     };
     const archiveCurrent = async () => {
@@ -300,7 +297,6 @@ export function MailWorkspace({
       if (key === "aethra:escape-all") {
         if (composeOpen) closeCompose();
         if (selected) closeThread();
-        if (agentPanelOpen) closeAgentPanel();
       }
     };
 
@@ -329,17 +325,15 @@ export function MailWorkspace({
     closeThread,
     composeOpen,
     deleteMutation,
-    agentPanelOpen,
-    closeAgentPanel,
     markReadMutation,
     markUnreadMutation,
     openThread,
     selected,
-    threads,
+    visibleThreads,
   ]);
 
   const fetchMore = useCallback(async () => {
-    if (isFetchingMore || !nextPageToken || mailboxQuery.isLoading) return;
+    if (isFetchingMore || !nextPageToken || mailboxQuery.isLoading || isSearchMode) return;
 
     setIsFetchingMore(true);
     try {
@@ -369,18 +363,7 @@ export function MailWorkspace({
     } finally {
       setIsFetchingMore(false);
     }
-  }, [folder, isFetchingMore, mailboxQuery.isLoading, nextPageToken, threads.length, utils.email.getMailboxThreads]);
-
-  useEffect(() => {
-    if (debouncedQuery.length >= 2) return;
-    if (!hasMore || isFetchingMore || mailboxQuery.isLoading) return;
-
-    const handle = window.setTimeout(() => {
-      void fetchMore();
-    }, 350);
-
-    return () => window.clearTimeout(handle);
-  }, [debouncedQuery.length, fetchMore, hasMore, isFetchingMore, mailboxQuery.isLoading]);
+  }, [folder, isFetchingMore, isSearchMode, mailboxQuery.isLoading, nextPageToken, threads.length, utils.email.getMailboxThreads]);
 
   const handleSend = async (payload: {
     to: string[];
@@ -405,12 +388,12 @@ export function MailWorkspace({
       <main className="flex min-w-0 flex-1 flex-col">
         {!selected && (
           <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-3 sm:px-5">
-            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h1 className="truncate text-xl font-semibold sm:text-2xl">{FOLDER_LABELS[folder]}</h1>
                   <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                    {threads.length}
+                    {visibleThreads.length}
                   </span>
                   {folder === "inbox" && unreadCountsQuery.data && (
                     <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground-muted">
@@ -474,14 +457,6 @@ export function MailWorkspace({
                   <SquarePen className="h-4 w-4" />
                   Compose
                 </button>
-                <button
-                  onClick={() => void fetchMore()}
-                  disabled={!hasMore || isFetchingMore || mailboxQuery.isLoading}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isFetchingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {hasMore ? "Load more" : "No more mails"}
-                </button>
               </div>
             </div>
 
@@ -532,19 +507,17 @@ export function MailWorkspace({
           <div className="flex min-h-0 flex-1 overflow-hidden">
             <section className="min-w-0 flex-1">
               <div className="h-full overflow-y-auto">
-                {mailboxQuery.isLoading && threads.length === 0 ? (
-                  <MailboxLoading />
+                {isInitialListLoading && visibleThreads.length === 0 ? (
+                  <MailboxLoading folder={folder} />
                 ) : mailboxQuery.isError ? (
                   <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
                     We couldn&apos;t load this mailbox right now.
                   </div>
-                ) : threads.length === 0 ? (
-                  <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
-                    No mail in this folder yet.
-                  </div>
+                ) : visibleThreads.length === 0 ? (
+                  <MailboxEmptyState folder={folder} query={debouncedQuery} />
                 ) : (
                   <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-3 py-3 sm:px-4">
-                    {threads.map((thread) => {
+                    {visibleThreads.map((thread) => {
                       const id = thread.threadId || thread.id;
                       const active = id === activeThreadId;
 
@@ -625,78 +598,6 @@ export function MailWorkspace({
           </div>
         )}
       </main>
-
-      {agentPanelOpen && !composeOpen && (
-        <aside className="fixed inset-y-4 right-4 z-40 hidden w-[24rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_24px_80px_rgba(0,0,0,0.45)] xl:flex">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Bot className="h-4 w-4 text-accent" />
-                Agent
-              </div>
-              <div className="text-xs text-foreground-subtle">Ask about mail without leaving the workspace.</div>
-            </div>
-            <button
-              onClick={closeAgentPanel}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground"
-              aria-label="Close agent panel"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-hidden p-3">
-            {selectedThreadContext && !approvedThreadContext && (
-              <div className="mb-3 rounded-xl border border-border bg-background p-3 text-xs text-foreground-muted">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium text-foreground">Optional thread context</div>
-                    <p className="mt-1 leading-5">
-                      Aethra will only use this thread if you explicitly attach it.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setApprovedThreadContext(selectedThreadContext)}
-                    className="shrink-0 rounded-lg border border-accent/30 bg-accent/10 px-3 py-1.5 text-[11px] font-medium text-accent transition-colors hover:bg-accent/15"
-                  >
-                    Use this thread as context
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {approvedThreadContext && (
-              <div className="mb-3 rounded-xl border border-accent/20 bg-accent-subtle px-3 py-2 text-xs">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-medium text-foreground">Context attached</div>
-                    <div className="mt-1 line-clamp-3 whitespace-pre-wrap text-foreground-muted">
-                      {approvedThreadContext}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setApprovedThreadContext(null)}
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted hover:bg-surface-raised hover:text-foreground"
-                    aria-label="Remove thread context"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="h-full min-h-0 overflow-hidden rounded-xl border border-border bg-background">
-              <AgentChat
-                sessionId={agentSessionId}
-                threadContext={approvedThreadContext}
-                onClearThreadContext={() => setApprovedThreadContext(null)}
-              />
-            </div>
-          </div>
-        </aside>
-      )}
 
       {composeOpen && (
         <ComposeModal
@@ -1114,9 +1015,17 @@ export function ComposeModal({
   );
 }
 
-function MailboxLoading() {
+function MailboxLoading({ folder }: { folder: Folder }) {
+  const copy = getMailboxCopy(folder);
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-3 py-3 sm:px-4">
+      <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+        <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">
+          Loading {copy.label}
+        </div>
+        <div className="mt-2 text-sm text-foreground-muted">{copy.loading}</div>
+      </div>
       {Array.from({ length: 6 }).map((_, index) => (
         <div key={index} className="w-full animate-pulse rounded-2xl border border-border bg-surface px-4 py-4">
           <div className="h-4 w-1/3 rounded bg-surface-overlay" />
@@ -1124,6 +1033,33 @@ function MailboxLoading() {
           <div className="mt-3 h-3 w-full rounded bg-surface-overlay" />
         </div>
       ))}
+    </div>
+  );
+}
+
+function MailboxEmptyState({
+  folder,
+  query,
+}: {
+  folder: Folder;
+  query: string;
+}) {
+  const copy = getMailboxCopy(folder);
+  const hasQuery = query.trim().length >= 2;
+
+  return (
+    <div className="flex h-full items-center justify-center px-6">
+      <div className="max-w-md rounded-2xl border border-border bg-background p-8 text-center shadow-sm">
+        <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">
+          {hasQuery ? "No results" : copy.label}
+        </div>
+        <div className="mt-3 text-lg font-semibold text-foreground">
+          {hasQuery ? `No matches in ${copy.label.toLowerCase()}` : copy.emptyTitle}
+        </div>
+        <p className="mt-2 text-sm leading-6 text-foreground-muted">
+          {hasQuery ? `Try a different search term or switch folders.` : copy.emptyBody}
+        </p>
+      </div>
     </div>
   );
 }
@@ -1147,6 +1083,46 @@ function normalizeFolder(value: string | null): Folder {
     return value;
   }
   return "inbox";
+}
+
+function getMailboxCopy(folder: Folder) {
+  switch (folder) {
+    case "drafts":
+      return {
+        label: "Drafts",
+        loading: "Pulling saved drafts and recent edits.",
+        emptyTitle: "No drafts yet",
+        emptyBody: "New drafts you save will appear here while you work.",
+      };
+    case "sent":
+      return {
+        label: "Sent",
+        loading: "Loading messages that have already gone out.",
+        emptyTitle: "Nothing sent yet",
+        emptyBody: "Sent mail will appear here once messages leave your outbox.",
+      };
+    case "spam":
+      return {
+        label: "Spam",
+        loading: "Checking the filtered updates and low-priority mail.",
+        emptyTitle: "Spam is empty",
+        emptyBody: "No filtered spam or noisy updates are showing right now.",
+      };
+    case "trash":
+      return {
+        label: "Trash",
+        loading: "Loading recently trashed mail.",
+        emptyTitle: "Trash is clear",
+        emptyBody: "Mail you trash will stay here until it is restored or purged.",
+      };
+    default:
+      return {
+        label: "Inbox",
+        loading: "Loading your latest inbox threads.",
+        emptyTitle: "Inbox is clear",
+        emptyBody: "New conversations will appear here as they arrive.",
+      };
+  }
 }
 
 function splitRecipients(value: string) {

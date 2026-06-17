@@ -379,9 +379,8 @@ export function AgentChat({
 
       {/* Input Area */}
       <div className="relative mt-auto flex flex-col gap-3 pt-4">
-        {/* HITL Card placed above the input area in the flow */}
         {activeHITLAction && (
-          <div className="absolute bottom-full right-0 z-10 mb-4 flex w-full justify-end">
+          <div className="flex w-full justify-end">
             <HITLCard className="w-full max-w-md animate-in slide-in-from-bottom-2 shadow-xl" />
           </div>
         )}

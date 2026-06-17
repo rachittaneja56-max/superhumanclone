@@ -31,15 +31,12 @@ export function BillingClient({ initialOverview }: { initialOverview: BillingOve
 
   return (
     <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-y-auto px-6 py-6">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-4">
+      <div className="mb-6 border-b border-border pb-4">
         <div>
           <h1 className="font-display text-2xl font-semibold text-foreground">Billing</h1>
           <p className="mt-1 text-sm text-foreground-muted">
-            Manage plans, usage limits, and safe billing mode for Aethra.
+            Manage your plan and keep billing simple.
           </p>
-        </div>
-        <div className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-foreground-muted">
-          Mode: <span className="font-medium text-foreground">{overview.mode}</span>
         </div>
       </div>
 
@@ -48,12 +45,6 @@ export function BillingClient({ initialOverview }: { initialOverview: BillingOve
           {overview.upgradeMessage}
         </div>
       ) : null}
-
-      <div className="mb-6 grid gap-4 md:grid-cols-3">
-        <UsageCard label="AI calls this month" value={String(overview.usage.ai)} limit={overview.limits.ai} />
-        <UsageCard label="Email triage this month" value={String(overview.usage.triage)} limit={overview.limits.triage} />
-        <UsageCard label="Billing mode" value="Dummy only" limit={null} />
-      </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         {overview.plans.map((plan) => {
@@ -102,26 +93,6 @@ export function BillingClient({ initialOverview }: { initialOverview: BillingOve
             </div>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-function UsageCard({
-  label,
-  value,
-  limit,
-}: {
-  label: string;
-  value: string;
-  limit: number | null;
-}) {
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="text-xs uppercase tracking-[0.18em] text-foreground-subtle">{label}</div>
-      <div className="mt-3 text-2xl font-semibold text-foreground">
-        {value}
-        {typeof limit === "number" ? <span className="ml-1 text-sm text-foreground-muted">/ {limit}</span> : null}
       </div>
     </div>
   );
