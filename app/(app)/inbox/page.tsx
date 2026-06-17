@@ -4,6 +4,8 @@ import { serverTrpc } from '@/lib/trpc/server'
 import { MailWorkspace } from '@/components/inbox/MailWorkspace'
 import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
 import Link from 'next/link'
+import { endOfDay, startOfDay } from 'date-fns'
+import { InboxRightRail } from '@/components/app/InboxRightRail'
 
 function normalizeFolder(folder?: string) {
   if (folder === 'drafts' || folder === 'sent' || folder === 'spam' || folder === 'trash') {
@@ -22,8 +24,9 @@ export default async function InboxPage({
   const resolvedSearchParams = await searchParams
   const folder = normalizeFolder(resolvedSearchParams.folder)
   const composeOpen = resolvedSearchParams.compose === 'true'
-  const { gmailConnected } = await reconcileGoogleConnectionState(session.userId).catch(() => ({
+  const { gmailConnected, calendarConnected } = await reconcileGoogleConnectionState(session.userId).catch(() => ({
     gmailConnected: false,
+    calendarConnected: false,
   }))
 
   if (!gmailConnected) {
@@ -61,8 +64,13 @@ export default async function InboxPage({
     )
   }
 
+  const today = new Date()
+  const railStart = startOfDay(today)
+  const railEnd = endOfDay(today)
+
   // Fetch from our local DB. The inbox must render even if sync/Corsair is down.
   let initialMailboxPage = { items: [], nextPageToken: null } as { items: any[]; nextPageToken: string | null }
+  let agendaEvents: any[] = []
   try {
     const trpc = await serverTrpc()
     const rawThreads = await trpc.email.getMailboxThreads({
@@ -76,10 +84,30 @@ export default async function InboxPage({
     console.error('Failed to fetch threads:', err)
   }
 
+  if (calendarConnected) {
+    try {
+      const trpc = await serverTrpc()
+      const events = await trpc.calendar.getEvents({
+        startDate: railStart,
+        endDate: railEnd,
+      })
+      agendaEvents = (events ?? []).map((event: any) => ({
+        ...event,
+        startTime: new Date(event.startTime),
+        endTime: new Date(event.endTime),
+      }))
+    } catch (err) {
+      console.error('Failed to fetch agenda rail:', err)
+    }
+  }
+
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <MailWorkspace initialMailboxPage={initialMailboxPage} initialFolder={folder} initialComposeOpen={composeOpen} />
+    <div className="flex h-full min-h-0 overflow-hidden">
+      <div className="grid h-full min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="min-h-0 min-w-0 overflow-hidden">
+          <MailWorkspace initialMailboxPage={initialMailboxPage} initialFolder={folder} initialComposeOpen={composeOpen} />
+        </div>
+        <InboxRightRail calendarConnected={calendarConnected} events={agendaEvents} />
       </div>
     </div>
   )

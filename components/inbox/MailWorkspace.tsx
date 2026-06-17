@@ -3,7 +3,7 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronLeft, Loader2, Search, SquarePen, X, Bot } from "lucide-react";
+import { ChevronDown, ChevronLeft, Loader2, RefreshCw, Search, SquarePen, X, Bot } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
@@ -118,6 +118,7 @@ export function MailWorkspace({
     return (mailboxQuery.data ?? initialMailboxPage) as MailboxPage;
   }, [debouncedQuery.length, initialMailboxPage, mailboxQuery.data, searchThreads]);
   const hasMore = Boolean(nextPageToken);
+  const isRefreshing = mailboxQuery.isFetching || searchQuery.isFetching;
 
   const selected = useMemo(
     () => threads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || null,
@@ -210,6 +211,15 @@ export function MailWorkspace({
     params.set("compose", "true");
     replaceSearch(params);
   }, [replaceSearch, searchParams]);
+
+  const refreshMailbox = useCallback(() => {
+    if (debouncedQuery.length >= 2) {
+      void searchQuery.refetch();
+      return;
+    }
+
+    void mailboxQuery.refetch();
+  }, [debouncedQuery.length, mailboxQuery, searchQuery]);
 
   useEffect(() => {
     const openCompose = () => setComposeOpen(true);
@@ -378,7 +388,7 @@ export function MailWorkspace({
     <div className="flex h-full min-h-0 min-w-0 bg-background text-foreground">
       <main className="flex min-w-0 flex-1 flex-col">
         {!selected && (
-          <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-4 sm:px-5">
+          <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-3 sm:px-5">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -411,6 +421,13 @@ export function MailWorkspace({
                   />
                 </div>
                 <button
+                  onClick={refreshMailbox}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-raised"
+                >
+                  <RefreshCw className={["h-4 w-4", isRefreshing ? "animate-spin" : ""].join(" ")} />
+                  Refresh
+                </button>
+                <button
                   onClick={() => setComposeOpen(true)}
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01]"
                   style={{ backgroundColor: "var(--accent)" }}
@@ -430,16 +447,16 @@ export function MailWorkspace({
             </div>
 
             {undoPending && (
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent-subtle px-4 py-3 text-sm">
-              <div className="min-w-0">
-                <div className="font-medium text-foreground">
-                  Email scheduled to send{typeof countdown === "number" ? ` in ${countdown}s` : ""}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-accent/20 bg-accent-subtle px-4 py-3 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium text-foreground">
+                    Email scheduled to send{typeof countdown === "number" ? ` in ${countdown}s` : ""}
+                  </div>
+                  <div className="text-xs text-foreground-muted">Undo before it leaves your outbox.</div>
                 </div>
-                <div className="text-xs text-foreground-muted">Undo before it leaves your outbox.</div>
-              </div>
-              <button
-                onClick={cancelUndo}
-                className="shrink-0 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-raised"
+                <button
+                  onClick={cancelUndo}
+                  className="shrink-0 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface-raised"
                 >
                   Undo
                 </button>
@@ -503,13 +520,13 @@ export function MailWorkspace({
                             openThread(id);
                           }}
                           className={[
-                            "w-full overflow-hidden rounded-2xl border px-4 py-4 text-left transition-all",
+                            "w-full overflow-hidden rounded-xl border px-3 py-3 text-left transition-all",
                             active
                               ? "border-accent/40 bg-accent-subtle shadow-sm"
                               : "border-border bg-surface hover:border-border-strong hover:bg-surface-raised",
                           ].join(" ")}
                         >
-                          <div className="flex min-w-0 items-start justify-between gap-4">
+                          <div className="flex min-w-0 items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 items-center gap-2">
                                 <div className={thread.isRead ? "h-2 w-2 shrink-0 rounded-full bg-transparent" : "h-2 w-2 shrink-0 rounded-full bg-accent"} />
@@ -524,11 +541,11 @@ export function MailWorkspace({
                                 {thread.snippet || "No preview available."}
                               </div>
                               {thread.badges.length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-1">
+                                <div className="mt-2 flex flex-wrap gap-1.5">
                                   {thread.badges.slice(0, 3).map((badge) => (
                                     <span
                                       key={badge}
-                                      className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground-subtle"
+                                      className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-foreground-subtle"
                                     >
                                       {badge}
                                     </span>
