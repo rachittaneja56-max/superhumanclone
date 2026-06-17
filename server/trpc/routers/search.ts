@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
 import { emails } from '../../db/schema';
-import { eq, and, ilike, or, isNotNull, sql } from 'drizzle-orm';
+import { eq, and, ilike, or, isNotNull, sql, desc } from 'drizzle-orm';
 import { generateEmbedding } from '../../ai/provider';
 
 const vectorSearchLimit = createRateLimitMiddleware('search:vector', 60, 60);
@@ -22,7 +22,6 @@ export const searchRouter = router({
         return ctx.db.query.emails.findMany({
           where: and(
             eq(emails.userId, ctx.userId!),
-            eq(emails.is_archived, false),
             eq(emails.is_deleted, false),
             or(
               ilike(emails.subject, `%${query}%`),
@@ -64,13 +63,16 @@ export const searchRouter = router({
       return ctx.db.query.emails.findMany({
         where: and(
           eq(emails.userId, ctx.userId!),
-          eq(emails.is_archived, false),
           eq(emails.is_deleted, false),
           or(
             ilike(emails.subject, `%${query}%`),
-            ilike(emails.from_name, `%${query}%`)
+            ilike(emails.from_name, `%${query}%`),
+            ilike(emails.from_address, `%${query}%`),
+            ilike(emails.to_address, `%${query}%`),
+            ilike(emails.snippet, `%${query}%`)
           )
         ),
+        orderBy: [desc(emails.created_at)],
         limit
       });
     }),

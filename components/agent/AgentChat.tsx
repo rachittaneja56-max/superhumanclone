@@ -123,7 +123,7 @@ export function AgentChat({
   return (
     <div className="flex h-full w-full min-w-0 flex-col rounded-2xl border border-border bg-surface shadow-sm">
       <div className="border-b border-border px-4 py-4 sm:px-5">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Bot className="h-4 w-4 text-accent" aria-hidden="true" />
@@ -131,12 +131,12 @@ export function AgentChat({
             </div>
             <p className="mt-1 text-sm text-foreground-muted">Ask Aethra about mail, schedules, and follow-ups.</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <button
               type="button"
               onClick={() => setMemoryEnabled((value) => !value)}
               className={cn(
-                "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors",
+                "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs transition-colors whitespace-nowrap",
                 memoryEnabled
                   ? "border-accent/30 bg-accent/10 text-accent"
                   : "border-border bg-background text-foreground-muted hover:bg-surface-raised hover:text-foreground",
@@ -144,7 +144,7 @@ export function AgentChat({
               aria-pressed={memoryEnabled}
             >
               <BrainCircuit className="h-3.5 w-3.5" aria-hidden="true" />
-              {memoryEnabled ? "Memory on" : "Memory off"}
+              <span>Memory</span>
             </button>
             {memoryEnabled ? (
               <button
@@ -154,16 +154,14 @@ export function AgentChat({
                   setMessages([]);
                   setHasStarted(false);
                 }}
-                className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground"
+                className="inline-flex h-8 items-center rounded-full border border-border bg-background px-3 text-xs text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground whitespace-nowrap"
               >
-                Forget saved chat
+                Clear
               </button>
             ) : null}
           </div>
         </div>
-        <p className="mt-3 text-xs text-foreground-subtle">
-          Memory is off by default. Aethra keeps only the current session in the browser unless you turn memory on.
-        </p>
+        <p className="mt-3 text-xs text-foreground-subtle">Memory stays off unless you turn it on.</p>
 
         {threadContext && (
           <div className="mt-3 flex items-start gap-2 rounded-xl border border-accent/20 bg-accent-subtle px-3 py-2 text-xs">

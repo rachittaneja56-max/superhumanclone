@@ -33,11 +33,6 @@ export function getFallbackProvider(primary: AIProvider): AIProvider {
 export function getProviderOrder(capability: AICapability): AIProvider[] {
   const primary = getPrimaryProvider();
   const fallback = getFallbackProvider(primary);
-
-  if (capability === "agent") {
-    return ["openai", primary, fallback].filter((value, index, array) => array.indexOf(value) === index) as AIProvider[];
-  }
-
   return [primary, fallback].filter((value, index, array) => array.indexOf(value) === index) as AIProvider[];
 }
 

@@ -12,6 +12,7 @@ export function ThreadView({
   compact = false,
   mailbox = "inbox",
   onReplyCompose,
+  onDeleted,
 }: {
   threadId: string;
   compact?: boolean;
@@ -24,7 +25,9 @@ export function ThreadView({
     body?: string;
     threadId?: string;
   }) => void;
+  onDeleted?: () => void;
 }) {
+  const utils = trpc.useUtils();
   const { data: thread, isLoading, isError } = trpc.email.getThread.useQuery({ threadId });
   const markRead = trpc.email.markRead.useMutation();
   const markUnread = trpc.email.markUnread.useMutation({
@@ -36,7 +39,15 @@ export function ThreadView({
     onError: () => toast.error("Failed to archive"),
   });
   const deleteMutation = trpc.email.deleteEmail.useMutation({
-    onSuccess: () => toast.success("Moved to trash"),
+    onSuccess: async () => {
+      await Promise.all([
+        utils.email.getThread.invalidate({ threadId }),
+        utils.email.getMailboxThreads.invalidate(),
+        utils.email.getUnreadCounts.invalidate(),
+      ]).catch(() => null);
+      onDeleted?.();
+      toast.success("Moved to trash");
+    },
     onError: () => toast.error("Failed to delete"),
   });
   const restoreMutation = trpc.email.restoreEmail.useMutation({

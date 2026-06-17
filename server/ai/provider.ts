@@ -1,6 +1,6 @@
 import "server-only";
 
-import { embed, streamText, tool } from "ai";
+import { embed } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -10,7 +10,7 @@ import { db } from "../db";
 import { emails } from "../db/schema";
 import { redis } from "../redis";
 import { AIAllProvidersFailedError, AIInvalidResponseError, AIProviderUnavailableError, AIUsageLimitError } from "./errors";
-import { getModelForCapability, getPrimaryProvider, getProviderApiKey, getProviderBaseUrl, getProviderOrder } from "./models";
+import { getModelForCapability, getProviderApiKey, getProviderBaseUrl, getProviderOrder } from "./models";
 import { prompts } from "./prompts";
 import type { AIExecutionOptions, AIJsonResult, AIProvider, AIProviderHealth, AITextResult, StructuredTask } from "./types";
 import { sanitiseAgentInput, sanitiseAgentOutput } from "./agents/sanitization";
@@ -593,45 +593,6 @@ export async function generateContactSummary(snippets: string[], options?: { use
   }
 }
 
-async function vectorSearchInternal(userId: string, query: string) {
-  const queryEmbedding = await generateEmbedding(query, { userId });
-  const embeddingStr = JSON.stringify(queryEmbedding);
-
-  return db.query.emails.findMany({
-    where: and(
-      eq(emails.userId, userId),
-      eq(emails.is_archived, false),
-      eq(emails.is_deleted, false),
-      isNotNull(emails.embedding),
-    ),
-    extras: {
-      similarity: sql<number>`1 - (${emails.embedding} <=> ${embeddingStr})`.as("similarity"),
-    },
-    orderBy: sql`${emails.embedding} <=> ${embeddingStr} ASC`,
-    limit: 10,
-  });
-}
-
-function buildAgentTools(userId: string) {
-  return {
-    searchEmails: tool({
-      description: "Search emails semantically using local search",
-      parameters: z.object({ query: z.string() }),
-      execute: async ({ query }: { query: string }) => {
-        const results = await vectorSearchInternal(userId, query);
-        return results
-          .filter((email) => !email.ai_triage_skipped)
-          .map((email) => ({
-            id: email.id,
-            subject: sanitizeOutput(email.subject ?? "", 180),
-            from: sanitizeOutput(email.from_name || email.from_address, 120),
-            snippet: wrapEmailContent(email.snippet ?? ""),
-          }));
-      },
-    } as any),
-  };
-}
-
 function formatAgentPrompt(messages: Message[]) {
   return messages
     .slice(-20)
@@ -646,28 +607,10 @@ export async function streamAgentResponse(
   _hitlInterceptor: (action: unknown) => Promise<unknown>,
 ) {
   const promptBody = formatAgentPrompt(messages);
-  const primaryProvider = getPrimaryProvider();
-
-  if (primaryProvider === "openai" && getProviderApiKey("openai")) {
-    try {
-      await reserveUsage(userId);
-      const result = streamText({
-        model: openai(getModelForCapability("openai", "agent")),
-        system: prompts.agentSystem.system,
-        messages: messages as Array<{ role: "user" | "assistant"; content: string }>,
-        tools: buildAgentTools(userId),
-      });
-      void markProviderSuccess("openai");
-      return result;
-    } catch (error) {
-      await markProviderFailure("openai", error);
-    }
-  }
-
   try {
     const { text } = await executeTextTask(promptBody, {
       userId,
-      capability: "smart",
+      capability: "agent",
       prompt: prompts.agentSystem,
     });
 
@@ -675,22 +618,6 @@ export async function streamAgentResponse(
       textStream: createSingleChunkStream(text),
     };
   } catch (error) {
-    if (primaryProvider === "mistral" && getProviderApiKey("openai")) {
-      try {
-        await reserveUsage(userId);
-        const result = streamText({
-          model: openai(getModelForCapability("openai", "agent")),
-          system: prompts.agentSystem.system,
-          messages: messages as Array<{ role: "user" | "assistant"; content: string }>,
-          tools: buildAgentTools(userId),
-        });
-        void markProviderSuccess("openai");
-        return result;
-      } catch (fallbackError) {
-        await markProviderFailure("openai", fallbackError);
-      }
-    }
-
     if (error instanceof AIUsageLimitError) {
       return {
         textStream: createSingleChunkStream(

@@ -142,36 +142,15 @@ export async function getThreads(userId: string, params?: { limit?: number; offs
 }
 
 export async function getMessages(userId: string, params?: { limit?: number }) {
-  const t = await getTenant(userId)
-  try {
-    const listResult = await t.gmail.api.messages.list({
-      maxResults: params?.limit ?? 50,
-    })
-    const messages = listResult.messages || []
-    const detailedMessages = []
+  return listAndHydrateMessages(userId, { limit: params?.limit ?? 50 })
+}
 
-    // Fetch details of each message in parallel (up to 15 to avoid latency/rate limit)
-    const toFetch = messages.slice(0, 15)
-    const details = await Promise.all(
-      toFetch.map(async (m: any) => {
-        try {
-          return await t.gmail.api.messages.get({ id: m.id })
-        } catch (err) {
-          console.warn('[getMessages] Failed to fetch message detail for', m.id, err)
-          return null
-        }
-      })
-    )
-
-    for (const d of details) {
-      if (d) detailedMessages.push(d)
-    }
-
-    return { success: true, data: detailedMessages, needsConnect: false }
-  } catch (err: any) {
-    if (isAuthError(err)) return { success: false, data: null, needsConnect: true }
-    throw err
-  }
+export async function getDraftMessages(userId: string, params?: { limit?: number; pageToken?: string }) {
+  return listAndHydrateMessages(userId, {
+    limit: params?.limit ?? 50,
+    pageToken: params?.pageToken,
+    q: 'in:drafts',
+  })
 }
 
 export async function getThreadMessages(userId: string, threadId: string) {
@@ -182,6 +161,43 @@ export async function getThreadMessages(userId: string, threadId: string) {
     return { success: true, data: result, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, data: null, needsConnect: true }
+    throw err
+  }
+}
+
+async function listAndHydrateMessages(
+  userId: string,
+  params: { limit: number; pageToken?: string; q?: string }
+) {
+  const t = await getTenant(userId)
+  try {
+    const listResult = await t.gmail.api.messages.list({
+      maxResults: params.limit,
+      ...(params.pageToken ? { pageToken: params.pageToken } : {}),
+      ...(params.q ? { q: params.q } : {}),
+    })
+    const messages = listResult.messages || []
+    const toFetch = messages.slice(0, 15)
+    const details = await Promise.all(
+      toFetch.map(async (m: any) => {
+        try {
+          return await t.gmail.api.messages.get({ id: m.id })
+        } catch (err) {
+          console.warn('[listAndHydrateMessages] Failed to fetch message detail for', m.id, err)
+          return null
+        }
+      })
+    )
+
+    return {
+      success: true,
+      data: details.filter(Boolean),
+      needsConnect: false,
+      nextPageToken: listResult.nextPageToken ?? null,
+      resultSizeEstimate: listResult.resultSizeEstimate ?? null,
+    }
+  } catch (err: any) {
+    if (isAuthError(err)) return { success: false, data: null, needsConnect: true, nextPageToken: null, resultSizeEstimate: null }
     throw err
   }
 }

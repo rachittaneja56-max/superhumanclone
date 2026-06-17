@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useUndoSend } from "@/hooks/useUndoSend";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { ThreadView } from "./ThreadView";
 import { ComposeModal, type ComposeDraft } from "./MailWorkspace";
@@ -10,6 +11,7 @@ import { ComposeModal, type ComposeDraft } from "./MailWorkspace";
 export function ThreadPageClient({ threadId }: { threadId: string }) {
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null);
+  const router = useRouter();
   const sendMutation = trpc.email.sendEmail.useMutation();
   const { startUndoWindow } = useUndoSend();
 
@@ -39,6 +41,7 @@ export function ThreadPageClient({ threadId }: { threadId: string }) {
           setComposeDraft(draft);
           setComposeOpen(true);
         }}
+        onDeleted={() => router.replace("/inbox?folder=trash")}
       />
 
       {composeOpen && (

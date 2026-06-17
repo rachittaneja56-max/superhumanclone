@@ -1,13 +1,13 @@
 "use client";
 
-import { ChangeEvent, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronLeft, Loader2, Search, SquarePen, X, Bot } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
-import type { EmailListClientItem } from "@/lib/email-client";
+import { mapEmailForListClient, type EmailListClientItem } from "@/lib/email-client";
 import { sendEmailSchema } from "@/lib/schemas";
 import { ThreadView } from "./ThreadView";
 import { AgentChat } from "@/components/agent/AgentChat";
@@ -67,24 +67,57 @@ export function MailWorkspace({
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [agentSessionId] = useState(() => crypto.randomUUID());
   const [approvedThreadContext, setApprovedThreadContext] = useState<string | null>(null);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const deferredQuery = useDeferredValue(query.trim());
   const { agentPanelOpen, closeAgentPanel } = useUIStore();
 
   const folder = normalizeFolder(searchParams.get("folder") ?? initialFolder);
   const composeFromUrl = searchParams.get("compose") === "true";
   const selectedThreadFromUrl = searchParams.get("thread");
 
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [query]);
+
   const mailboxQuery = trpc.email.getMailboxThreads.useQuery(
-    { folder, limit: PAGE_SIZE, offset: 0, query: deferredQuery },
+    { folder, limit: PAGE_SIZE, offset: 0, query: "" },
     {
-      initialData: folder === initialFolder && !deferredQuery ? initialMailboxPage : undefined,
+      enabled: debouncedQuery.length < 2,
+      initialData: folder === initialFolder ? initialMailboxPage : undefined,
       placeholderData: (prev: MailboxPage | undefined) => prev,
       refetchOnWindowFocus: false,
     }
   );
+  const searchQuery = trpc.search.textSearch.useQuery(
+    { query: debouncedQuery, limit: 50 },
+    {
+      enabled: debouncedQuery.length >= 2,
+      refetchOnWindowFocus: false,
+    }
+  );
   const unreadCountsQuery = trpc.email.getUnreadCounts.useQuery({});
+
+  const searchThreads = useMemo(
+    () =>
+      (searchQuery.data ?? []).map((row) =>
+        mapEmailForListClient({
+          ...row,
+        }),
+      ),
+    [searchQuery.data],
+  );
+  const currentMailboxPage = useMemo(() => {
+    if (debouncedQuery.length >= 2) {
+      return { items: searchThreads, nextPageToken: null };
+    }
+
+    return (mailboxQuery.data ?? initialMailboxPage) as MailboxPage;
+  }, [debouncedQuery.length, initialMailboxPage, mailboxQuery.data, searchThreads]);
+  const hasMore = Boolean(nextPageToken);
 
   const selected = useMemo(
     () => threads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || null,
@@ -124,10 +157,10 @@ export function MailWorkspace({
   }, [selected?.threadId, selected?.id]);
 
   useEffect(() => {
-    const incoming = (mailboxQuery.data ?? initialMailboxPage) as MailboxPage;
+    const incoming = currentMailboxPage;
     setThreads(incoming.items);
     setNextPageToken(incoming.nextPageToken);
-  }, [folder, initialMailboxPage, mailboxQuery.data, deferredQuery]);
+  }, [currentMailboxPage, folder, initialMailboxPage]);
 
   useEffect(() => {
     if (!selectedThreadFromUrl) {
@@ -289,7 +322,7 @@ export function MailWorkspace({
         limit: PAGE_SIZE,
         offset: threads.length,
         pageToken: nextPageToken,
-        query: deferredQuery,
+        query: "",
       });
 
       setThreads((prev) => {
@@ -310,9 +343,18 @@ export function MailWorkspace({
     } finally {
       setIsFetchingMore(false);
     }
-  }, [deferredQuery, folder, isFetchingMore, mailboxQuery.isLoading, nextPageToken, threads.length, utils.email.getMailboxThreads]);
+  }, [folder, isFetchingMore, mailboxQuery.isLoading, nextPageToken, threads.length, utils.email.getMailboxThreads]);
 
-  const hasMore = Boolean(nextPageToken);
+  useEffect(() => {
+    if (debouncedQuery.length >= 2) return;
+    if (!hasMore || isFetchingMore || mailboxQuery.isLoading) return;
+
+    const handle = window.setTimeout(() => {
+      void fetchMore();
+    }, 350);
+
+    return () => window.clearTimeout(handle);
+  }, [debouncedQuery.length, fetchMore, hasMore, isFetchingMore, mailboxQuery.isLoading]);
 
   const handleSend = async (payload: {
     to: string[];
@@ -425,6 +467,7 @@ export function MailWorkspace({
                     threadId={selected.threadId || selected.id}
                     mailbox={folder}
                     onReplyCompose={openReplyComposer}
+                    onDeleted={closeThread}
                   />
                 )}
               </div>

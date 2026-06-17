@@ -9,6 +9,7 @@ import {
   deleteEmail as corsairDeleteEmail,
   restoreEmailFromTrash,
   getThreadMessages as corsairGetThread,
+  getDraftMessages as corsairGetDraftMessages,
   markEmailRead,
   markEmailUnread,
   getMessages as corsairGetMessages,
@@ -225,46 +226,39 @@ export const emailRouter = router({
       const cursor = decodePageToken(input.pageToken);
 
       if (input.folder === 'drafts') {
-        const draftKeys = await ctx.redis.smembers(`drafts:index:${ctx.userId}`).catch(() => []);
-        const drafts = await Promise.all(
-          draftKeys.map(async (key) => {
-            const raw = await ctx.redis.get<string>(key).catch(() => null);
-            return raw ? JSON.parse(raw) : null;
-          })
-        );
-        const filtered = drafts.filter(Boolean).filter((draft: any) => {
-          const q = input.query.trim().toLowerCase();
-          if (!q) return true;
-          return [draft.to, draft.cc, draft.bcc, draft.subject, draft.body].join(' ').toLowerCase().includes(q);
-        }).sort((a: any, b: any) => {
-          const bTime = new Date(b.updatedAt || b.createdAt || 0).getTime();
-          const aTime = new Date(a.updatedAt || a.createdAt || 0).getTime();
-          if (bTime !== aTime) return bTime - aTime;
-          return String(b.id).localeCompare(String(a.id));
+        const draftResult = await corsairGetDraftMessages(ctx.userId!, {
+          limit: input.limit + 1,
+          pageToken: input.pageToken || undefined,
         });
-        const cursorFiltered = cursor
-          ? filtered.filter((draft: any) => {
-              const createdAt = new Date(draft.updatedAt || draft.createdAt || 0);
-              const cursorDate = new Date(cursor.createdAt);
-              if (createdAt.getTime() !== cursorDate.getTime()) {
-                return createdAt.getTime() < cursorDate.getTime();
-              }
-              return String(draft.id) < cursor.id;
-            })
-          : filtered.slice(input.offset);
-        const page = cursorFiltered.slice(0, input.limit + 1).map((draft: any) => ({
-          id: draft.id,
-          threadId: draft.threadId || draft.id,
-          mailbox: 'drafts',
-          senderName: 'Draft',
-          subject: redactSensitiveForClient(draft.subject) || '(no subject)',
-          snippet: redactSensitiveForClient(draft.body) || 'Draft in progress.',
-          isRead: true,
-          receivedAt: draft.updatedAt || draft.createdAt || null,
-          badges: ['Drafts'],
-        }));
-        const items = page.slice(0, input.limit);
-        const nextPageToken = page.length > input.limit ? encodePageToken(items[items.length - 1]) : null;
+        if (draftResult.needsConnect) {
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+        }
+        const draftRows = Array.isArray(draftResult.data) ? draftResult.data : [];
+        const mappedDrafts = draftRows
+          .map((draft: any) => {
+            const headers = draft.payload?.headers || [];
+            const subject = getHeader(headers, 'Subject') || '(no subject)';
+            const { text: bodyText, html: bodyHtml } = parseEmailBody(draft.payload);
+
+            return mapEmailForListClient({
+              id: draft.id,
+              thread_id: draft.threadId || draft.id,
+              from_name: 'Draft',
+              from_address: '',
+              subject,
+              snippet: redactSensitiveForClient(bodyText || draft.snippet || 'Draft in progress.'),
+              body_text: bodyText || null,
+              body_html: bodyHtml || null,
+              is_read: true,
+              is_archived: false,
+              is_deleted: false,
+              created_at: draft.internalDate ? new Date(Number(draft.internalDate)) : new Date(),
+              mailbox: 'drafts',
+            });
+          })
+          .filter(Boolean);
+        const items = mappedDrafts.slice(0, input.limit);
+        const nextPageToken = mappedDrafts.length > input.limit ? draftResult.nextPageToken ?? null : null;
         const result = { items, nextPageToken };
         await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: cacheTtls.mailbox });
         return result;
@@ -532,7 +526,10 @@ export const emailRouter = router({
           eq(emails.is_archived, false),
           eq(emails.is_read, false)
         )),
-        ctx.redis.scard(`drafts:index:${ctx.userId}`).catch(() => 0),
+        corsairGetDraftMessages(ctx.userId!, { limit: 1 }).then((result) => {
+          if (result.needsConnect) return 0;
+          return Number(result.resultSizeEstimate ?? (Array.isArray(result.data) ? result.data.length : 0));
+        }).catch(() => 0),
         countRows(and(
           eq(emails.userId, ctx.userId!),
           eq(emails.is_deleted, false),
