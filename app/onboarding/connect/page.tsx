@@ -40,9 +40,20 @@ export default async function ConnectPage({
 
   return (
     <div className="flex min-h-screen flex-col">
+      {resolvedSearchParams.connected === "true" && (
+        <div className="mx-auto mt-4 w-full max-w-2xl rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-center text-sm text-emerald-700">
+          {resolvedSearchParams.plugin === "gmail"
+            ? "Gmail connected successfully. Finalizing your workspace."
+            : resolvedSearchParams.plugin === "googlecalendar"
+              ? "Calendar connected successfully. Finalizing your workspace."
+              : "Connection completed successfully."}
+        </div>
+      )}
       {(resolvedSearchParams.error || resolvedSearchParams.connected === "false") && (
         <div className="mx-auto mt-4 w-full max-w-2xl rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-center text-sm text-destructive">
-          Connection failed. Please try again.
+          {resolvedSearchParams.error === "gmail_required"
+            ? "Connect Gmail before continuing to the dashboard."
+            : "Connection failed. Please try again."}
         </div>
       )}
       {resolvedSearchParams.disconnected && (

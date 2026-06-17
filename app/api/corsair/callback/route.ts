@@ -4,6 +4,7 @@ import { NextResponse, NextRequest } from 'next/server'
 import { ensureTenantProvisioned } from '@/server/corsair/provision'
 import { syncInboxIfEmpty } from '@/server/corsair/sync'
 import { getCorsairCallbackUrl } from '@/server/corsair/url'
+import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')
@@ -33,6 +34,10 @@ export async function GET(req: NextRequest) {
           console.error('[OAuth] Initial inbox sync failed:', err)
         )
       }
+
+      await reconcileGoogleConnectionState(userId).catch((err) => {
+        console.error('[OAuth] Failed to reconcile connection state:', err)
+      })
     }
 
     return NextResponse.redirect(new URL(`/onboarding/connect?connected=true&plugin=${encodeURIComponent(result.plugin)}`, req.url))
