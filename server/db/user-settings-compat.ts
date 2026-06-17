@@ -36,6 +36,18 @@ export type SafeUserSettingsPatch = Partial<Omit<SafeUserSettings, 'hasRecord' |
 
 type RawUserSettingsRow = Record<string, unknown>
 
+const COLUMN_MAP = {
+  onboardingCompleted: 'onboarding_completed',
+  gmailConnected: 'gmail_connected',
+  calendarConnected: 'calendar_connected',
+  privacyConfigured: 'privacy_configured',
+  aiEnabled: 'ai_enabled',
+  morningDigestEnabled: 'morning_digest_enabled',
+  draftSuggestionsEnabled: 'draft_suggestions_enabled',
+  autoTagEnabled: 'auto_tag_enabled',
+  theme: 'theme',
+} as const
+
 const DEFAULT_SETTINGS: Omit<SafeUserSettings, 'hasRecord' | 'id' | 'userId'> = {
   onboardingCompleted: false,
   gmailConnected: false,
@@ -119,6 +131,12 @@ function buildSupportedPatch(patch: SafeUserSettingsPatch, presence: UserSetting
   return supported
 }
 
+function toDatabasePatch(patch: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(patch).map(([key, value]) => [COLUMN_MAP[key as keyof typeof COLUMN_MAP] ?? key, value])
+  )
+}
+
 export async function getUserSettingsColumnPresence(): Promise<UserSettingsPresence> {
   if (!cachedPresence) {
     cachedPresence = (async () => {
@@ -189,11 +207,12 @@ export async function saveSafeUserSettings(userId: string, patch: SafeUserSettin
     return
   }
 
-  const columns = ['user_id', ...Object.keys(supportedPatch)]
+  const databasePatch = toDatabasePatch(supportedPatch)
+  const columns = ['user_id', ...Object.keys(databasePatch)]
   const quotedColumns = columns.map(quoteIdent).join(', ')
-  const values = [userId, ...Object.values(supportedPatch)]
+  const values = [userId, ...Object.values(databasePatch)]
   const insertValues = sql.join(values.map((value) => sql`${value}`), sql.raw(', '))
-  const updateColumns = Object.keys(supportedPatch)
+  const updateColumns = Object.keys(databasePatch)
   const updateClause = updateColumns
     .map((column) => `${quoteIdent(column)} = excluded.${quoteIdent(column)}`)
     .join(', ')
