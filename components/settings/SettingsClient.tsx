@@ -1,69 +1,99 @@
-'use client'
-import { trpc } from '@/lib/trpc/client'
-import { Switch } from '@/components/ui/switch'
-import { toast } from 'sonner'
+"use client";
 
-export function SettingsClient({ initialSettings }: { initialSettings: any }) {
-  const { data: settings = initialSettings } =
-    trpc.settings.getUserSettings.useQuery({}, {
+import { trpc } from "@/lib/trpc/client";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+type SettingsModel = {
+  aiEnabled?: boolean;
+  morningDigestEnabled?: boolean;
+  draftSuggestionsEnabled?: boolean;
+  autoTagEnabled?: boolean;
+  privacyConfigured?: boolean;
+  gmailConnected?: boolean;
+  calendarConnected?: boolean;
+};
+
+export function SettingsClient({ initialSettings }: { initialSettings: SettingsModel }) {
+  const { data: settings = initialSettings } = trpc.settings.getUserSettings.useQuery(
+    {},
+    {
       initialData: initialSettings,
-      staleTime: 60000,
-    })
+      staleTime: 60_000,
+    }
+  );
 
   const updateMutation = trpc.settings.updateSetting.useMutation({
-    onSuccess: () => toast.success('Setting saved'),
-    onError: () => toast.error('Failed to save'),
-  })
+    onSuccess: () => toast.success("Setting saved"),
+    onError: () => toast.error("Failed to save"),
+  });
 
-  const toggle = (key: string, value: boolean) => {
-    updateMutation.mutate({ key: key as any, value })
-  }
+  const toggle = (key: "aiEnabled" | "morningDigestEnabled" | "draftSuggestionsEnabled" | "autoTagEnabled", value: boolean) => {
+    updateMutation.mutate({ key, value });
+  };
 
-  const settingsRows = [
+  const aiRows = [
     {
-      key: 'aiEnabled',
-      label: 'Enable AI features',
-      description: 'Allow Aethra to classify, summarize and draft replies',
+      key: "aiEnabled" as const,
+      label: "Enable AI",
+      description: "Turns on AI features across mail, calendar, and agent workflows.",
       value: settings?.aiEnabled ?? false,
     },
     {
-      key: 'draftSuggestionsEnabled',
-      label: 'Reply suggestions',
-      description: 'Pre-generate reply variants when emails arrive',
-      value: settings?.draftSuggestionsEnabled ?? true,
+      key: "morningDigestEnabled" as const,
+      label: "Enable Morning Digest",
+      description: "Shows the morning digest card when you ask for it.",
+      value: settings?.morningDigestEnabled ?? false,
     },
     {
-      key: 'autoTagEnabled',
-      label: 'Auto-tagging',
-      description: 'Automatically categorize emails',
-      value: settings?.autoTagEnabled ?? true,
+      key: "draftSuggestionsEnabled" as const,
+      label: "Enable Reply Suggestions",
+      description: "Generates Direct, Warm, and Boundary-setting reply drafts.",
+      value: settings?.draftSuggestionsEnabled ?? false,
     },
-  ]
+    {
+      key: "autoTagEnabled" as const,
+      label: "Enable Auto-tagging",
+      description: "Categorizes mail after it lands.",
+      value: settings?.autoTagEnabled ?? false,
+    },
+  ];
 
   return (
-    <div className="bg-surface border border-border rounded-xl overflow-hidden">
-      <div className="px-4 py-2 border-b border-border">
-        <h2 className="text-xs font-medium text-foreground-subtle uppercase tracking-wider">
-          AI Features
-        </h2>
-      </div>
-      {settingsRows.map((row, i) => (
-        <div key={row.key}
-          className={[
-            'flex items-center justify-between px-4 py-3',
-            i < settingsRows.length - 1 ? 'border-b border-border' : '',
-          ].join(' ')}>
+    <section className="rounded-3xl border border-border bg-surface shadow-[0_12px_40px_rgba(0,0,0,0.14)]">
+      <div className="border-b border-border px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium">{row.label}</p>
-            <p className="text-xs text-foreground-muted mt-0.5">{row.description}</p>
+            <h2 className="font-display text-lg font-semibold text-foreground">AI Features</h2>
+            <p className="mt-1 text-sm text-foreground-muted">Choose the AI features you want Aethra to use.</p>
           </div>
-          <Switch
-            checked={row.value}
-            onCheckedChange={(v) => toggle(row.key, v)}
-            disabled={updateMutation.isPending}
-          />
+          <span
+            className={cn(
+              "rounded-full border px-3 py-1 text-[11px] font-medium",
+              settings?.aiEnabled ? "border-accent/30 bg-accent/10 text-accent" : "border-border bg-background text-foreground-muted"
+            )}
+          >
+            {settings?.aiEnabled ? "AI on" : "AI off"}
+          </span>
         </div>
-      ))}
-    </div>
-  )
+      </div>
+
+      <div className="divide-y divide-border">
+        {aiRows.map((row) => (
+          <div key={row.key} className="flex items-center justify-between gap-4 px-5 py-4">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">{row.label}</p>
+              <p className="mt-1 text-xs leading-5 text-foreground-muted">{row.description}</p>
+            </div>
+            <Switch
+              checked={row.value}
+              onCheckedChange={(value) => toggle(row.key, value)}
+              disabled={updateMutation.isPending}
+            />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
 }

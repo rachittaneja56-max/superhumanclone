@@ -1,29 +1,65 @@
-'use client'
-import { trpc } from '@/lib/trpc/client'
-import { useState } from 'react'
-import { X } from 'lucide-react'
+"use client";
+
+import { useState } from "react";
+import { X, Sparkles } from "lucide-react";
+import { trpc } from "@/lib/trpc/client";
 
 export function MorningDigestBanner() {
-  const [dismissed, setDismissed] = useState(false)
-  const { data, isLoading } = trpc.email.getMorningDigest.useQuery({}, {
-    staleTime: 3600000,
-    retry: 1,
-  } as any)
+  const [dismissed, setDismissed] = useState(false);
+  const { data: settings } = trpc.settings.getUserSettings.useQuery({}, { staleTime: 60_000 });
+  const digestQuery = trpc.email.getMorningDigest.useQuery(
+    {},
+    {
+      enabled: false,
+      retry: 1,
+    }
+  );
 
-  if (dismissed || isLoading || !data?.digest) return null
+  if (dismissed || !settings?.morningDigestEnabled) return null;
+
+  const hasDigest = Boolean(digestQuery.data?.digest);
 
   return (
-    <div className="flex items-start gap-3 px-4 py-3 border-b border-border bg-accent/5">
-      <span className="text-accent text-lg flex-shrink-0">✦</span>
-      <p className="text-sm text-foreground flex-1 line-clamp-2">
-        {data.digest}
-      </p>
-      <button
-        onClick={() => setDismissed(true)}
-        className="text-foreground-subtle hover:text-foreground flex-shrink-0"
-      >
-        <X className="w-4 h-4" />
-      </button>
+    <div className="border-b border-border bg-surface px-4 py-3">
+      <div className="flex items-start gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-foreground">Morning Digest</p>
+              <p className="mt-1 text-xs text-foreground-muted">
+                Generate a short snapshot of today&apos;s email and calendar items.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void digestQuery.refetch();
+              }}
+              disabled={digestQuery.isFetching}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {digestQuery.isFetching ? "Generating…" : hasDigest ? "Regenerate" : "Generate"}
+            </button>
+          </div>
+
+          {digestQuery.isFetching ? (
+            <p className="mt-3 text-sm text-foreground-muted">Preparing your digest…</p>
+          ) : digestQuery.data?.digest ? (
+            <p className="mt-3 line-clamp-2 text-sm leading-6 text-foreground">{digestQuery.data.digest}</p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          className="shrink-0 rounded-lg p-1 text-foreground-subtle hover:bg-surface-raised hover:text-foreground"
+          aria-label="Dismiss digest"
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
     </div>
-  )
+  );
 }

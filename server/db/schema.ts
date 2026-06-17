@@ -81,6 +81,7 @@ export const userSettings = pgTable('user_settings', {
   calendarConnected: boolean('calendar_connected').default(false).notNull(),
   privacyConfigured: boolean('privacy_configured').default(false).notNull(),
   aiEnabled: boolean('ai_enabled').default(true).notNull(),
+  morningDigestEnabled: boolean('morning_digest_enabled').default(false).notNull(),
   draftSuggestionsEnabled: boolean('draft_suggestions_enabled').default(true).notNull(),
   autoTagEnabled: boolean('auto_tag_enabled').default(true).notNull(),
   theme: text('theme').default('light').notNull(),

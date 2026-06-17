@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { workerDb } from '../db/worker-index';
 import { redis } from '../redis';
-import { emails, aiConsentRules, autoReplyDrafts } from '../db/schema';
+import { emails, aiConsentRules, autoReplyDrafts, userSettings } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
 import { isDomainBlocked } from '@/lib/domain-matcher';
 import { classifyEmail, generateTLDR, generateAutoReplies, generateEmbedding } from '../ai/provider';
@@ -55,6 +55,15 @@ export async function processTriageJob(payload: unknown) {
     return { status: 'skipped', reason: 'privacy_gate' };
   }
 
+  const settings = await workerDb.query.userSettings.findFirst({
+    where: eq(userSettings.userId, userId),
+    columns: {
+      aiEnabled: true,
+      draftSuggestionsEnabled: true,
+      privacyConfigured: true,
+    },
+  });
+
   // 3. AI classification with provider guardrails
   let finalTag = 'other';
   let finalPriority = 'medium';
@@ -74,14 +83,16 @@ export async function processTriageJob(payload: unknown) {
       .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
 
     // 5. generateAutoReplies
-    const replies = await generateAutoReplies(subject, content, { userId });
-    await workerDb.insert(autoReplyDrafts)
-      .values([
-        { userId, emailId, reply_text: replies.direct, status: 'draft' },
-        { userId, emailId, reply_text: replies.warm, status: 'draft' },
-        { userId, emailId, reply_text: replies.boundary, status: 'draft' },
-      ])
-      .onConflictDoNothing();
+    if (settings?.aiEnabled && settings.draftSuggestionsEnabled && settings.privacyConfigured) {
+      const replies = await generateAutoReplies(subject, content, { userId });
+      await workerDb.insert(autoReplyDrafts)
+        .values([
+          { userId, emailId, reply_text: replies.direct, status: 'draft' },
+          { userId, emailId, reply_text: replies.warm, status: 'draft' },
+          { userId, emailId, reply_text: replies.boundary, status: 'draft' },
+        ])
+        .onConflictDoNothing();
+    }
 
     // 6. generateEmbedding
     const embedding = await generateEmbedding(subject + ' ' + snippet, { userId });

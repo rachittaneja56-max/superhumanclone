@@ -1,5 +1,5 @@
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
-import { emails, auditLogs, calendarEvents, autoReplyDrafts, users } from '@/server/db/schema';
+import { emails, auditLogs, calendarEvents, autoReplyDrafts, userSettings, users } from '@/server/db/schema';
 import { eq, and, desc, gt, between, inArray, asc, or, ilike, sql, lt } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
@@ -969,6 +969,19 @@ export const emailRouter = router({
     .use(createRateLimitMiddleware('getMorningDigest', 10, 3600))
     .input(getMorningDigestSchema)
     .query(async ({ ctx }) => {
+      const settings = await ctx.db.query.userSettings.findFirst({
+        where: eq(userSettings.userId, ctx.userId!),
+        columns: {
+          aiEnabled: true,
+          morningDigestEnabled: true,
+          privacyConfigured: true,
+        },
+      });
+
+      if (!settings?.aiEnabled || !settings.morningDigestEnabled || !settings.privacyConfigured) {
+        return { digest: '', emailCount: 0, eventCount: 0 };
+      }
+
       const today = new Date();
       const year = today.getFullYear();
       const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -1161,6 +1174,19 @@ export const emailRouter = router({
   getAutoReplies: protectedProcedure
     .input(getAutoRepliesSchema)
     .query(async ({ ctx, input }) => {
+      const settings = await ctx.db.query.userSettings.findFirst({
+        where: eq(userSettings.userId, ctx.userId!),
+        columns: {
+          aiEnabled: true,
+          draftSuggestionsEnabled: true,
+          privacyConfigured: true,
+        },
+      });
+
+      if (!settings?.aiEnabled || !settings.draftSuggestionsEnabled || !settings.privacyConfigured) {
+        return [];
+      }
+
       // JOIN to verify ownership
       const drafts = await ctx.db
         .select({

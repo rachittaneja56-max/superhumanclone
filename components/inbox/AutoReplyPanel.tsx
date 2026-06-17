@@ -1,97 +1,90 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import { useMemo } from "react";
+import { Sparkles, ShieldAlert, PencilLine } from "lucide-react";
+
 import { trpc } from "@/lib/trpc/client";
-import { toast } from "sonner";
-import { X } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
+
+const VARIANT_LABELS = ["Direct", "Warm", "Boundary-setting"] as const;
 
 export function AutoReplyPanel({ emailId, onSelect }: { emailId: string; onSelect: (text: string) => void }) {
-  const [attempts, setAttempts] = useState(0);
-  const maxAttempts = 15;
+  const { data: settings } = trpc.settings.getUserSettings.useQuery({}, { staleTime: 60_000 });
+  const allowSuggestions = Boolean(settings?.aiEnabled && settings?.draftSuggestionsEnabled && settings?.privacyConfigured);
 
-  const { data: replies, isFetching } = trpc.email.getAutoReplies.useQuery(
+  const { data: replies = [] } = trpc.email.getAutoReplies.useQuery(
     { emailId },
     {
+      enabled: allowSuggestions,
       staleTime: Infinity,
-      refetchInterval: (query) => {
-        if (!query.state.data || query.state.data.length === 0) {
-          if (attempts >= maxAttempts) return false;
-          return 2000; // Poll every 2s
-        }
-        return false;
-      },
+      retry: 1,
     }
   );
 
-  const updateSetting = trpc.settings.updateSetting.useMutation();
-
-  useEffect(() => {
-    if (isFetching && (!replies || replies.length === 0)) {
-      setAttempts((prev) => prev + 1);
-    }
-  }, [isFetching, replies]);
-
-  const handleDisable = async () => {
-    try {
-      await updateSetting.mutateAsync({ key: "draftSuggestionsEnabled", value: false });
-      toast.success("Draft suggestions disabled");
-    } catch (err) {
-      toast.error("Failed to disable suggestions");
-    }
-  };
-
-  if (!replies || replies.length === 0) {
-    if (attempts >= maxAttempts) {
+  const content = useMemo(() => {
+    if (!allowSuggestions) {
       return (
-        <div className="p-4 border-t border-border bg-surface text-sm text-muted-foreground flex justify-between items-center">
-          <span>Suggestions unavailable.</span>
-        </div>
+        <UnavailableState
+          title="Reply suggestions unavailable"
+          body="Turn on AI, Reply Suggestions, and Privacy Gate to use editable reply drafts."
+        />
       );
     }
+
+    if (!replies.length) {
+      return (
+        <UnavailableState
+          title="Generating suggestions…"
+          body="Aethra is preparing three reply drafts for this thread."
+          pulse
+        />
+      );
+    }
+
     return (
-      <div className="p-4 border-t border-border bg-surface text-sm text-muted-foreground flex justify-between items-center animate-pulse">
-        <span>Generating AI suggestions...</span>
-      </div>
-    );
-  }
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Reply Suggestions</h3>
+            <p className="mt-1 text-xs text-foreground-muted">Select a draft to open it in the composer and edit before sending.</p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-foreground-muted">
+            <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
+            Editable drafts
+          </div>
+        </div>
 
-  return (
-    <div className="p-4 border-t border-border bg-surface space-y-3">
-      <div className="flex justify-between items-center">
-        <h3 className="text-sm font-semibold tracking-wide text-foreground">AI Auto-Replies</h3>
-        <Popover>
-          <PopoverTrigger className="text-xs text-muted-foreground hover:underline">
-            Disable
-          </PopoverTrigger>
-          <PopoverContent className="w-64 p-4 text-sm" align="end">
-            <div className="mb-3">Are you sure you want to disable draft suggestions for all emails?</div>
-            <div className="flex justify-end space-x-2">
-              <Button variant="ghost" size="sm">Cancel</Button>
-              <Button variant="destructive" size="sm" onClick={handleDisable}>Disable</Button>
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {replies.map((reply, idx) => {
-          let variantTitle = "Direct";
-          if (idx === 1) variantTitle = "Warm";
-          if (idx === 2) variantTitle = "Boundary";
-          
-          return (
+        <div className="grid gap-3 md:grid-cols-3">
+          {replies.slice(0, 3).map((reply, index) => (
             <button
               key={reply.id}
+              type="button"
               onClick={() => onSelect(reply.reply_text)}
-              className="text-left p-3 rounded-md border border-border hover:border-accent hover:bg-accent/5 transition-colors text-xs text-foreground flex flex-col justify-between group"
+              className="group rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-accent/30 hover:bg-accent/5"
             >
-              <div className="font-semibold mb-1 opacity-70 group-hover:opacity-100">{variantTitle}</div>
-              <div className="line-clamp-3 opacity-80">{reply.reply_text}</div>
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/10 text-accent">
+                  <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                </div>
+                <div className="text-sm font-medium text-foreground">{VARIANT_LABELS[index] ?? "Reply"}</div>
+              </div>
+              <p className="mt-3 line-clamp-5 text-xs leading-5 text-foreground-muted">{reply.reply_text}</p>
             </button>
-          );
-        })}
+          ))}
+        </div>
+      </div>
+    );
+  }, [allowSuggestions, onSelect, replies]);
+
+  return <div className="border-t border-border bg-surface px-4 py-4">{content}</div>;
+}
+
+function UnavailableState({ title, body, pulse = false }: { title: string; body: string; pulse?: boolean }) {
+  return (
+    <div className={`flex items-start gap-3 rounded-2xl border border-border bg-background px-4 py-3 text-sm ${pulse ? "animate-pulse" : ""}`}>
+      <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-foreground-subtle" aria-hidden="true" />
+      <div>
+        <div className="font-medium text-foreground">{title}</div>
+        <div className="mt-1 text-xs leading-5 text-foreground-muted">{body}</div>
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const getUserSettingsSchema = z.object({});
 
 export const updateSettingSchema = z.object({
-  key: z.enum(['aiEnabled','draftSuggestionsEnabled','autoTagEnabled']),
+  key: z.enum(['aiEnabled','morningDigestEnabled','draftSuggestionsEnabled','autoTagEnabled']),
   value: z.boolean(),
 });
 
