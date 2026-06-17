@@ -191,9 +191,10 @@ export async function ensureSafeUserSettings(userId: string): Promise<SafeUserSe
     return current
   }
 
+  const rowId = crypto.randomUUID()
   await db.execute(sql`
-    insert into ${sql.raw(quoteIdent('user_settings'))} (${sql.raw(quoteIdent('user_id'))})
-    values (${userId})
+    insert into ${sql.raw(quoteIdent('user_settings'))} (${sql.raw(`${quoteIdent('id')}, ${quoteIdent('user_id')}`)})
+    values (${rowId}, ${userId})
     on conflict (${sql.raw(quoteIdent('user_id'))}) do nothing
   `)
   return getSafeUserSettings(userId)
@@ -207,10 +208,11 @@ export async function saveSafeUserSettings(userId: string, patch: SafeUserSettin
     return
   }
 
+  const rowId = crypto.randomUUID()
   const databasePatch = toDatabasePatch(supportedPatch)
-  const columns = ['user_id', ...Object.keys(databasePatch)]
+  const columns = ['id', 'user_id', ...Object.keys(databasePatch)]
   const quotedColumns = columns.map(quoteIdent).join(', ')
-  const values = [userId, ...Object.values(databasePatch)]
+  const values = [rowId, userId, ...Object.values(databasePatch)]
   const insertValues = sql.join(values.map((value) => sql`${value}`), sql.raw(', '))
   const updateColumns = Object.keys(databasePatch)
   const updateClause = updateColumns
