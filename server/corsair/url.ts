@@ -14,17 +14,37 @@ function isLocalUrl(value: string | null): boolean {
   return !!value && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(value)
 }
 
-export function getConfiguredAppUrl(): string {
-  return (
-    normaliseBaseUrl(process.env.NEXT_PUBLIC_APP_URL) ??
-    normaliseBaseUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL) ??
-    normaliseBaseUrl(process.env.VERCEL_URL) ??
-    LOCAL_APP_URL
-  )
+function resolveConfiguredBaseUrl(candidates: Array<string | undefined | null>): string {
+  for (const candidate of candidates) {
+    const normalised = normaliseBaseUrl(candidate)
+    if (normalised) return normalised
+  }
+
+  return LOCAL_APP_URL
 }
 
-export function getRequestBaseUrl(req: Request): string {
-  const configured = getConfiguredAppUrl()
+export function getConfiguredAppUrl(): string {
+  return resolveConfiguredBaseUrl([
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    process.env.VERCEL_URL,
+  ])
+}
+
+export function getConfiguredAuthUrl(): string {
+  return resolveConfiguredBaseUrl([
+    process.env.AUTH_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    process.env.VERCEL_URL,
+  ])
+}
+
+export function getRequestBaseUrl(
+  req: Request,
+  options?: { preferAuthUrl?: boolean }
+): string {
+  const configured = options?.preferAuthUrl ? getConfiguredAuthUrl() : getConfiguredAppUrl()
   if (process.env.NODE_ENV !== 'production' || !isLocalUrl(configured)) {
     return configured
   }

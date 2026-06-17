@@ -1,5 +1,5 @@
 import { OAuth2RequestError } from "oslo/oauth2";
-import { googleOAuthClient } from "@/lib/oauth";
+import { assertGoogleOAuthConfig, createGoogleOAuthClient } from "@/lib/oauth";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -13,13 +13,34 @@ function normalizeCallbackUrl(callbackUrl: string | null) {
   return callbackUrl;
 }
 
-export async function GET(request: Request) {
-  const [{ db, users }, { setSession }, { eq }] = await Promise.all([
-    import("@/server/db"),
-    import("@/lib/auth"),
-    import("drizzle-orm")
-  ]);
+type GoogleAuthErrorCode =
+  | "oauth_state"
+  | "oauth_config"
+  | "oauth_token"
+  | "oauth_userinfo"
+  | "oauth_db"
+  | "oauth_session";
 
+function redirectToLogin(request: Request, error: GoogleAuthErrorCode) {
+  const loginUrl = new URL("/login", request.url);
+  loginUrl.searchParams.set("error", error);
+  return NextResponse.redirect(loginUrl);
+}
+
+function clearGoogleAuthCookies(cookieStore: Awaited<ReturnType<typeof cookies>>) {
+  cookieStore.delete("google_oauth_state");
+  cookieStore.delete("google_code_verifier");
+  cookieStore.delete("google_auth_callback");
+}
+
+function logGoogleAuthFailure(stage: GoogleAuthErrorCode, error: unknown) {
+  console.error("[Auth] Google callback failed", {
+    stage,
+    message: error instanceof Error ? error.message : "Unknown error",
+  });
+}
+
+export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -31,28 +52,35 @@ export async function GET(request: Request) {
   const callbackUrl = normalizeCallbackUrl(callbackUrlCookie ? callbackUrlCookie.value : "/inbox");
 
   if (!code || !state || !storedState || state !== storedState || !storedCodeVerifier) {
-    return new Response(null, {
-      status: 400
-    });
+    clearGoogleAuthCookies(cookieStore);
+    return redirectToLogin(request, "oauth_state");
   }
 
   try {
-    const tokens: any = await googleOAuthClient.validateAuthorizationCode(
-      code,
-      {
-        codeVerifier: storedCodeVerifier,
-        credentials: process.env.GOOGLE_CLIENT_SECRET!,
-        authenticateWith: "request_body"
-      }
-    );
+    const { clientSecret } = assertGoogleOAuthConfig(request);
+    const googleOAuthClient = createGoogleOAuthClient(request);
 
-    const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
-      headers: {
-        Authorization: `Bearer ${tokens.access_token}`
+    let tokens: any;
+    try {
+      tokens = await googleOAuthClient.validateAuthorizationCode(
+        code,
+        {
+          codeVerifier: storedCodeVerifier,
+          credentials: clientSecret,
+          authenticateWith: "request_body"
+        }
+      );
+    } catch (error) {
+      if (error instanceof OAuth2RequestError) {
+        logGoogleAuthFailure("oauth_token", error);
+      } else {
+        logGoogleAuthFailure("oauth_token", error);
       }
-    });
+      clearGoogleAuthCookies(cookieStore);
+      return redirectToLogin(request, "oauth_token");
+    }
 
-    const googleUser: {
+    let googleUser: {
       sub: string;
       name: string;
       given_name: string;
@@ -61,50 +89,89 @@ export async function GET(request: Request) {
       email: string;
       email_verified: boolean;
       locale: string;
-    } = await response.json();
+    };
 
-    let existingUser = await db.query.users.findFirst({
-      where: eq(users.email, googleUser.email)
-    });
-
-    if (!existingUser) {
-      const [newUser] = await db.insert(users).values({
-        id: crypto.randomUUID(),
-        email: googleUser.email,
-        name: googleUser.name,
-        image: googleUser.picture,
-        emailVerified: googleUser.email_verified ? new Date() : null,
-      }).returning();
-      existingUser = newUser;
-
-      const { ensureTenantProvisioned } = await import('@/server/corsair/provision')
-      await ensureTenantProvisioned(existingUser.id).catch((err) =>
-        console.error('[Auth] Corsair tenant provisioning failed:', err)
-      )
-    } else {
-      // Update missing details if needed
-      await db.update(users).set({
-        name: googleUser.name,
-        image: googleUser.picture,
-        emailVerified: googleUser.email_verified && !existingUser.emailVerified ? new Date() : existingUser.emailVerified,
-      }).where(eq(users.id, existingUser.id));
-    }
-
-    await setSession(existingUser.id);
-    cookieStore.delete("google_oauth_state");
-    cookieStore.delete("google_code_verifier");
-    cookieStore.delete("google_auth_callback");
-    
-    return NextResponse.redirect(new URL(callbackUrl, request.url));
-  } catch (e) {
-    if (e instanceof OAuth2RequestError) {
-      return new Response(null, {
-        status: 400
+    try {
+      const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`
+        },
+        cache: "no-store",
       });
+
+      if (!response.ok) {
+        throw new Error(`userinfo_request_failed:${response.status}`);
+      }
+
+      googleUser = await response.json();
+      if (!googleUser.email) {
+        throw new Error("userinfo_missing_email");
+      }
+    } catch (error) {
+      logGoogleAuthFailure("oauth_userinfo", error);
+      clearGoogleAuthCookies(cookieStore);
+      return redirectToLogin(request, "oauth_userinfo");
     }
-    console.error("[Auth] Google callback failed");
-    return new Response(null, {
-      status: 500
-    });
+
+    const [{ db, users }, { ensureUserSettings }, { setSession }, { eq }] = await Promise.all([
+      import("@/server/db"),
+      import("@/server/auth/helpers"),
+      import("@/lib/auth"),
+      import("drizzle-orm")
+    ]);
+
+    let userId: string;
+    try {
+      let existingUser = await db.query.users.findFirst({
+        where: eq(users.email, googleUser.email)
+      });
+
+      if (!existingUser) {
+        const [newUser] = await db.insert(users).values({
+          id: crypto.randomUUID(),
+          email: googleUser.email,
+          name: googleUser.name,
+          image: googleUser.picture,
+          emailVerified: googleUser.email_verified ? new Date() : null,
+        }).returning();
+        existingUser = newUser;
+
+        const { ensureTenantProvisioned } = await import('@/server/corsair/provision');
+        await ensureTenantProvisioned(existingUser.id).catch((error) =>
+          console.error("[Auth] Corsair tenant provisioning failed", {
+            stage: "corsair_provision",
+            message: error instanceof Error ? error.message : "Unknown error",
+          })
+        );
+      } else {
+        await db.update(users).set({
+          name: googleUser.name,
+          image: googleUser.picture,
+          emailVerified: googleUser.email_verified && !existingUser.emailVerified ? new Date() : existingUser.emailVerified,
+        }).where(eq(users.id, existingUser.id));
+      }
+
+      userId = existingUser.id;
+      await ensureUserSettings(userId);
+    } catch (error) {
+      logGoogleAuthFailure("oauth_db", error);
+      clearGoogleAuthCookies(cookieStore);
+      return redirectToLogin(request, "oauth_db");
+    }
+
+    try {
+      await setSession(userId);
+    } catch (error) {
+      logGoogleAuthFailure("oauth_session", error);
+      clearGoogleAuthCookies(cookieStore);
+      return redirectToLogin(request, "oauth_session");
+    }
+
+    clearGoogleAuthCookies(cookieStore);
+    return NextResponse.redirect(new URL(callbackUrl, request.url));
+  } catch (error) {
+    logGoogleAuthFailure("oauth_config", error);
+    clearGoogleAuthCookies(cookieStore);
+    return redirectToLogin(request, "oauth_config");
   }
 }

@@ -11,6 +11,7 @@ Use Railway environment variables for the worker service.
 ## Required variables
 
 ### App / auth
+- `AUTH_URL`
 - `NEXT_PUBLIC_APP_URL`
 - `ENCRYPTION_KEY`
 

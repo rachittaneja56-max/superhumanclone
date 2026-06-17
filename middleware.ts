@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createCsrfMiddleware } from '@edge-csrf/nextjs'
-import { getIronSession } from 'iron-session'
-import { sessionOptions, type SessionData } from '@/lib/auth'
+import { sessionOptions } from '@/lib/session-options'
 
 const csrfProtect = createCsrfMiddleware({
   cookie: {
@@ -39,12 +38,7 @@ export default async function middleware(req: NextRequest) {
     csrfResponse = await csrfProtect(req)
   }
 
-  const res = NextResponse.next()
-  
-  const session = await getIronSession<SessionData>(req, res, sessionOptions)
-  const userId = session.userId
-
-  const nonce = Buffer.from(crypto.randomUUID()).toString('base64')
+  const nonce = btoa(crypto.randomUUID())
   const csp = `
     default-src 'self';
     script-src 'self' 'unsafe-inline' 'unsafe-eval' https:;
@@ -66,7 +60,7 @@ export default async function middleware(req: NextRequest) {
   }
 
   if (isProtectedPath(req.nextUrl.pathname)) {
-    if (!userId) {
+    if (!req.cookies.has(sessionOptions.cookieName)) {
       const loginUrl = new URL('/login', req.url)
       return NextResponse.redirect(loginUrl)
     }
@@ -79,12 +73,6 @@ export default async function middleware(req: NextRequest) {
   const csrfCookie = csrfResponse?.headers.get('set-cookie')
   if (csrfCookie) {
     response.headers.append('set-cookie', csrfCookie)
-  }
-
-  // Copy session cookie to the response if it was modified
-  const sessionCookie = res.headers.get('set-cookie')
-  if (sessionCookie) {
-    response.headers.append('set-cookie', sessionCookie)
   }
 
   if (process.env.NODE_ENV === 'production') {

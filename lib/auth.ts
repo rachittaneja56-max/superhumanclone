@@ -1,18 +1,8 @@
 import { getIronSession } from 'iron-session'
 import { cookies } from 'next/headers'
+import { sessionOptions, type SessionData } from './session-options'
 
-export interface SessionData {
-  userId?: string
-  adminUnlocked?: boolean
-}
-
-export const sessionOptions = {
-  password: process.env.ENCRYPTION_KEY || 'complex_password_at_least_32_characters_long',
-  cookieName: 'aethra_session',
-  cookieOptions: {
-    secure: process.env.NODE_ENV === 'production',
-  },
-}
+export { sessionOptions, type SessionData }
 
 export async function getSession() {
   return await getIronSession<SessionData>(await cookies(), sessionOptions)
