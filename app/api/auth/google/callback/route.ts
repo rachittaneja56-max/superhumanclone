@@ -2,10 +2,9 @@ import { OAuth2RequestError } from "oslo/oauth2";
 import { googleOAuthClient } from "@/lib/oauth";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { db } from "@/server/db";
-import { users } from "@/server/db/schema";
-import { setSession } from "@/lib/auth";
-import { eq } from "drizzle-orm";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function normalizeCallbackUrl(callbackUrl: string | null) {
   if (!callbackUrl || !callbackUrl.startsWith("/") || callbackUrl.startsWith("//")) {
@@ -15,6 +14,12 @@ function normalizeCallbackUrl(callbackUrl: string | null) {
 }
 
 export async function GET(request: Request) {
+  const [{ db, users }, { setSession }, { eq }] = await Promise.all([
+    import("@/server/db"),
+    import("@/lib/auth"),
+    import("drizzle-orm")
+  ]);
+
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
