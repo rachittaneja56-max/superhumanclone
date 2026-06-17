@@ -96,6 +96,20 @@ function sanitizeOutput(value: string, maxChars: number) {
   return sanitiseAgentOutput(truncateText(redactSensitiveText(value), maxChars), maxChars);
 }
 
+function isLikelyAgentText(value: string) {
+  const text = value.trim();
+  if (!text) return false;
+
+  const letters = (text.match(/[A-Za-z]/g) ?? []).length;
+  const words = text.split(/\s+/).filter(Boolean).length;
+  const symbols = (text.match(/[^A-Za-z0-9\s.,;:!?'"()\-\/]/g) ?? []).length;
+
+  if (words < 3 && letters < 12) return false;
+  if (text.length > 0 && symbols / text.length > 0.35) return false;
+  if (/(.)\1{7,}/.test(text)) return false;
+  return true;
+}
+
 async function getProviderHealth(provider: AIProvider): Promise<AIProviderHealth> {
   const cached = await redis.get<AIProviderHealth | string>(healthKey(provider));
   if (!cached) {
@@ -614,8 +628,11 @@ export async function streamAgentResponse(
       prompt: prompts.agentSystem,
     });
 
+    const cleaned = sanitizeOutput(text, 4200);
+    const fallback = "I can help with inbox and calendar workflows. If you share a thread or meeting context, I can be more specific.";
+
     return {
-      textStream: createSingleChunkStream(text),
+      textStream: createSingleChunkStream(isLikelyAgentText(cleaned) ? cleaned : fallback),
     };
   } catch (error) {
     if (error instanceof AIUsageLimitError) {

@@ -14,10 +14,11 @@ type SpeechRecognitionLike = {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
+  abort?: () => void;
   start: () => void;
   stop: () => void;
   onresult: ((event: any) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event?: any) => void) | null;
   onend: (() => void) | null;
 };
 
@@ -67,8 +68,10 @@ export function AgentChat({
   useEffect(() => {
     if (getPendingHITL.data) {
       setActiveHITLAction(getPendingHITL.data);
+    } else if (getPendingHITL.isFetched) {
+      setActiveHITLAction(null);
     }
-  }, [getPendingHITL.data, setActiveHITLAction]);
+  }, [getPendingHITL.data, getPendingHITL.isFetched, setActiveHITLAction]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -126,10 +129,15 @@ export function AgentChat({
       }
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event?: any) => {
       setVoiceListening(false);
       setVoicePreview("");
-      setVoiceError("Voice input is unavailable right now.");
+      const errorName = typeof event?.error === "string" ? event.error : "";
+      setVoiceError(
+        errorName === "not-allowed" || errorName === "service-not-allowed"
+          ? "Microphone access is blocked. Allow microphone permission to use voice input."
+          : "Voice input is unavailable right now.",
+      );
     };
 
     recognition.onend = () => {
@@ -139,6 +147,7 @@ export function AgentChat({
 
     recognitionRef.current = recognition;
     return () => {
+      recognition.abort?.();
       recognition.stop();
       recognitionRef.current = null;
     };
@@ -217,8 +226,13 @@ export function AgentChat({
 
     setVoiceError(null);
     setVoicePreview("");
-    recognitionRef.current.start();
-    setVoiceListening(true);
+    try {
+      recognitionRef.current.start();
+      setVoiceListening(true);
+    } catch {
+      setVoiceError("Could not start voice input. Check microphone permissions.");
+      setVoiceListening(false);
+    }
   };
 
   return (

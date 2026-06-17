@@ -141,6 +141,68 @@ function decodePageToken(token?: string | null): { createdAt: string; id: string
   }
 }
 
+async function seedMailboxFromCorsair(
+  ctx: any,
+  seedParams: { limit: number; maxPages?: number } = { limit: 50, maxPages: 20 },
+) {
+  const pageSize = Math.max(10, seedParams.limit);
+  const maxPages = Math.max(1, seedParams.maxPages ?? 20);
+  let pageToken: string | undefined;
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const corsairResult = await corsairGetMessages(ctx.userId!, {
+      limit: pageSize,
+      ...(pageToken ? { pageToken } : {}),
+    });
+
+    if (!corsairResult.success || !Array.isArray(corsairResult.data) || corsairResult.data.length === 0) {
+      break;
+    }
+
+    for (const msg of corsairResult.data) {
+      const msgId = msg.id;
+      if (!msgId) continue;
+
+      const headers = msg.payload?.headers || [];
+      const fromVal = getHeader(headers, 'From');
+      const toVal = getHeader(headers, 'To');
+      const subjectVal = getHeader(headers, 'Subject') || '(no subject)';
+      const { text: bodyText, html: bodyHtml } = parseEmailBody(msg.payload);
+
+      let fromName: string | null = null;
+      let fromAddress = '';
+      const match = fromVal.match(/^(.*?)\s*<([^>]+)>/);
+      if (match) {
+        fromName = match[1].replace(/['"]/g, '').trim();
+        fromAddress = match[2].trim();
+      } else {
+        fromAddress = fromVal.trim();
+      }
+
+      await ctx.db.insert(emails).values({
+        userId: ctx.userId!,
+        corsair_message_id: msgId,
+        thread_id: msg.threadId || msgId,
+        from_address: fromAddress,
+        from_name: fromName,
+        to_address: toVal,
+        subject: subjectVal,
+        snippet: msg.snippet ?? null,
+        body_text: bodyText || null,
+        body_html: bodyHtml || null,
+        is_read: !msg.labelIds?.includes('UNREAD'),
+        is_archived: false,
+        is_deleted: false,
+        ai_triage_skipped: true,
+        created_at: msg.internalDate ? new Date(Number(msg.internalDate)) : new Date(),
+      }).onConflictDoNothing();
+    }
+
+    pageToken = corsairResult.nextPageToken ?? undefined;
+    if (!pageToken) break;
+  }
+}
+
 async function queueSendJob(ctx: any, undoToken: string) {
   if (!process.env.QSTASH_TOKEN) return null;
 
@@ -412,71 +474,29 @@ export const emailRouter = router({
       // If local DB is empty (e.g. first load before webhooks), pull from Corsair
       if (results.length === 0) {
         try {
-          const corsairResult = await corsairGetMessages(ctx.userId!, { limit: input.limit });
-          if (corsairResult.success && Array.isArray(corsairResult.data) && corsairResult.data.length > 0) {
-            // Seed local DB with the fetched messages
-            for (const msg of corsairResult.data) {
-              const msgId = msg.id;
-              if (!msgId) continue;
-
-              const headers = msg.payload?.headers || [];
-              const fromVal = getHeader(headers, 'From');
-              const toVal = getHeader(headers, 'To');
-              const subjectVal = getHeader(headers, 'Subject') || '(no subject)';
-              const { text: bodyText, html: bodyHtml } = parseEmailBody(msg.payload);
-
-              // Extract sender name and address
-              let fromName: string | null = null;
-              let fromAddress = '';
-              const match = fromVal.match(/^(.*?)\s*<([^>]+)>/);
-              if (match) {
-                fromName = match[1].replace(/['"]/g, '').trim();
-                fromAddress = match[2].trim();
-              } else {
-                fromAddress = fromVal.trim();
-              }
-
-              await ctx.db.insert(emails).values({
-                userId: ctx.userId!,
-                corsair_message_id: msgId,
-                thread_id: msg.threadId || msgId,
-                from_address: fromAddress,
-                from_name: fromName,
-                to_address: toVal,
-                subject: subjectVal,
-                snippet: msg.snippet ?? null,
-                body_text: bodyText || null,
-                body_html: bodyHtml || null,
-                is_read: !msg.labelIds?.includes('UNREAD'),
-                is_archived: false,
-                is_deleted: false,
-                ai_triage_skipped: true,
-                created_at: msg.internalDate ? new Date(Number(msg.internalDate)) : new Date(),
-              }).onConflictDoNothing();
-            }
-            // Re-fetch after seed
-            results = await ctx.db.query.emails.findMany({
-              where: and(
-                eq(emails.userId, ctx.userId!),
-                eq(emails.is_archived, input.isArchived),
-                eq(emails.is_deleted, false)
-              ),
-              columns: {
-                id: true,
-                thread_id: true,
-                from_name: true,
-                from_address: true,
-                subject: true,
-                snippet: true,
-                is_read: true,
-                tldr: true,
-                ai_triage_skipped: true,
-                created_at: true,
-              },
-              orderBy: [desc(emails.created_at)],
-              limit: input.limit
-            });
-          }
+          await seedMailboxFromCorsair(ctx, { limit: Math.max(input.limit, 50), maxPages: 20 });
+          // Re-fetch after seeding multiple pages so the local mailbox is not artificially capped.
+          results = await ctx.db.query.emails.findMany({
+            where: and(
+              eq(emails.userId, ctx.userId!),
+              eq(emails.is_archived, input.isArchived),
+              eq(emails.is_deleted, false)
+            ),
+            columns: {
+              id: true,
+              thread_id: true,
+              from_name: true,
+              from_address: true,
+              subject: true,
+              snippet: true,
+              is_read: true,
+              tldr: true,
+              ai_triage_skipped: true,
+              created_at: true,
+            },
+            orderBy: [desc(emails.created_at)],
+            limit: input.limit
+          });
         } catch (err) {
           // Corsair fetch failed (not connected) — return empty gracefully
           console.warn('[getThreads] Corsair fallback failed:', err);

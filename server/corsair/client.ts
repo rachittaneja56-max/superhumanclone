@@ -88,12 +88,13 @@ function buildMimeMessage(payload: {
     `Subject: ${subject}`,
     'MIME-Version: 1.0',
     'Content-Type: text/plain; charset="UTF-8"',
-    'Content-Transfer-Encoding: 7bit',
-    '',
-    body,
-  ].filter(Boolean)
+    'Content-Transfer-Encoding: 8bit',
+  ].filter((line): line is string => Boolean(line))
 
-  return encodeBase64Url(headers.join('\r\n'))
+  // Preserve the required blank line between headers and body so Gmail/Corsair
+  // treats the message body as message content rather than a malformed header.
+  const mime = `${headers.join('\r\n')}\r\n\r\n${body}`
+  return encodeBase64Url(mime)
 }
 
 // ── Connection check ─────────────────────────────────────────────
@@ -160,8 +161,11 @@ export async function getThreads(userId: string, params?: { limit?: number; offs
   }
 }
 
-export async function getMessages(userId: string, params?: { limit?: number }) {
-  return listAndHydrateMessages(userId, { limit: params?.limit ?? 50 })
+export async function getMessages(userId: string, params?: { limit?: number; pageToken?: string }) {
+  return listAndHydrateMessages(userId, {
+    limit: params?.limit ?? 50,
+    pageToken: params?.pageToken,
+  })
 }
 
 export async function getDraftMessages(userId: string, params?: { limit?: number; pageToken?: string }) {
@@ -196,7 +200,7 @@ async function listAndHydrateMessages(
       ...(params.q ? { q: params.q } : {}),
     })
     const messages = listResult.messages || []
-    const toFetch = messages.slice(0, 15)
+    const toFetch = messages
     const details = await Promise.all(
       toFetch.map(async (m: any) => {
         try {
