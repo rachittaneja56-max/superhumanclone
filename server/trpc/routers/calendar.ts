@@ -1,8 +1,8 @@
-import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, or, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { router, protectedProcedure } from '../trpc';
 import { emails, calendarEvents, users } from '../../db/schema';
-import { smartFillFromThread } from '../../ai/provider';
+import { generateMeetingPrepBrief, smartFillFromThread } from '../../ai/provider';
 import {
   createCalendarEvent,
   deleteCalendarEvent,
@@ -17,12 +17,14 @@ import {
 } from '@/server/cache';
 import {
   smartFillFromThreadSchema,
+  generatePrepBriefSchema,
   createEventSchema,
   deleteEventSchema,
   getEventsSchema,
   getTimelineSchema,
   updateEventSchema,
 } from '@/lib/schemas';
+import { decodeHtmlEntities, safeDisplayName } from '@/lib/email-client';
 
 function mapDbEvent(row: typeof calendarEvents.$inferSelect) {
   return {
@@ -113,6 +115,24 @@ function parseRecipientList(value: string | null | undefined) {
     .filter(Boolean);
 }
 
+function extractAttendees(event: Record<string, unknown> | null | undefined) {
+  const attendees = event && Array.isArray(event.attendees) ? event.attendees : [];
+  return attendees
+    .map((attendee) => {
+      if (typeof attendee === 'string') return attendee.trim();
+      if (!attendee || typeof attendee !== 'object') return '';
+      const record = attendee as Record<string, unknown>;
+      const email = String(record.email ?? record.address ?? '').trim();
+      const name = String(record.displayName ?? record.name ?? '').trim();
+      return name && email ? `${name} <${email}>` : email || name;
+    })
+    .filter(Boolean);
+}
+
+function normalizeEmailForMatch(value: string) {
+  return value.toLowerCase().replace(/[<>"']/g, '').trim();
+}
+
 export const calendarRouter = router({
   smartFillFromThread: protectedProcedure
     .input(smartFillFromThreadSchema)
@@ -152,6 +172,141 @@ export const calendarRouter = router({
         ...aiResult,
         participants: Array.from(participants),
       };
+    }),
+
+  generatePrepBrief: protectedProcedure
+    .input(generatePrepBriefSchema)
+    .mutation(async ({ ctx, input }) => {
+      const localEvent = await ctx.db.query.calendarEvents.findFirst({
+        where: and(
+          eq(calendarEvents.userId, ctx.userId!),
+          or(eq(calendarEvents.id, input.eventId), eq(calendarEvents.corsair_event_id, input.eventId)),
+        ),
+      });
+
+      if (!localEvent) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found' });
+      }
+
+      const start = new Date(localEvent.start_time);
+      const end = new Date(localEvent.end_time);
+      const windowStart = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+      const windowEnd = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+
+      let liveEvent: Record<string, unknown> | null = null;
+      try {
+        const remote = await getCalendarEvents(ctx.userId!, {
+          limit: 50,
+          timeMin: windowStart.toISOString(),
+          timeMax: windowEnd.toISOString(),
+        });
+
+        if (remote.success && Array.isArray(remote.data)) {
+          liveEvent =
+            (remote.data as Record<string, unknown>[]).find((event) => {
+              const id = String(event.id ?? event.eventId ?? event.corsair_event_id ?? '');
+              const summary = String(event.summary ?? event.title ?? '');
+              return id === input.eventId || id === localEvent.corsair_event_id || summary === localEvent.title;
+            }) ?? null;
+        }
+      } catch {
+        liveEvent = null;
+      }
+
+      const attendeeList = extractAttendees(liveEvent).map((entry) => decodeHtmlEntities(entry));
+      const attendeeTokens = attendeeList
+        .map((entry) => normalizeEmailForMatch(entry))
+        .filter(Boolean);
+      const titleTokens = localEvent.title
+        .split(/\s+/)
+        .map((part) => normalizeEmailForMatch(part))
+        .filter((part) => part.length > 2);
+
+      const candidateEmails = await ctx.db
+        .select({
+          id: emails.id,
+          from_name: emails.from_name,
+          from_address: emails.from_address,
+          to_address: emails.to_address,
+          subject: emails.subject,
+          snippet: emails.snippet,
+          created_at: emails.created_at,
+        })
+        .from(emails)
+        .where(
+          and(
+            eq(emails.userId, ctx.userId!),
+            eq(emails.is_deleted, false),
+            eq(emails.ai_triage_skipped, false),
+            gte(emails.created_at, new Date(start.getTime() - 60 * 24 * 60 * 60 * 1000)),
+            lte(emails.created_at, end),
+          ),
+        )
+        .orderBy(desc(emails.created_at))
+        .limit(30);
+
+      const relevantEmails = candidateEmails.filter((email) => {
+        const haystack = [
+          email.from_name,
+          email.from_address,
+          email.to_address,
+          email.subject,
+          email.snippet,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        if (attendeeTokens.some((token) => token && haystack.includes(token))) {
+          return true;
+        }
+
+        return titleTokens.some((token) => token && haystack.includes(token));
+      }).slice(0, 8);
+
+      const fallbackEmails = relevantEmails.length > 0 ? relevantEmails : candidateEmails.slice(0, 5);
+      const briefContext = [
+        `Meeting title: ${localEvent.title}`,
+        `Start: ${start.toISOString()}`,
+        `End: ${end.toISOString()}`,
+        `Attendees: ${attendeeList.length ? attendeeList.join(', ') : 'Unknown / not available'}`,
+        '',
+        'Allowed email context:',
+        ...fallbackEmails.map((email) => {
+          const sender = safeDisplayName(email.from_name, email.from_address);
+          const subject = email.subject ?? '(no subject)';
+          const snippet = email.snippet ?? 'No preview available.';
+          const receivedAt = new Date(email.created_at).toISOString();
+          return `- ${sender} | ${subject} | ${snippet} | ${receivedAt}`;
+        }),
+      ].join('\n');
+
+      try {
+        const aiBrief = await generateMeetingPrepBrief(briefContext);
+        return {
+          ...aiBrief,
+          attendees: attendeeList.length ? attendeeList : aiBrief.attendees,
+          recentEmails: aiBrief.recentEmails.length ? aiBrief.recentEmails : fallbackEmails.map((email) => ({
+            sender: safeDisplayName(email.from_name, email.from_address),
+            subject: email.subject ?? '(no subject)',
+            snippet: email.snippet ?? 'No preview available.',
+            receivedAt: new Date(email.created_at).toISOString(),
+          })),
+        };
+      } catch {
+        return {
+          summary: 'A short prep brief is unavailable right now, but the meeting details are ready.',
+          attendees: attendeeList,
+          recentEmails: fallbackEmails.map((email) => ({
+            sender: safeDisplayName(email.from_name, email.from_address),
+            subject: email.subject ?? '(no subject)',
+            snippet: email.snippet ?? 'No preview available.',
+            receivedAt: new Date(email.created_at).toISOString(),
+          })),
+          openQuestions: [],
+          talkingPoints: [],
+        };
+      }
     }),
 
   getTimeline: protectedProcedure

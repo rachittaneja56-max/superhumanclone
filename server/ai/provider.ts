@@ -199,6 +199,39 @@ export async function smartFillFromThread(content: string): Promise<{
   return object;
 }
 
+export async function generateMeetingPrepBrief(content: string): Promise<{
+  summary: string;
+  attendees: string[];
+  recentEmails: { sender: string; subject: string; snippet: string; receivedAt: string }[];
+  openQuestions: string[];
+  talkingPoints: string[];
+}> {
+  const model = getModel('fast');
+  const input = `<email_content>${content}</email_content>`;
+
+  const { object } = await generateObject({
+    model,
+    system: prompts.meetingPrepBrief,
+    prompt: input,
+    schema: z.object({
+      summary: z.string(),
+      attendees: z.array(z.string()),
+      recentEmails: z.array(
+        z.object({
+          sender: z.string(),
+          subject: z.string(),
+          snippet: z.string(),
+          receivedAt: z.string(),
+        })
+      ),
+      openQuestions: z.array(z.string()),
+      talkingPoints: z.array(z.string()),
+    }),
+  });
+
+  return object;
+}
+
 export async function generateContactSummary(snippets: string[]): Promise<string> {
   const model = getModel('fast');
   const content = snippets.join('\n');
@@ -287,11 +320,17 @@ export async function streamAgentResponse(
         startTime: z.string(),
         endTime: z.string(),
         attendees: z.array(z.string().email()),
+        description: z.string().optional(),
+        location: z.string().optional(),
+        addMeetLink: z.boolean().default(true),
       }),
-      execute: async (params: { title: string, startTime: string, endTime: string, attendees: string[] }) => {
+      execute: async (params: { title: string, startTime: string, endTime: string, attendees: string[]; description?: string; location?: string; addMeetLink?: boolean }) => {
         const approved = await hitlInterceptor({
           actionType: 'create_event',
-          payload: params,
+          payload: {
+            ...params,
+            durationMinutes: Math.max(15, Math.round((new Date(params.endTime).getTime() - new Date(params.startTime).getTime()) / 60000)),
+          },
           humanReadable: `Create "${params.title}" on ${params.startTime}`,
         });
         if (!approved) return { status: 'cancelled by user' };

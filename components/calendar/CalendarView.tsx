@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { MeetingPrepBriefDialog } from "@/components/calendar/MeetingPrepBriefDialog";
 
 type ViewMode = "month" | "week" | "day" | "timeline";
 type TimelineFilter = "today" | "tomorrow" | "week";
@@ -109,6 +110,7 @@ export function CalendarView({
   const [currentDate, setCurrentDate] = useState(() => parseDate(initialDate));
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [prepBriefEvent, setPrepBriefEvent] = useState<CalendarEvent | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorState, setEditorState] = useState<EventEditorState | null>(null);
 
@@ -499,10 +501,20 @@ export function CalendarView({
           setSelectedEvent(null);
           openEditEvent(event);
         }}
+        onPrepBrief={(event) => {
+          setPrepBriefEvent(event);
+        }}
         onDelete={async (event) => {
           await deleteEventMutation.mutateAsync({ eventId: event.corsair_event_id || event.id });
           setSelectedEvent(null);
         }}
+      />
+
+      <MeetingPrepBriefDialog
+        open={Boolean(prepBriefEvent)}
+        onClose={() => setPrepBriefEvent(null)}
+        eventId={prepBriefEvent?.corsair_event_id || prepBriefEvent?.id || null}
+        title={prepBriefEvent?.title || "Upcoming meeting"}
       />
 
       <EventEditorDialog
@@ -847,17 +859,20 @@ function EventDetailDialog({
   open,
   onClose,
   onEdit,
+  onPrepBrief,
   onDelete,
 }: {
   event: CalendarEvent | null;
   open: boolean;
   onClose: () => void;
   onEdit: (event: CalendarEvent) => void;
+  onPrepBrief: (event: CalendarEvent) => void;
   onDelete: (event: CalendarEvent) => void;
 }) {
   if (!event) return null;
   const start = parseDate(event.startTime);
   const end = parseDate(event.endTime);
+  const isUpcoming = isAfter(end, new Date());
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
@@ -885,9 +900,16 @@ function EventDetailDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:justify-between">
-          <Button type="button" variant="destructive" onClick={() => onDelete(event)}>
-            Delete
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {isUpcoming && (
+              <Button type="button" variant="outline" onClick={() => onPrepBrief(event)}>
+                Prep brief
+              </Button>
+            )}
+            <Button type="button" variant="destructive" onClick={() => onDelete(event)}>
+              Delete
+            </Button>
+          </div>
           <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={onClose}>
               Close

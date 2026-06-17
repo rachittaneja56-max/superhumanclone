@@ -2,6 +2,10 @@ import { z } from 'zod';
 
 export const smartFillFromThreadSchema = z.object({ threadId: z.string() });
 
+export const generatePrepBriefSchema = z.object({
+  eventId: z.string().min(1),
+});
+
 export const createEventSchema = z.object({
   title: z.string().min(1),
   startTime: z.string().datetime(),

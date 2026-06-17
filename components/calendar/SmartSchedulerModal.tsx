@@ -9,14 +9,29 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Calendar as CalendarIcon, Clock3, Link2, Users } from "lucide-react";
 
+export type SchedulerProposal = {
+  title?: string;
+  startTime?: string;
+  endTime?: string;
+  durationMinutes?: number;
+  attendees?: string[];
+  location?: string;
+  description?: string;
+  addMeetLink?: boolean;
+};
+
 export function SmartSchedulerModal({
   isOpen,
   onClose,
   threadId,
+  initialProposal,
+  skipSmartFill = false,
 }: {
   isOpen: boolean;
   onClose: () => void;
-  threadId: string;
+  threadId?: string;
+  initialProposal?: SchedulerProposal | null;
+  skipSmartFill?: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
@@ -32,40 +47,83 @@ export function SmartSchedulerModal({
   const createEventMutation = trpc.calendar.createEvent.useMutation();
 
   useEffect(() => {
-    if (isOpen && threadId) {
-      smartFillMutation.mutate(
-        { threadId },
-        {
-          onSuccess: (data) => {
-            setTitle(data.suggestedTitle || "Sync");
+    if (!isOpen) return;
 
-            if (data.suggestedTime) {
-              const d = new Date(data.suggestedTime);
-              if (!isNaN(d.getTime())) {
-                setDate(d.toISOString().split("T")[0]);
-                setTime(d.toTimeString().slice(0, 5));
-              }
-            }
+    if (initialProposal) {
+      setTitle(initialProposal.title || "Meeting");
 
-            setDuration(data.suggestedDuration ? String(data.suggestedDuration) : "30");
-            setAttendees((data.participants || []).join(", "));
-            setDescription(data.suggestedDescription || "");
-            setConfidence(data.confidence);
-            setAddMeetLink(true);
-          },
-          onError: (err) => {
-            if (err.data?.code === "FORBIDDEN") {
-              toast.error(err.message);
-              onClose();
-            } else {
-              toast.error("Failed to generate smart schedule suggestions.");
-            }
-          },
+      if (initialProposal.startTime) {
+        const start = new Date(initialProposal.startTime);
+        if (!Number.isNaN(start.getTime())) {
+          setDate(start.toISOString().split("T")[0]);
+          setTime(start.toTimeString().slice(0, 5));
         }
-      );
+      }
+
+      if (initialProposal.endTime && initialProposal.startTime) {
+        const start = new Date(initialProposal.startTime);
+        const end = new Date(initialProposal.endTime);
+        if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end > start) {
+          setDuration(String(Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000))));
+        }
+      } else if (initialProposal.durationMinutes) {
+        setDuration(String(initialProposal.durationMinutes));
+      } else {
+        setDuration("30");
+      }
+
+      setAttendees((initialProposal.attendees || []).join(", "));
+      setLocation(initialProposal.location || "");
+      setDescription(initialProposal.description || "");
+      setConfidence(null);
+      setAddMeetLink(initialProposal.addMeetLink ?? true);
+      return;
     }
+
+    if (skipSmartFill || !threadId) return;
+
+    setTitle("");
+    setDate("");
+    setTime("");
+    setDuration("30");
+    setAttendees("");
+    setLocation("");
+    setDescription("");
+    setConfidence(null);
+    setAddMeetLink(true);
+
+    smartFillMutation.mutate(
+      { threadId },
+      {
+        onSuccess: (data) => {
+          setTitle(data.suggestedTitle || "Sync");
+
+          if (data.suggestedTime) {
+            const d = new Date(data.suggestedTime);
+            if (!Number.isNaN(d.getTime())) {
+              setDate(d.toISOString().split("T")[0]);
+              setTime(d.toTimeString().slice(0, 5));
+            }
+          }
+
+          setDuration(data.suggestedDuration ? String(data.suggestedDuration) : "30");
+          setAttendees((data.participants || []).join(", "));
+          setDescription(data.suggestedDescription || "");
+          setConfidence(data.confidence);
+          setAddMeetLink(true);
+        },
+        onError: (err) => {
+          if (err.data?.code === "FORBIDDEN") {
+            toast.error(err.message);
+            onClose();
+          } else {
+            toast.error("Failed to generate smart schedule suggestions.");
+          }
+        },
+      }
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, threadId]);
+  }, [isOpen, threadId, initialProposal, skipSmartFill]);
 
   const startDateTime = useMemo(() => {
     if (!date || !time) return null;
