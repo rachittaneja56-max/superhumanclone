@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
+import { SignIn } from '@clerk/nextjs'
 
-import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton'
 import { getSession } from '@/lib/auth'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 
@@ -59,9 +59,44 @@ export default async function LoginPage({
         {/* Separator */}
         <div className="h-[1px] w-full bg-border my-6" />
 
-        {/* Section 3 - Google Sign In */}
+        {/* Section 3 - Clerk Sign In */}
         {isClerkConfigured ? (
-          <GoogleSignInButton callbackUrl={targetUrl} />
+          <div className="overflow-hidden rounded-[14px] border border-border/80 bg-background/70">
+            <SignIn
+              path="/login"
+              routing="path"
+              oauthFlow="redirect"
+              fallbackRedirectUrl={targetUrl}
+              forceRedirectUrl={targetUrl}
+              appearance={{
+                elements: {
+                  rootBox: 'w-full',
+                  cardBox: 'w-full',
+                  card: 'w-full rounded-none border-0 bg-transparent p-0 shadow-none',
+                  header: 'hidden',
+                  footer: 'hidden',
+                  socialButtonsBlockButton:
+                    'h-11 rounded-lg border border-border bg-accent text-accent-foreground shadow-none hover:bg-accent/90',
+                  socialButtonsBlockButtonText: 'text-sm font-medium text-accent-foreground',
+                  socialButtonsProviderIcon__google: 'h-[18px] w-[18px]',
+                  dividerLine: 'bg-border',
+                  dividerText: 'bg-background px-2 text-xs uppercase tracking-[0.16em] text-foreground-muted',
+                  formFieldInput:
+                    'h-11 rounded-lg border border-border bg-background text-sm text-foreground shadow-none focus:border-accent focus:ring-1 focus:ring-accent/50',
+                  formButtonPrimary:
+                    'h-11 rounded-lg bg-accent text-sm font-medium text-accent-foreground shadow-none hover:bg-accent/90',
+                  formFieldLabel: 'text-sm text-foreground-muted',
+                  formFieldHintText: 'text-xs text-foreground-subtle',
+                  footerActionLink: 'text-accent hover:text-accent/80',
+                  identityPreviewText: 'text-sm text-foreground',
+                  formResendCodeLink: 'text-accent hover:text-accent/80',
+                  otpCodeFieldInput:
+                    'h-11 rounded-lg border border-border bg-background text-sm text-foreground shadow-none focus:border-accent focus:ring-1 focus:ring-accent/50',
+                  alertText: 'text-sm',
+                },
+              }}
+            />
+          </div>
         ) : (
           <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-center text-sm text-destructive">
             Clerk is not configured yet. Add `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login` before using Google sign-in.
