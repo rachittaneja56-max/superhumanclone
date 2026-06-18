@@ -14,6 +14,9 @@ Use Railway environment variables for the worker service.
 - `AUTH_URL`
 - `NEXT_PUBLIC_APP_URL`
 - `ENCRYPTION_KEY`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `CLERK_SECRET_KEY`
+- `NEXT_PUBLIC_CLERK_SIGN_IN_URL`
 
 ### Database
 - `DATABASE_URL`
@@ -23,6 +26,10 @@ Use Railway environment variables for the worker service.
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `CORSAIR_KEK`
+
+Notes:
+- `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login`
+- Keep Clerk's Google social-login OAuth app separate from the Gmail/Calendar Corsair OAuth app in production.
 
 ### Redis / queue / realtime
 - `UPSTASH_REDIS_REST_URL`

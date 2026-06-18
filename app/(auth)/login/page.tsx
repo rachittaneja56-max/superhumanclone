@@ -1,12 +1,13 @@
+import { redirect } from 'next/navigation'
+
+import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton'
+import { getSession } from '@/lib/auth'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
-  oauth_state: 'Google sign-in expired or was interrupted. Please try again.',
-  oauth_config: 'Google sign-in is misconfigured in production. Check AUTH_URL and Google OAuth settings.',
-  oauth_token: 'Google sign-in could not complete the token exchange. Please try again.',
-  oauth_userinfo: 'Google sign-in could not read your profile. Please try again.',
-  oauth_db: 'Your account could not be created or updated. Please try again.',
-  oauth_session: 'Your login completed, but the session could not be saved. Please try again.',
+  oauth_deprecated: 'Google sign-in has moved to Clerk. Please try again from this page.',
+  oauth_callback_disabled: 'The legacy Google callback is disabled. Start sign-in again from this page.',
+  clerk_sso_failed: 'Google sign-in could not be started. Please try again.',
 }
 
 export default async function LoginPage({
@@ -14,10 +15,18 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string; callbackUrl?: string }>
 }) {
+  const session = await getSession()
   const { error, callbackUrl } = await searchParams
 
+  if (session.userId) {
+    redirect(callbackUrl || '/inbox')
+  }
+
   const errorMessage = error ? (AUTH_ERROR_MESSAGES[error] ?? 'Sign-in failed. Please try again.') : ''
-  const targetUrl = callbackUrl ? `/api/auth/google?callbackUrl=${encodeURIComponent(callbackUrl)}` : '/api/auth/google'
+  const isClerkConfigured = Boolean(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY
+  )
+  const targetUrl = callbackUrl || '/inbox'
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center relative bg-background overflow-hidden">
@@ -51,46 +60,13 @@ export default async function LoginPage({
         <div className="h-[1px] w-full bg-border my-6" />
 
         {/* Section 3 - Google Sign In */}
-        <a
-          href={targetUrl}
-          className={`
-            relative flex h-11 w-full items-center justify-center gap-3 rounded-lg
-            bg-accent text-accent-foreground font-medium text-sm
-            transition-all duration-200 overflow-hidden
-            hover:opacity-90 hover:scale-[1.02]
-          `}
-        >
-          {/* Animated Border */}
-          <div className="absolute inset-0 z-0">
-            <div className="absolute inset-[-100%] animate-[spin_2s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,var(--accent)_0%,#ffffff_50%,var(--accent)_100%)] opacity-30" />
+        {isClerkConfigured ? (
+          <GoogleSignInButton callbackUrl={targetUrl} />
+        ) : (
+          <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-center text-sm text-destructive">
+            Clerk is not configured yet. Add `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login` before using Google sign-in.
           </div>
-
-          <div className="relative z-10 flex items-center justify-center gap-3 h-full w-[calc(100%-2px)] rounded-[6px] bg-accent">
-            <svg
-              className="h-[18px] w-[18px]"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                fill="#4285F4"
-              />
-              <path
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                fill="#34A853"
-              />
-              <path
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                fill="#FBBC05"
-              />
-              <path
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                fill="#EA4335"
-              />
-            </svg>
-            <span>Continue with Google</span>
-          </div>
-        </a>
+        )}
 
         {/* Section 4 - Footer */}
         <p className="text-xs text-foreground-subtle text-center mt-6">

@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Calendar, CreditCard, Inbox, LayoutDashboard, LogOut, Bot, Settings, Shield, Keyboard } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
-import { signOutAction } from '@/app/actions/auth'
 import { useUIStore } from '@/store/ui-store'
 
 const WORKSPACE_ITEMS = [
@@ -121,15 +120,13 @@ export function UnifiedSidebar({
             <ThemeToggle />
           </div>
 
-          <form action={signOutAction} className="mt-3">
-            <button
-              type="submit"
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-red-500/90 transition-colors hover:bg-red-500/10 hover:text-red-500"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign out
-            </button>
-          </form>
+          <Link
+            href="/logout"
+            className="mt-3 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-medium text-red-500/90 transition-colors hover:bg-red-500/10 hover:text-red-500"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sign out
+          </Link>
         </div>
       </div>
     </aside>

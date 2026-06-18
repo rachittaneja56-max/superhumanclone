@@ -1,15 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
-import { signOutAction } from '@/app/actions/auth';
 
 import { LogOut } from 'lucide-react';
 
 export function MarketingNav({ userEmail, userName }: { userEmail?: string | null, userName?: string | null }) {
   const [isScrolled, setIsScrolled] = useState(false);
-  const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const sentinel = document.getElementById('nav-sentinel');
@@ -58,15 +56,13 @@ export function MarketingNav({ userEmail, userName }: { userEmail?: string | nul
                     {userEmail}
                   </p>
                 </div>
-                <form action={signOutAction} className="w-full">
-                  <button
-                    type="submit"
-                    className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-red-500/90 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    Sign out
-                  </button>
-                </form>
+                <Link
+                  href="/logout"
+                  className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-red-500/90 hover:text-red-500 hover:bg-red-500/10 rounded-md transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  Sign out
+                </Link>
               </div>
             </div>
           ) : (

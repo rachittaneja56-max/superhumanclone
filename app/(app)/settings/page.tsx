@@ -6,7 +6,6 @@ import type { ReactNode } from "react";
 import { getSession } from "@/lib/auth";
 import { serverTrpc } from "@/lib/trpc/server";
 import { SettingsClient } from "@/components/settings/SettingsClient";
-import { signOutAction } from "@/app/actions/auth";
 
 export default async function SettingsPage() {
   const session = await getSession();
@@ -76,15 +75,13 @@ export default async function SettingsPage() {
             <div className="rounded-3xl border border-border bg-surface p-5 shadow-[0_12px_40px_rgba(0,0,0,0.14)]">
               <h2 className="font-display text-lg font-semibold text-foreground">Sign out</h2>
               <p className="mt-1 text-sm text-foreground-muted">End this session on this device.</p>
-              <form action={signOutAction} className="mt-4">
-                <button
-                  type="submit"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-raised"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Sign out
-                </button>
-              </form>
+              <Link
+                href="/logout"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-foreground hover:bg-surface-raised"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </Link>
             </div>
           </div>
         </div>

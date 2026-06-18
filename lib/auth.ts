@@ -1,28 +1,52 @@
-import { getIronSession } from 'iron-session'
-import { cookies } from 'next/headers'
-import { sessionOptions, type SessionData } from './session-options'
+import 'server-only'
 
-export { sessionOptions, type SessionData }
+import { auth } from '@clerk/nextjs/server'
 
-export async function getSession() {
-  return await getIronSession<SessionData>(await cookies(), sessionOptions)
+import { clearAdminSessionUnlocked, isAdminSessionUnlocked, markAdminSessionUnlocked } from '@/server/auth/admin-unlock'
+import { ensureLocalUserForClerk } from '@/server/auth/local-user'
+
+export type SessionData = {
+  userId?: string
+  adminUnlocked?: boolean
+  clerkUserId?: string
+  clerkSessionId?: string
 }
 
-export async function setSession(userId: string) {
-  const session = await getSession()
-  session.userId = userId
-  await session.save()
+export async function getSession(): Promise<SessionData> {
+  const { userId: clerkUserId, sessionId: clerkSessionId } = await auth()
+
+  if (!clerkUserId) {
+    return {}
+  }
+
+  const [userId, adminUnlocked] = await Promise.all([
+    ensureLocalUserForClerk(clerkUserId),
+    isAdminSessionUnlocked(clerkSessionId),
+  ])
+
+  return {
+    userId,
+    adminUnlocked,
+    clerkUserId,
+    clerkSessionId: clerkSessionId ?? undefined,
+  }
 }
 
 export async function setAdminUnlocked(adminUnlocked: boolean) {
-  const session = await getSession()
-  session.adminUnlocked = adminUnlocked
-  await session.save()
+  const { sessionId } = await auth()
+  if (!sessionId) return
+
+  if (adminUnlocked) {
+    await markAdminSessionUnlocked(sessionId)
+    return
+  }
+
+  await clearAdminSessionUnlocked(sessionId)
 }
 
 export async function destroySession() {
-  const session = await getSession()
-  session.destroy()
+  const { sessionId } = await auth()
+  await clearAdminSessionUnlocked(sessionId)
 }
 
 export async function requireAuth() {

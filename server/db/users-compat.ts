@@ -9,6 +9,7 @@ export type UsersColumnPresence = {
   hasPlan: boolean
   hasIsFlagged: boolean
   hasAiDisabled: boolean
+  hasClerkUserId: boolean
 }
 
 let cachedPresence: Promise<UsersColumnPresence> | null = null
@@ -33,6 +34,7 @@ export async function getUsersColumnPresence(): Promise<UsersColumnPresence> {
         hasPlan: names.has('plan'),
         hasIsFlagged: names.has('isFlagged') || names.has('is_flagged'),
         hasAiDisabled: names.has('aiDisabled') || names.has('ai_disabled'),
+        hasClerkUserId: names.has('clerk_user_id') || names.has('clerkUserId'),
       }
     })().catch((error) => {
       cachedPresence = null

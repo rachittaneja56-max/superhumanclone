@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "@/components/ui/theme-provider";
 import { TRPCProvider } from "@/components/trpc-provider";
 import { Toaster } from "sonner";
@@ -17,16 +18,18 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased bg-background text-foreground">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-        >
-          <TRPCProvider>
-            {children}
-            <Toaster richColors position="bottom-right" />
-          </TRPCProvider>
-        </ThemeProvider>
+        <ClerkProvider>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="system"
+            enableSystem
+          >
+            <TRPCProvider>
+              {children}
+              <Toaster richColors position="bottom-right" />
+            </TRPCProvider>
+          </ThemeProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

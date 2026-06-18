@@ -58,6 +58,7 @@ export const users = pgTable('users', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: text('name'),
   email: text('email').notNull().unique(),
+  clerkUserId: text('clerk_user_id').unique(),
   emailVerified: timestamp('email_verified', { mode: 'date' }),
   image: text('image'),
   role: text('role').$type<'user' | 'admin' | 'superadmin'>().default('user').notNull(),

@@ -3,10 +3,12 @@ import { db } from '@/server/db'
 import { getUsersColumnPresence } from '@/server/db/users-compat'
 import { NextResponse } from 'next/server'
 
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const session = await getSession()
     const userId = session.userId
+    const clerkUserId = session.clerkUserId ?? null
+    const clerkSessionId = session.clerkSessionId ?? null
 
     let dbUser = null
     if (userId) {
@@ -26,6 +28,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       userId,
+      clerkUserId,
+      clerkSessionId,
       dbUserExists: !!dbUser,
       dbUser: dbUser,
       env: {
