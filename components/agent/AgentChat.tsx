@@ -48,9 +48,11 @@ function predictToolIndicator(input: string, threadContext?: string | null) {
 export function AgentChat({
   sessionId,
   threadContext,
+  onClearContext,
 }: {
   sessionId: string;
   threadContext?: string | null;
+  onClearContext?: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -166,7 +168,20 @@ export function AgentChat({
             </div>
             <p className="mt-1 text-sm text-foreground-muted">Ask Aethra about mail, schedules, and follow-ups.</p>
             {threadContext ? (
-              <p className="mt-2 text-xs text-foreground-subtle">Using approved page context for this chat.</p>
+              <div className="mt-2 inline-flex max-w-full items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-2.5 py-1 text-xs text-accent">
+                <span className="min-w-0 truncate">Using approved page context</span>
+                {onClearContext ? (
+                  <button
+                    type="button"
+                    onClick={onClearContext}
+                    className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-semibold leading-none text-accent transition-colors hover:bg-accent/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                    aria-label="Remove context"
+                    title="Remove context"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
