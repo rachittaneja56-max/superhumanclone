@@ -5,7 +5,7 @@ import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { reconcileGoogleConnectionState } from "@/server/auth/helpers";
 import { ConnectWorkspace } from "@/components/onboarding/ConnectWorkspace";
-import { ensureSafeUserSettings, getSafeUserSettings } from "@/server/db/user-settings-compat";
+import { ensureSafeUserSettings, getSafeUserSettings, saveSafeUserSettings } from "@/server/db/user-settings-compat";
 
 export default async function ConnectPage({
   searchParams,
@@ -28,11 +28,22 @@ export default async function ConnectPage({
   const settings = await getSafeUserSettings(userId);
 
   const liveConnections = await reconcileGoogleConnectionState(userId).catch(() => ({
-    gmailConnected: settings.gmailConnected,
-    calendarConnected: settings.calendarConnected,
+    gmailConnected: false,
+    calendarConnected: false,
   }));
   const gmailConnected = liveConnections.gmailConnected;
   const calendarConnected = liveConnections.calendarConnected;
+
+  if (
+    settings.gmailConnected !== gmailConnected ||
+    settings.calendarConnected !== calendarConnected
+  ) {
+    // Keep onboarding state in sync with the actual provider connection state.
+    await saveSafeUserSettings(userId, {
+      gmailConnected,
+      calendarConnected,
+    });
+  }
 
   if (gmailConnected && calendarConnected && !settings.privacyConfigured) {
     redirect("/onboarding/privacy");
