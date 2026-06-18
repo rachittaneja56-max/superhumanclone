@@ -34,7 +34,6 @@ export function SettingsClient({ initialSettings }: { initialSettings: SettingsM
     const next = settings ?? initialSettings;
     if (
       next.aiEnabled === optimisticSettings.aiEnabled &&
-      next.morningDigestEnabled === optimisticSettings.morningDigestEnabled &&
       next.draftSuggestionsEnabled === optimisticSettings.draftSuggestionsEnabled &&
       next.autoTagEnabled === optimisticSettings.autoTagEnabled
     ) {
@@ -45,7 +44,7 @@ export function SettingsClient({ initialSettings }: { initialSettings: SettingsM
 
   const updateMutation = trpc.settings.updateSetting.useMutation();
 
-  const toggle = (key: "aiEnabled" | "morningDigestEnabled" | "draftSuggestionsEnabled" | "autoTagEnabled", value: boolean) => {
+  const toggle = (key: "aiEnabled" | "draftSuggestionsEnabled" | "autoTagEnabled", value: boolean) => {
     const previous = resolvedSettings;
     setOptimisticSettings({ ...previous, [key]: value });
     setPendingKey(key);
@@ -74,12 +73,6 @@ export function SettingsClient({ initialSettings }: { initialSettings: SettingsM
       label: "Enable AI",
       description: "Turns on AI features across mail, calendar, and agent workflows.",
       value: resolvedSettings?.aiEnabled ?? false,
-    },
-    {
-      key: "morningDigestEnabled" as const,
-      label: "Enable Morning Digest",
-      description: "Shows the morning digest card when you ask for it.",
-      value: resolvedSettings?.morningDigestEnabled ?? false,
     },
     {
       key: "draftSuggestionsEnabled" as const,
