@@ -291,11 +291,7 @@ export function AgentChat({
 
       {/* Input Area */}
       <div className="relative mt-auto flex flex-col gap-3 pt-4">
-        {activeHITLAction && (
-          <div className="flex w-full justify-end">
-            <HITLCard className="w-full max-w-md animate-in slide-in-from-bottom-2 shadow-xl" />
-          </div>
-        )}
+        {activeHITLAction ? <HITLCard /> : null}
 
         <div className="relative flex w-full items-end overflow-hidden rounded-2xl border border-border bg-background transition-shadow focus-within:ring-2 focus-within:ring-accent">
           <textarea
