@@ -29,6 +29,32 @@ const SUGGESTED_PROMPTS = [
   "Summarize my unread emails",
 ];
 
+function predictToolIndicator(input: string, threadContext?: string | null) {
+  const lower = input.toLowerCase().trim();
+  const hasThreadContext = Boolean(threadContext?.trim());
+
+  if (lower.startsWith("/")) return "Rewriting draft...";
+  if (/\b(find|search|look for|show me)\b/.test(lower) && /\b(email|emails|mail|inbox|thread|threads)\b/.test(lower)) {
+    return "Searching your inbox...";
+  }
+  if ((/\b(digest|attention today|what needs my attention|unread emails)\b/.test(lower) && !hasThreadContext)) {
+    return "Preparing your digest...";
+  }
+  if (/\b(prep|prepare|brief)\b/.test(lower) && /\b(meeting|call|event|calendar)\b/.test(lower)) {
+    return "Preparing meeting brief...";
+  }
+  if (/\b(triage|classify|priority|urgent)\b/.test(lower) && hasThreadContext) return "Searching your inbox...";
+  if (/\b(tl;dr|tldr|summari[sz]e|digest)\b/.test(lower) && hasThreadContext) return "Summarizing thread...";
+  if (/\b(reply|respond|draft a reply|write back)\b/.test(lower) && hasThreadContext) return "Preparing reply...";
+  if (/\b(schedule|book|set up|set-up|plan|arrange|create)\b/.test(lower) && /\b(meeting|calendar|event|meet)\b/.test(lower)) {
+    return "Drafting calendar event...";
+  }
+  if (/\bsend\b/.test(lower) && (/\b(email|mail|message|thread|this|that)\b/.test(lower) || hasThreadContext)) {
+    return "Preparing approval card...";
+  }
+  return "Working...";
+}
+
 export function AgentChat({
   sessionId,
   threadContext,
@@ -49,6 +75,7 @@ export function AgentChat({
   const [voiceListening, setVoiceListening] = useState(false);
   const [voicePreview, setVoicePreview] = useState("");
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [currentIndicator, setCurrentIndicator] = useState<string | null>(null);
   
   const { activeHITLAction, setActiveHITLAction } = useUIStore();
   const clearSessionHistory = trpc.agent.clearSessionHistory.useMutation({
@@ -161,6 +188,7 @@ export function AgentChat({
     setMessages(newMessages);
     setInputValue("");
     setIsStreaming(true);
+    setCurrentIndicator(predictToolIndicator(text, threadContext));
 
     // Add empty assistant message
     setMessages([...newMessages, { role: "assistant", content: "" }]);
@@ -209,6 +237,7 @@ export function AgentChat({
       });
     } finally {
       setIsStreaming(false);
+      setCurrentIndicator(null);
     }
   };
 
@@ -369,11 +398,10 @@ export function AgentChat({
               )}
             </div>
           ))}
-          {/* Tool indicator */}
-          {isStreaming && messages[messages.length - 1]?.role === "user" && (
+          {isStreaming && currentIndicator && (
             <div className="mr-auto flex items-center space-x-2 rounded-full border border-border bg-background px-4 py-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Working...</span>
+              <span>{currentIndicator}</span>
             </div>
           )}
         </div>

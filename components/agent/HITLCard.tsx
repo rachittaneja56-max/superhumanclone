@@ -46,11 +46,11 @@ export function HITLCard({ className }: { className?: string }) {
         actionId: activeHITLAction.actionId,
         decision,
       });
+      setActiveHITLAction(null);
       toast.success(decision === "approved" ? "Action approved" : "Action cancelled");
     } catch {
       toast.error("Failed to resolve action");
     } finally {
-      setActiveHITLAction(null);
       setIsSubmitting(false);
     }
   };

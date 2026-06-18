@@ -99,15 +99,22 @@ export function mapHitlActionForClient(action: {
   status?: string;
 } & Record<string, unknown>): SafeHitlAction {
   const payload = action.payload && typeof action.payload === "object" ? (action.payload as Record<string, unknown>) : {};
+  const safePayload = mapHitlPayloadForClient(action.action_type, payload);
+  const fallbackHumanReadable =
+    action.action_type === "send_email"
+      ? `Send email to ${safePayload.recipientSummary || "recipient"}`
+      : action.action_type === "create_event"
+        ? `Create event ${safePayload.title ? `"${safePayload.title}"` : "draft"}`
+        : `${action.action_type.replace(/_/g, " ")} requires approval`;
   return {
     actionId: action.id,
     actionType: action.action_type,
     humanReadable: typeof action.humanReadable === "string"
       ? action.humanReadable
-      : `${action.action_type.replace(/_/g, " ")} requires approval`,
+      : fallbackHumanReadable,
     expiresAt: new Date(action.expires_at).toISOString(),
     riskLevel: getHitlRiskLevel(action.action_type),
-    payload: mapHitlPayloadForClient(action.action_type, payload),
+    payload: safePayload,
   };
 }
 
@@ -137,11 +144,11 @@ export async function runActionAgent(
       return {
         intent: "action",
         indicator: "Preparing approval card...",
-        text: "To propose a send action safely, share explicit details like `to: person@example.com`, `subject: ...`, and `body: ...`. I will only prepare an approval card.",
+        text: "Share explicit email details like `to: person@example.com`, `subject: ...`, and `body: ...` so I can prepare approval safely.",
       };
     }
 
-    const proposal = await hitlInterceptor({
+    await hitlInterceptor({
       actionType: "send_email",
       payload: parsed.data,
       humanReadable: `Send to ${parsed.data.to.join(", ")}: "${sanitiseAgentOutput(parsed.data.subject || "(no subject)", 120)}"`,
@@ -150,7 +157,11 @@ export async function runActionAgent(
     return {
       intent: "action",
       indicator: "Preparing approval card...",
-      text: `Approval requested for sending that email. Review the card before anything happens. Action ID: ${String((proposal as { actionId?: string })?.actionId ?? "pending")}`,
+      text: [
+        "Ready for approval.",
+        `Send email to: ${parsed.data.to.join(", ")}`,
+        `Subject: ${sanitiseAgentOutput(parsed.data.subject || "(no subject)", 120)}`,
+      ].join("\n"),
     };
   }
 
@@ -176,11 +187,11 @@ export async function runActionAgent(
       return {
         intent: "action",
         indicator: "Preparing approval card...",
-        text: "To propose an event safely, share exact details like `title: ...`, `start: 2026-06-18T15:00:00.000Z`, `end: 2026-06-18T15:30:00.000Z`, and any attendee emails.",
+        text: "Share exact event details like `title: ...`, `start: 2026-06-18T15:00:00.000Z`, `end: 2026-06-18T15:30:00.000Z`, and attendee emails so I can prepare approval safely.",
       };
     }
 
-    const proposal = await hitlInterceptor({
+    await hitlInterceptor({
       actionType: "create_event",
       payload: parsed.data,
       humanReadable: `Create "${sanitiseAgentOutput(parsed.data.title, 120)}" starting ${parsed.data.startTime}`,
@@ -189,7 +200,11 @@ export async function runActionAgent(
     return {
       intent: "action",
       indicator: "Preparing approval card...",
-      text: `Approval requested for that event. Review the card before anything is created. Action ID: ${String((proposal as { actionId?: string })?.actionId ?? "pending")}`,
+      text: [
+        "Ready for approval.",
+        `Create event: ${sanitiseAgentOutput(parsed.data.title, 120)}`,
+        `When: ${parsed.data.startTime}`,
+      ].join("\n"),
     };
   }
 

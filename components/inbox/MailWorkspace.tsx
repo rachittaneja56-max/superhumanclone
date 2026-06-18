@@ -3,7 +3,7 @@
 import { ChangeEvent, type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronLeft, DraftingCompass, Inbox, Loader2, RefreshCw, Search, Send, ShieldAlert, SquarePen, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, DraftingCompass, Inbox, Loader2, Mic, MicOff, RefreshCw, Search, Send, ShieldAlert, Square, SquarePen, Trash2, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
@@ -11,6 +11,7 @@ import { useUIStore } from "@/store/ui-store";
 import { mapEmailForListClient, type EmailListClientItem } from "@/lib/email-client";
 import { sendEmailSchema } from "@/lib/schemas";
 import { ThreadView } from "./ThreadView";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 
 type Folder = "inbox" | "drafts" | "sent" | "spam" | "trash";
 export type ComposeDraft = {
@@ -657,6 +658,11 @@ export function ComposeModal({
   const [slashLength, setSlashLength] = useState(0);
   const [isSending, setIsSending] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voice = useSpeechToText({
+    onFinalText: (chunk) => {
+      setBody((current) => (current.trim() ? `${current.trim()} ${chunk}` : chunk));
+    },
+  });
 
   const aiAllowed = Boolean(settingsQuery.data?.aiEnabled && settingsQuery.data?.draftSuggestionsEnabled && settingsQuery.data?.privacyConfigured);
 
@@ -990,6 +996,20 @@ export function ComposeModal({
                 placeholder="Subject"
                 className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none transition-colors focus:border-accent"
               />
+              {(voice.listening || voice.preview || voice.error) && (
+                <div className="rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground-muted" aria-live="polite">
+                  {voice.error ? (
+                    voice.error
+                  ) : voice.listening ? (
+                    <>
+                      Listening...
+                      {voice.preview ? <span className="ml-2 text-foreground">{voice.preview}</span> : null}
+                    </>
+                  ) : (
+                    voice.preview
+                  )}
+                </div>
+              )}
               <textarea
                 value={body}
                 onChange={handleBodyChange}
@@ -1001,7 +1021,29 @@ export function ComposeModal({
         </div>
 
         <div className="flex items-center justify-between border-t border-border bg-background/80 px-5 py-4">
-          <div className="text-xs text-foreground-subtle">Type / for AI suggestions.</div>
+          <div className="flex items-center gap-2 text-xs text-foreground-subtle">
+            <span>Type / for AI suggestions.</span>
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                voice.startListening();
+              }}
+              onPointerUp={voice.stopListening}
+              onPointerLeave={voice.stopListening}
+              onPointerCancel={voice.stopListening}
+              disabled={!voice.supported || rewriteState !== "idle" || isSending}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
+              title={voice.supported ? (voice.listening ? "Release to stop" : "Hold to speak") : "Voice input unavailable"}
+            >
+              {voice.supported ? (
+                voice.listening ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-3.5 w-3.5" />
+              ) : (
+                <MicOff className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
           <div className="flex gap-2">
             <button
               onClick={() => void closeWithConfirm()}

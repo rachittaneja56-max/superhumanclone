@@ -3,9 +3,10 @@
 import React, { useState, useRef, useEffect, ChangeEvent } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useUndoSend } from "@/hooks/useUndoSend";
-import { Send, X, Check } from "lucide-react";
+import { Send, X, Check, Mic, MicOff, Square } from "lucide-react";
 import { toast } from "sonner";
 import { sendEmailSchema } from "@/lib/schemas";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 
 const COMMANDS = [
   { id: "improve_tone", label: "Improve Tone" },
@@ -40,6 +41,11 @@ export function ComposeBox({
   const aiAllowed = Boolean(settingsQuery.data?.aiEnabled && settingsQuery.data?.draftSuggestionsEnabled && settingsQuery.data?.privacyConfigured);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const voice = useSpeechToText({
+    onFinalText: (chunk) => {
+      setDraft((current) => (current.trim() ? `${current.trim()} ${chunk}` : chunk));
+    },
+  });
 
   useEffect(() => {
     if (!replyTo) return
@@ -50,6 +56,12 @@ export function ComposeBox({
       textareaRef.current.style.height = "auto"
     }
   }, [replyTo])
+
+  useEffect(() => {
+    if (!textareaRef.current) return;
+    textareaRef.current.style.height = "auto";
+    textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+  }, [draft]);
 
   const rewriteMutation = trpc.email.rewriteDraft.useMutation();
   const sendMutation = trpc.email.sendEmail.useMutation();
@@ -238,6 +250,20 @@ export function ComposeBox({
           </div>
         ) : (
           <div className="relative">
+            {(voice.listening || voice.preview || voice.error) && (
+              <div className="mb-3 rounded-md border border-border bg-background px-3 py-2 text-xs text-foreground-muted" aria-live="polite">
+                {voice.error ? (
+                  voice.error
+                ) : voice.listening ? (
+                  <>
+                    Listening...
+                    {voice.preview ? <span className="ml-2 text-foreground">{voice.preview}</span> : null}
+                  </>
+                ) : (
+                  voice.preview
+                )}
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               value={draft}
@@ -286,15 +312,37 @@ export function ComposeBox({
         <span className="text-[12px] opacity-60">
           Ctrl/Cmd + Enter to send
         </span>
-        <button
-          onClick={handleSend}
-          disabled={!draft || rewriteState !== "idle" || isPending}
-          className="px-5 py-2 rounded-md font-medium text-sm flex items-center space-x-2 disabled:opacity-50 transition-colors"
-          style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}
-        >
-          <Send className="w-4 h-4" />
-          <span>Send</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              voice.startListening();
+            }}
+            onPointerUp={voice.stopListening}
+            onPointerLeave={voice.stopListening}
+            onPointerCancel={voice.stopListening}
+            disabled={!voice.supported || rewriteState !== "idle" || isPending}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
+            title={voice.supported ? (voice.listening ? "Release to stop" : "Hold to speak") : "Voice input unavailable"}
+          >
+            {voice.supported ? (
+              voice.listening ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-4 w-4" />
+            ) : (
+              <MicOff className="h-4 w-4" />
+            )}
+          </button>
+          <button
+            onClick={handleSend}
+            disabled={!draft || rewriteState !== "idle" || isPending}
+            className="px-5 py-2 rounded-md font-medium text-sm flex items-center space-x-2 disabled:opacity-50 transition-colors"
+            style={{ backgroundColor: "var(--accent)", color: "var(--surface)" }}
+          >
+            <Send className="w-4 h-4" />
+            <span>Send</span>
+          </button>
+        </div>
       </div>
     </div>
   );

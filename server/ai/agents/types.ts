@@ -5,6 +5,9 @@ export type AgentIntent =
   | "summarizer"
   | "reply"
   | "compose"
+  | "search"
+  | "digest"
+  | "meetingPrep"
   | "calendar"
   | "action"
   | "general";

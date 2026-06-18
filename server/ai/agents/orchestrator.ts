@@ -1,11 +1,14 @@
 import "server-only";
 
 import { runActionAgent } from "./action-agent";
+import { runDigestAgent } from "./digest-agent";
+import { runMeetingPrepAgent } from "./meeting-prep-agent";
 import { streamAgentResponse } from "../provider";
 import { runCalendarAgent } from "./calendar-agent";
 import { runComposeAgent } from "./compose-agent";
 import { detectIntent } from "./intent";
 import { runReplyAgent } from "./reply-agent";
+import { runSearchAgent } from "./search-agent";
 import { getScopeLimitMessage, sanitiseAgentInput, wrapAgentEmailContext } from "./sanitization";
 import { runSummarizerAgent } from "./summarizer-agent";
 import { runTriageAgent } from "./triage-agent";
@@ -29,6 +32,9 @@ async function runSpecialist(
   const intent = detectIntent(context.userMessage, context.threadContext);
 
   if (intent === "triage") return runTriageAgent(context);
+  if (intent === "search") return runSearchAgent(context);
+  if (intent === "digest") return runDigestAgent(context);
+  if (intent === "meetingPrep") return runMeetingPrepAgent(context);
   if (intent === "summarizer") return runSummarizerAgent(context);
   if (intent === "reply") return runReplyAgent(context);
   if (intent === "compose") return runComposeAgent(context);
@@ -56,9 +62,8 @@ export async function runRoutedAgentResponse(
   }, hitlInterceptor as (action: { actionType: string; payload: Record<string, unknown>; humanReadable: string }) => Promise<unknown>);
 
   if (specialist) {
-    const prefixed = specialist.indicator ? `${specialist.indicator}\n\n${specialist.text}` : specialist.text;
     return {
-      textStream: createSingleChunkStream(prefixed),
+      textStream: createSingleChunkStream(specialist.text),
     };
   }
 

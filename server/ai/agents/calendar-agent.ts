@@ -126,7 +126,8 @@ function looksLikeSchedulingRequest(source: string) {
   const createVerb = /\b(schedule|book|set up|set-up|plan|arrange|create)\b/.test(lower);
   const timeSignal = /\b(tomorrow|today|next|at|on|\d{1,2})(?::\d{2})?\b/.test(lower);
   const meetingSignal = /\b(call|meeting|event|meet)\b/.test(lower);
-  return createVerb || (meetingSignal && timeSignal);
+  const prepSignal = /\b(prep|prepare|brief)\b/.test(lower);
+  return !prepSignal && (createVerb || (meetingSignal && timeSignal));
 }
 
 export async function runCalendarAgent(
@@ -140,13 +141,12 @@ export async function runCalendarAgent(
       intent: "calendar",
       indicator: "Drafting calendar event...",
       text: [
+        "Draft ready.",
         `Title: ${result.suggestedTitle || "Meeting"}`,
         `Suggested time: ${result.suggestedTime || "Needs confirmation"}`,
         `Duration: ${result.suggestedDuration || 30} min`,
         `Description: ${result.suggestedDescription || "No summary available."}`,
         `Confidence: ${Math.round(result.confidence * 100)}%`,
-        "",
-        "I can prepare a meeting approval card once you ask to schedule or create the event.",
       ].join("\n"),
     };
   }
@@ -158,18 +158,18 @@ export async function runCalendarAgent(
       intent: "calendar",
       indicator: "Drafting calendar event...",
       text: [
+        "Draft ready.",
         `Title: ${result.suggestedTitle || "Meeting"}`,
         `Suggested time: ${result.suggestedTime || "Needs confirmation"}`,
         `Duration: ${result.suggestedDuration || 30} min`,
         `Description: ${result.suggestedDescription || "No summary available."}`,
         `Confidence: ${Math.round(result.confidence * 100)}%`,
-        "",
         "I need a clearer time reference before I can prepare an approval card.",
       ].join("\n"),
     };
   }
 
-  const proposal = await hitlInterceptor({
+  await hitlInterceptor({
     actionType: "create_event",
     payload: draft,
     humanReadable: `Create "${draft.title}" on ${format(parseISO(draft.startTime), "EEE, MMM d 'at' h:mm a")}`,
@@ -179,13 +179,12 @@ export async function runCalendarAgent(
     intent: "calendar",
     indicator: "Drafting calendar event...",
     text: [
-      `Title: ${draft.title}`,
+      "Ready for approval.",
+      `Create event: ${draft.title}`,
       `When: ${format(parseISO(draft.startTime), "EEE, MMM d 'at' h:mm a")}`,
       `Duration: ${draft.durationMinutes} min`,
       `Meet: ${draft.addMeetLink ? "enabled" : "disabled"}`,
       draft.attendeesSummary ? `Attendees: ${draft.attendeesSummary}` : "Attendees: none detected",
-      "",
-      `Approval card ready. Action ID: ${String((proposal as { actionId?: string })?.actionId ?? "pending")}`,
     ].join("\n"),
   };
 }

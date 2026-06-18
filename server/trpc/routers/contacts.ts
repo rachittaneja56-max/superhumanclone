@@ -28,6 +28,7 @@ export const contactsRouter = router({
         db.query.emails.findMany({
           where: and(
             eq(emails.userId, ctx.userId!),
+            eq(emails.is_deleted, false),
             or(
               ilike(emails.from_address, `%${contactEmail}%`),
               ilike(emails.to_address, `%${contactEmail}%`)
@@ -79,7 +80,7 @@ export const contactsRouter = router({
             } else {
               await db.insert(contactIntelligence).values({
                 userId: ctx.userId!,
-                email: input.contactEmail,
+                email: contactEmail,
                 summary,
                 interaction_count: recentEmails.length,
               });
@@ -88,7 +89,7 @@ export const contactsRouter = router({
             console.error("Failed to generate contact summary:", error);
           }
         }
-      } else if (privacyBlocked) {
+      } else if (privacyBlocked || hasBlockedEmails) {
         summary = null;
       }
 
