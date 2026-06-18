@@ -29,37 +29,31 @@ export default async function LoginPage({
   const targetUrl = callbackUrl || '/inbox'
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center relative bg-background overflow-hidden">
-      {/* Background Dot Grid */}
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-background">
       <div className="absolute inset-0 bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:24px_24px] opacity-15" />
 
-      {/* Theme Toggle in top right */}
       <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
       </div>
 
       <div className="relative z-10 mx-auto w-full max-w-[32rem] rounded-[20px] border border-border bg-surface px-5 py-8 shadow-[0_24px_80px_rgba(0,0,0,0.18)] sm:px-8">
-        {/* Section 1 - Brand */}
         <div className="flex flex-col items-center text-center">
-          <h1 className="font-display font-semibold text-2xl tracking-tight text-foreground">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
             aethra<span className="text-accent">.</span>
           </h1>
-          <p className="text-sm text-foreground-muted mt-1">
+          <p className="mt-1 text-sm text-foreground-muted">
             Your inbox, your rules.
           </p>
         </div>
 
-        {/* Section 2 - Error */}
-        {errorMessage && (
-          <div className="mt-4 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-center text-sm text-destructive">
+        {errorMessage ? (
+          <div className="mt-4 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-center text-sm text-destructive">
             {errorMessage}
           </div>
-        )}
+        ) : null}
 
-        {/* Separator */}
         <div className="my-6 h-px w-full bg-border" />
 
-        {/* Section 3 - Clerk Sign In */}
         {isClerkConfigured ? (
           <div className="rounded-[18px] border border-border/80 bg-background/70 p-2 sm:p-3">
             <SignIn
@@ -110,8 +104,7 @@ export default async function LoginPage({
           </div>
         )}
 
-        {/* Section 4 - Footer */}
-        <p className="text-xs text-foreground-subtle text-center mt-6">
+        <p className="mt-6 text-center text-xs text-foreground-subtle">
           Privacy-first by design. Your emails never leave your control.
         </p>
       </div>
