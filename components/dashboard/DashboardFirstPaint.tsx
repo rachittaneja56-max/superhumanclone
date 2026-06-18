@@ -18,6 +18,7 @@ import {
 
 import { compareEmailPriority, getEmailPriorityPresentation, resolveEmailPriority } from "@/lib/email-priority";
 import type { EmailListClientItem } from "@/lib/email-client";
+import { formatMorningDigest } from "@/lib/morning-digest";
 import { cn } from "@/lib/utils";
 import { serverTrpc } from "@/lib/trpc/server";
 
@@ -98,7 +99,7 @@ export async function DashboardShell({
         ? "Enable Privacy Gate to see a daily summary."
         : "No summary available.";
   const digestSummary = digest?.digest?.trim() ? digest : null;
-  const digestText = digestSummary?.digest?.trim() ?? "";
+  const digestPresentation = digestSummary?.digest?.trim() ? formatMorningDigest(digestSummary.digest, 3) : null;
 
   return (
     <section className="overflow-hidden rounded-[2rem] border border-border bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(246,241,233,0.98))] p-6 shadow-[0_24px_60px_rgba(38,28,14,0.08)] sm:p-8 dark:bg-[radial-gradient(circle_at_top_right,rgba(217,119,6,0.14),transparent_35%),linear-gradient(180deg,rgba(22,22,22,0.96),rgba(12,12,12,0.98))] dark:shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
@@ -117,9 +118,25 @@ export async function DashboardShell({
                 <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
                   Command Brief
                 </h1>
-                <p className="mt-2 text-sm leading-6 text-foreground-muted sm:text-base">
-                  {digestText ? digestText : digestUnavailableReason}
-                </p>
+                {digestPresentation ? (
+                  <div className="mt-2 space-y-2 text-sm leading-6 text-foreground-muted sm:text-base">
+                    <p className="font-medium text-foreground">{digestPresentation.headline}</p>
+                    {digestPresentation.bullets.length > 0 ? (
+                      <ul className="space-y-1.5">
+                        {digestPresentation.bullets.map((bullet) => (
+                          <li key={bullet} className="flex gap-2">
+                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+                            <span className="min-w-0">{bullet}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm leading-6 text-foreground-muted sm:text-base">
+                    {digestUnavailableReason}
+                  </p>
+                )}
                 {digestSummary ? (
                   <div className="mt-4 flex flex-wrap gap-2">
                     <span className="rounded-full border border-border bg-surface px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-foreground-subtle">

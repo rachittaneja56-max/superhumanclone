@@ -203,6 +203,43 @@ function inferSubjectFromBody(body: string) {
   return capitalizeDraftSubject(normalized);
 }
 
+function inferEmailSubjectAndBody(request: string, body: string, timeLabel: string) {
+  const lower = request.toLowerCase();
+  const hasMeetingSignal =
+    /\b(meet|meeting|call|sync|catch[- ]?up)\b/.test(lower) ||
+    /\babout (?:the|our) meeting\b/.test(lower) ||
+    /\babout our meet\b/.test(lower);
+  const hasFollowUpSignal = /\b(follow up|following up|confirm|regarding|update|touch base)\b/.test(lower);
+
+  if (body.trim()) {
+    return {
+      subject: inferSubjectFromBody(body),
+      body,
+    };
+  }
+
+  if (hasMeetingSignal) {
+    return {
+      subject: timeLabel ? `Confirming our meeting at ${timeLabel}` : "Confirming our meeting",
+      body: timeLabel
+        ? `Hi, just confirming our meeting at ${timeLabel}. Let me know if anything changes.`
+        : "Hi, just confirming our meeting. Let me know if anything changes.",
+    };
+  }
+
+  if (hasFollowUpSignal) {
+    return {
+      subject: "Following up on our conversation",
+      body: "Hi, just following up on this. Let me know if anything changes.",
+    };
+  }
+
+  return {
+    subject: inferSubjectFromBody(request),
+    body: "",
+  };
+}
+
 function extractDurationMinutes(input: string) {
   const hoursMatch = input.match(/\b(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/i);
   if (hoursMatch) {
@@ -246,15 +283,13 @@ function buildSendEmailDraft(
   explicitSubject: string,
   explicitBody: string,
 ) {
-  const lower = request.toLowerCase();
-  const hasMeetingSignal = /\b(meet|meeting|call|sync|catch[- ]?up)\b/.test(lower);
-  const hasFollowUpSignal = /\b(follow up|following up|confirm|regarding|about|update|touch base)\b/.test(lower);
   const timeLabel = extractTimeLabel(request);
   const durationMinutes = extractDurationMinutes(request);
   const durationLabel = durationMinutes ? ` for ${durationMinutes} minutes` : "";
   const inferredBody = explicitBody || extractContinuationBody(request, history);
+  const inferredDraft = inferEmailSubjectAndBody(request, inferredBody, timeLabel ?? "");
 
-  if (!explicitSubject && !inferredBody && !hasMeetingSignal && !hasFollowUpSignal) {
+  if (!explicitSubject && !inferredBody && !timeLabel && inferredDraft.body.length === 0) {
     return {
       clarification: "What should I say in the email?",
     } as const;
@@ -262,19 +297,15 @@ function buildSendEmailDraft(
 
   const subject =
     explicitSubject ||
-    (hasMeetingSignal && timeLabel
-      ? `Confirming our meeting at ${timeLabel}`
-      : hasFollowUpSignal
-        ? "Following up on our conversation"
-        : inferSubjectFromBody(inferredBody || request));
+    inferredDraft.subject;
 
   const body =
     inferredBody ||
-    (hasMeetingSignal && timeLabel
-      ? `Hi, just confirming our meeting at ${timeLabel}${durationLabel}. Let me know if anything changes.`
-      : hasFollowUpSignal
-        ? "Hi, just following up on this. Let me know if anything changes."
-        : "Hi, just reaching out to follow up. Let me know if anything changes.");
+    (inferredDraft.body
+      ? inferredDraft.body
+      : timeLabel
+        ? `Hi, just confirming our meeting at ${timeLabel}${durationLabel}. Let me know if anything changes.`
+        : "Hi, just following up on this. Let me know if anything changes.");
 
   return {
     proposal: {

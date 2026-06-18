@@ -15,6 +15,7 @@ import {
 
 import { compareEmailPriority, getEmailPriorityPresentation, resolveEmailPriority } from "@/lib/email-priority";
 import type { EmailListClientItem } from "@/lib/email-client";
+import { formatMorningDigest } from "@/lib/morning-digest";
 import { cn } from "@/lib/utils";
 
 type BillingOverview = {
@@ -105,6 +106,9 @@ export function CommandCenterDashboard({
   const recentActions = auditLogs.slice(0, 4);
   const aiUsage = billing?.usage?.ai ?? null;
   const plan = billing?.currentPlan ?? null;
+  const digestSummary = digest?.digest?.trim() ? digest : null;
+  const digestCounts = digestSummary ?? { digest: "", emailCount: 0, eventCount: 0 };
+  const digestPresentation = digestSummary ? formatMorningDigest(digestSummary.digest, 3) : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background text-foreground">
@@ -149,21 +153,31 @@ export function CommandCenterDashboard({
                 />
               </div>
 
-              {digest?.digest ? (
+              {digestPresentation ? (
                 <div className="mt-5 max-w-3xl rounded-2xl border border-border/80 bg-[rgba(255,255,255,0.84)] p-4 shadow-[0_10px_24px_rgba(38,28,14,0.04)] dark:bg-black/20 dark:shadow-none">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
                     <Activity className="h-4 w-4 text-accent" />
                     Morning digest
                   </div>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-foreground-muted">
-                    {digest.digest}
-                  </p>
+                  <div className="mt-2 space-y-2 text-sm leading-6 text-foreground-muted">
+                    <p className="font-medium text-foreground">{digestPresentation.headline}</p>
+                    {digestPresentation.bullets.length > 0 ? (
+                      <ul className="space-y-1.5">
+                        {digestPresentation.bullets.map((bullet) => (
+                          <li key={bullet} className="flex gap-2">
+                            <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+                            <span className="min-w-0">{bullet}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-foreground-subtle">
                     <span className="rounded-full border border-border bg-background/60 px-2.5 py-1">
-                      {digest.emailCount} email{digest.emailCount === 1 ? "" : "s"}
+                      {digestCounts.emailCount} email{digestCounts.emailCount === 1 ? "" : "s"}
                     </span>
                     <span className="rounded-full border border-border bg-background/60 px-2.5 py-1">
-                      {digest.eventCount} event{digest.eventCount === 1 ? "" : "s"}
+                      {digestCounts.eventCount} event{digestCounts.eventCount === 1 ? "" : "s"}
                     </span>
                   </div>
                 </div>

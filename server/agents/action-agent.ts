@@ -43,6 +43,14 @@ function getPrivatePayloadKey(actionId: string) {
   return `hitl:private:${actionId}`;
 }
 
+function parseSendEmailPayload(payload: Record<string, unknown>) {
+  const parsed = sendEmailProposalSchema.safeParse(payload);
+  if (!parsed.success || !parsed.data.to.length || !parsed.data.subject.trim() || !parsed.data.body.trim()) {
+    throw new Error("invalid_send_email_payload");
+  }
+  return parsed.data;
+}
+
 async function publishHitlCard(userId: string, safeCard: SafeHitlAction) {
   if (!process.env.ABLY_API_KEY) {
     return;
@@ -72,6 +80,10 @@ export async function createHitlProposal(
   const db = deps.db ?? defaultDb;
   const redis = deps.redis ?? defaultRedis;
   const expiresAt = new Date(Date.now() + PRIVATE_HITL_TTL_SECONDS * 1000);
+  if (action.actionType === "send_email") {
+    parseSendEmailPayload(action.payload ?? {});
+  }
+
   const safePayload = mapHitlPayloadForClient(action.actionType, action.payload ?? {});
 
   const [row] = await db.insert(hitlActions).values({
@@ -138,7 +150,7 @@ export async function executeApprovedHitlAction(
   }
 
   if (row.action_type === "send_email") {
-    const payload = sendEmailProposalSchema.parse(privatePayload);
+    const payload = parseSendEmailPayload(privatePayload);
     const result = await sendEmail(userId, payload);
     if (result.needsConnect) {
       throw new Error("gmail_not_connected");
