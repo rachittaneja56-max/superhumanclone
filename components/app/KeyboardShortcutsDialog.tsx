@@ -38,9 +38,6 @@ const SECTIONS: ShortcutSection[] = [
       { label: "Reply", keys: ["r"] },
       { label: "Reply all", keys: ["a"] },
       { label: "Forward", keys: ["f"] },
-      { label: "Archive", keys: ["e"] },
-      { label: "Trash", keys: ["Delete", "Backspace"], delimiter: "slash" },
-      { label: "Mark read or unread", keys: ["u"] },
     ],
   },
   {

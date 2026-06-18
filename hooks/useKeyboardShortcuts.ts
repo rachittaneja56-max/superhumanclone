@@ -94,11 +94,6 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:thread-prev"));
           break;
-        case "e":
-          if (!isMailWorkspace) return;
-          e.preventDefault();
-          window.dispatchEvent(new CustomEvent("aethra:thread-archive"));
-          break;
         case "r":
           if (!isMailWorkspace) return;
           e.preventDefault();
@@ -119,21 +114,10 @@ export function useKeyboardShortcuts() {
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:compose-open"));
           break;
-        case "u":
-          if (!isMailWorkspace) return;
-          e.preventDefault();
-          window.dispatchEvent(new CustomEvent("aethra:thread-toggle-read"));
-          break;
         case "Enter":
           if (!isMailWorkspace) return;
           e.preventDefault();
           window.dispatchEvent(new CustomEvent("aethra:thread-open"));
-          break;
-        case "Delete":
-        case "Backspace":
-          if (!isMailWorkspace) return;
-          e.preventDefault();
-          window.dispatchEvent(new CustomEvent("aethra:thread-trash"));
           break;
         case "/":
           if (!isMailWorkspace) return;

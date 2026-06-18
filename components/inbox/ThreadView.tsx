@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import React, { useCallback, useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
-import { Archive, Calendar, Forward, MailCheck, MailOpen, Reply, ReplyAll, RotateCcw, Trash2 } from "lucide-react";
+import { Calendar, Forward, MailOpen, Reply, ReplyAll, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import type { EmailThreadClientItem } from "@/lib/email-client";
 import { SmartSchedulerModal } from "@/components/calendar/SmartSchedulerModal";
@@ -42,26 +42,6 @@ export function ThreadView({
   const utils = trpc.useUtils();
   const { data: thread, isLoading, isError } = trpc.email.getThread.useQuery({ threadId });
   const markRead = trpc.email.markRead.useMutation();
-  const markUnread = trpc.email.markUnread.useMutation({
-    onSuccess: () => toast.success("Marked unread"),
-    onError: () => toast.error("Failed to update read state"),
-  });
-  const archiveMutation = trpc.email.archiveEmail.useMutation({
-    onSuccess: () => toast.success("Archived"),
-    onError: () => toast.error("Failed to archive"),
-  });
-  const deleteMutation = trpc.email.deleteEmail.useMutation({
-    onSuccess: async () => {
-      await Promise.all([
-        utils.email.getThread.invalidate({ threadId }),
-        utils.email.getMailboxThreads.invalidate(),
-        utils.email.getUnreadCounts.invalidate(),
-      ]).catch(() => null);
-      onDeleted?.();
-      toast.success("Moved to trash");
-    },
-    onError: () => toast.error("Failed to delete"),
-  });
   const restoreMutation = trpc.email.restoreEmail.useMutation({
     onSuccess: () => toast.success("Restored from trash"),
     onError: () => toast.error("Failed to restore"),
@@ -90,8 +70,6 @@ export function ThreadView({
   const showTldr = typedThread[0]?.tldr && !typedThread[0]?.aiTriageSkipped;
   const primaryEmailId = typedThread[0]?.threadId || typedThread[0]?.id || "";
   const latest = typedThread[typedThread.length - 1];
-  const unreadIds = typedThread.filter((email) => !email.isRead).map((email) => email.id);
-  const hasUnread = unreadIds.length > 0;
   const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
   const forwardSubject = subject.toLowerCase().startsWith("fwd:") ? subject : `Fwd: ${subject}`;
   const handleReplyCompose = useCallback((mode: "reply" | "replyAll" | "forward") => {
@@ -199,26 +177,7 @@ export function ThreadView({
                 icon={<RotateCcw className="h-4 w-4" />}
                 label="Restore"
               />
-            ) : (
-              <>
-                <ActionButton
-                  onClick={() =>
-                    hasUnread
-                      ? markRead.mutate({ emailIds: unreadIds.slice(0, 50) })
-                      : markUnread.mutate({ emailIds: [latest.id] })
-                  }
-                  icon={hasUnread ? <MailCheck className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
-                  label={hasUnread ? "Mark read" : "Mark unread"}
-                />
-                <ActionButton onClick={() => archiveMutation.mutate({ emailId: primaryEmailId })} icon={<Archive className="h-4 w-4" />} label="Archive" />
-                <ActionButton
-                  onClick={() => deleteMutation.mutate({ emailId: primaryEmailId })}
-                  icon={<Trash2 className="h-4 w-4" />}
-                  label="Trash"
-                  destructive
-                />
-              </>
-            )}
+            ) : null}
           </div>
         </div>
 

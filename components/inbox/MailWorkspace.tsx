@@ -149,10 +149,6 @@ export function MailWorkspace({
     [activeThreadId, visibleThreads]
   );
   const sendMutation = trpc.email.sendEmail.useMutation();
-  const archiveMutation = trpc.email.archiveEmail.useMutation();
-  const deleteMutation = trpc.email.deleteEmail.useMutation();
-  const markReadMutation = trpc.email.markRead.useMutation();
-  const markUnreadMutation = trpc.email.markUnread.useMutation();
   const { startUndoWindow, countdown, cancel: cancelUndo, isPending: undoPending } = useUndoSend();
 
   useEffect(() => {
@@ -297,48 +293,12 @@ export function MailWorkspace({
       const id = activeThreadId ?? selected?.threadId ?? selected?.id ?? visibleThreads[0]?.threadId ?? visibleThreads[0]?.id;
       if (id) openThread(id);
     };
-    const archiveCurrent = async () => {
-      const id = selected?.threadId || selected?.id;
-      if (!id) return;
-      try {
-        await archiveMutation.mutateAsync({ emailId: id });
-        closeThread();
-      } catch {
-        toast.error("Failed to archive mail.");
-      }
-    };
-    const trashCurrent = async () => {
-      const id = selected?.threadId || selected?.id;
-      if (!id) return;
-      try {
-        await deleteMutation.mutateAsync({ emailId: id });
-        closeThread();
-      } catch {
-        toast.error("Failed to trash mail.");
-      }
-    };
-    const toggleReadCurrent = async () => {
-      const id = selected?.threadId || selected?.id;
-      if (!id) return;
-      try {
-        if (selected?.isRead) {
-          await markUnreadMutation.mutateAsync({ emailIds: [id] });
-        } else {
-          await markReadMutation.mutateAsync({ emailIds: [id] });
-        }
-      } catch {
-        toast.error("Failed to update read state.");
-      }
-    };
     const handleShortcut = (event: Event) => {
       const key = (event as CustomEvent).type;
       if (key === "aethra:compose-open") openCompose();
       if (key === "aethra:thread-next") moveThread(1);
       if (key === "aethra:thread-prev") moveThread(-1);
       if (key === "aethra:thread-open") openCurrent();
-      if (key === "aethra:thread-archive") void archiveCurrent();
-      if (key === "aethra:thread-trash") void trashCurrent();
-      if (key === "aethra:thread-toggle-read") void toggleReadCurrent();
       if (key === "aethra:escape-all") {
         if (composeOpen) closeCompose();
         if (selected) closeThread();
@@ -349,29 +309,19 @@ export function MailWorkspace({
     window.addEventListener("aethra:thread-next", handleShortcut);
     window.addEventListener("aethra:thread-prev", handleShortcut);
     window.addEventListener("aethra:thread-open", handleShortcut);
-    window.addEventListener("aethra:thread-archive", handleShortcut);
-    window.addEventListener("aethra:thread-trash", handleShortcut);
-    window.addEventListener("aethra:thread-toggle-read", handleShortcut);
     window.addEventListener("aethra:escape-all", handleShortcut);
     return () => {
       window.removeEventListener("aethra:compose-open", handleShortcut);
       window.removeEventListener("aethra:thread-next", handleShortcut);
       window.removeEventListener("aethra:thread-prev", handleShortcut);
       window.removeEventListener("aethra:thread-open", handleShortcut);
-      window.removeEventListener("aethra:thread-archive", handleShortcut);
-      window.removeEventListener("aethra:thread-trash", handleShortcut);
-      window.removeEventListener("aethra:thread-toggle-read", handleShortcut);
       window.removeEventListener("aethra:escape-all", handleShortcut);
     };
   }, [
     activeThreadId,
-    archiveMutation,
     closeCompose,
     closeThread,
     composeOpen,
-    deleteMutation,
-    markReadMutation,
-    markUnreadMutation,
     openThread,
     selected,
     visibleThreads,
