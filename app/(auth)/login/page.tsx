@@ -38,7 +38,7 @@ export default async function LoginPage({
         <ThemeToggle />
       </div>
 
-      <div className="relative z-10 w-full max-w-sm mx-auto bg-surface border border-border rounded-[16px] p-[40px] px-[36px] shadow-sm">
+      <div className="relative z-10 mx-auto w-full max-w-[32rem] rounded-[20px] border border-border bg-surface px-5 py-8 shadow-[0_24px_80px_rgba(0,0,0,0.18)] sm:px-8">
         {/* Section 1 - Brand */}
         <div className="flex flex-col items-center text-center">
           <h1 className="font-display font-semibold text-2xl tracking-tight text-foreground">
@@ -57,11 +57,11 @@ export default async function LoginPage({
         )}
 
         {/* Separator */}
-        <div className="h-[1px] w-full bg-border my-6" />
+        <div className="my-6 h-px w-full bg-border" />
 
         {/* Section 3 - Clerk Sign In */}
         {isClerkConfigured ? (
-          <div className="overflow-hidden rounded-[14px] border border-border/80 bg-background/70">
+          <div className="rounded-[18px] border border-border/80 bg-background/70 p-2 sm:p-3">
             <SignIn
               path="/login"
               routing="path"
@@ -70,9 +70,10 @@ export default async function LoginPage({
               forceRedirectUrl={targetUrl}
               appearance={{
                 elements: {
-                  rootBox: 'w-full',
-                  cardBox: 'w-full',
-                  card: 'w-full rounded-none border-0 bg-transparent p-0 shadow-none',
+                  rootBox: 'w-full max-w-full min-w-0',
+                  cardBox: 'w-full max-w-full min-w-0',
+                  card: 'w-full max-w-full min-w-0 rounded-none border-0 bg-transparent p-0 shadow-none',
+                  main: 'w-full max-w-full min-w-0',
                   header: 'hidden',
                   footer: 'hidden',
                   socialButtonsBlockButton:
@@ -80,7 +81,7 @@ export default async function LoginPage({
                   socialButtonsBlockButtonText: 'text-sm font-medium text-accent-foreground',
                   socialButtonsProviderIcon__google: 'h-[18px] w-[18px]',
                   dividerLine: 'bg-border',
-                  dividerText: 'bg-background px-2 text-xs uppercase tracking-[0.16em] text-foreground-muted',
+                  dividerText: 'bg-background/90 px-2 text-xs uppercase tracking-[0.16em] text-foreground-muted',
                   formFieldInput:
                     'h-11 rounded-lg border border-border bg-background text-sm text-foreground shadow-none focus:border-accent focus:ring-1 focus:ring-accent/50',
                   formButtonPrimary:
@@ -93,6 +94,12 @@ export default async function LoginPage({
                   otpCodeFieldInput:
                     'h-11 rounded-lg border border-border bg-background text-sm text-foreground shadow-none focus:border-accent focus:ring-1 focus:ring-accent/50',
                   alertText: 'text-sm',
+                  form: 'w-full',
+                  formFieldRow: 'w-full',
+                  formField: 'w-full',
+                  socialButtonsBlockButtonArrow: 'text-accent-foreground',
+                  alternativeMethodsBlockButton:
+                    'h-11 rounded-lg border border-border bg-background text-sm text-foreground shadow-none hover:bg-surface-raised',
                 },
               }}
             />
