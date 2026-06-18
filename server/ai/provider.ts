@@ -84,6 +84,14 @@ function truncateText(value: string, maxChars: number) {
   return value.length <= maxChars ? value : `${value.slice(0, Math.max(0, maxChars - 1)).trim()}...`;
 }
 
+function hasThinContent(value: string) {
+  const text = stripHtml(value);
+  if (!text) return true;
+
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return words < 8;
+}
+
 function wrapEmailContent(value: string) {
   return `<email_content>${stripHtml(value)}</email_content>`;
 }
@@ -94,6 +102,32 @@ function wrapCalendarContent(value: string) {
 
 function sanitizeOutput(value: string, maxChars: number) {
   return sanitiseAgentOutput(truncateText(redactSensitiveText(value), maxChars), maxChars);
+}
+
+function normalizeAgentResponse(value: string) {
+  const cleaned = sanitizeOutput(value, 4200);
+  const lines = cleaned
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^(would you like me to|let me know if you'd like|if you'd like,? i can|happy to help(?: with that)?)/i.test(line));
+
+  if (lines.length === 0) {
+    return cleaned;
+  }
+
+  const headline = lines[0];
+  const bullets = lines
+    .slice(1)
+    .filter((line) => /^[-•*]/.test(line))
+    .map((line) => line.replace(/^[-•*]\s*/, ""))
+    .slice(0, 5);
+
+  if (bullets.length > 0) {
+    return [headline, ...bullets.map((bullet) => `- ${bullet}`)].join("\n");
+  }
+
+  return headline;
 }
 
 function isLikelyAgentText(value: string) {
@@ -427,6 +461,10 @@ export async function classifyEmail(
 export async function generateTLDR(subject: string, bodyText: string, options?: { userId?: string }) {
   const promptBody = `${wrapEmailContent(`Subject: ${subject}\nBody: ${bodyText}`)}`;
 
+  if (hasThinContent(bodyText) && hasThinContent(subject)) {
+    return "Not enough mailbox detail to summarize precisely.";
+  }
+
   try {
     const { text } = await executeTextTask(promptBody, {
       userId: options?.userId,
@@ -435,7 +473,7 @@ export async function generateTLDR(subject: string, bodyText: string, options?: 
     });
     return text;
   } catch {
-    return fallbackTextFromContent(bodyText || subject, 160);
+    return "Not enough mailbox detail to summarize precisely.";
   }
 }
 
@@ -456,11 +494,11 @@ export async function generateAutoReplies(subject: string, bodyText: string, opt
     );
     return object;
   } catch {
-    const short = fallbackTextFromContent(bodyText || subject, 180);
+    const short = fallbackTextFromContent(bodyText || subject, 120);
     return {
       direct: `Thanks for the note. ${short}`,
       warm: `Thanks for reaching out. ${short}`,
-      boundary: `Thanks for the message. I will get back to you once I have more context.`,
+      boundary: "Thanks for the message. I need a bit more context before I can reply precisely.",
     };
   }
 }
@@ -514,6 +552,10 @@ export async function generateDigest(
     });
     return text;
   } catch {
+    if (emailRows.length + eventRows.length < 2) {
+      return "Not enough mailbox detail to rank threads precisely.";
+    }
+
     const topEmail = emailRows[0]?.subject ? `Top email: ${emailRows[0].subject}.` : "No urgent mail found.";
     const nextEvent = eventRows[0]?.title ? `Next event: ${eventRows[0].title}.` : "No upcoming events found.";
     return `${topEmail} ${nextEvent}`.trim();
@@ -628,12 +670,10 @@ export async function streamAgentResponse(
       prompt: prompts.agentSystem,
     });
 
-    const cleaned = sanitizeOutput(text, 4200);
+    const cleaned = normalizeAgentResponse(text);
     const fallback = "I can help with inbox and calendar workflows. If you share a thread or meeting context, I can be more specific.";
 
-    return {
-      textStream: createSingleChunkStream(isLikelyAgentText(cleaned) ? cleaned : fallback),
-    };
+    return { textStream: createSingleChunkStream(isLikelyAgentText(cleaned) ? cleaned : fallback) };
   } catch (error) {
     if (error instanceof AIUsageLimitError) {
       return {

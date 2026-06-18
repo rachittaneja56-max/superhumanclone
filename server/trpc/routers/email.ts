@@ -1,5 +1,5 @@
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
-import { emails, auditLogs, calendarEvents, autoReplyDrafts, users } from '@/server/db/schema';
+import { emails, auditLogs, calendarEvents, autoReplyDrafts, aiConsentRules, users } from '@/server/db/schema';
 import { eq, and, desc, gt, between, inArray, asc, or, ilike, sql, lt } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import pino from 'pino';
@@ -15,7 +15,7 @@ import {
   markEmailUnread,
   getMessages as corsairGetMessages,
 } from '@/server/corsair/client';
-import { generateDigest, rewriteDraft } from '@/server/ai/provider';
+import { generateAutoReplies, generateDigest, generateTLDR, rewriteDraft } from '@/server/ai/provider';
 import { Client } from '@upstash/qstash';
 import { mapEmailForListClient, mapEmailForThreadClient, redactSensitiveForClient } from '@/lib/email-client';
 import {
@@ -28,6 +28,7 @@ import {
 } from '@/server/cache';
 import { processSendJob } from '@/server/workers/send-worker';
 import { getSafeUserSettings } from '@/server/db/user-settings-compat';
+import { isDomainBlocked } from '@/lib/domain-matcher';
 
 const qstash = new Client({ token: process.env.QSTASH_TOKEN || '' });
 const logger = pino();
@@ -685,6 +686,33 @@ export const emailRouter = router({
         return mapped
       }
 
+      const firstEmail = threadEmails[0];
+      if (firstEmail && !firstEmail.tldr) {
+        const settings = await getSafeUserSettings(ctx.userId!);
+        if (settings.aiEnabled && settings.privacyConfigured && firstEmail.from_address) {
+          const consentRules = await ctx.db.query.aiConsentRules.findMany({
+            where: eq(aiConsentRules.userId, ctx.userId!),
+            columns: { pattern: true, isBlocked: true },
+          });
+          const blocked = isDomainBlocked(firstEmail.from_address, consentRules);
+          if (!blocked) {
+            const source = firstEmail.body_text || firstEmail.snippet || firstEmail.subject || '';
+            const tldr = await generateTLDR(firstEmail.subject || 'Conversation summary', source, { userId: ctx.userId! });
+            await ctx.db.update(emails)
+              .set({ tldr })
+              .where(and(eq(emails.id, firstEmail.id), eq(emails.userId, ctx.userId!)));
+            threadEmails = threadEmails.map((email) => (email.id === firstEmail.id ? { ...email, tldr } : email));
+          }
+        } else if (settings.aiEnabled && settings.privacyConfigured) {
+          const source = firstEmail.body_text || firstEmail.snippet || firstEmail.subject || '';
+          const tldr = await generateTLDR(firstEmail.subject || 'Conversation summary', source, { userId: ctx.userId! });
+          await ctx.db.update(emails)
+            .set({ tldr })
+            .where(and(eq(emails.id, firstEmail.id), eq(emails.userId, ctx.userId!)));
+          threadEmails = threadEmails.map((email) => (email.id === firstEmail.id ? { ...email, tldr } : email));
+        }
+      }
+
       const mapped = threadEmails.map((email) => mapEmailForThreadClient(email))
       await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: cacheTtls.thread })
       return mapped;
@@ -1215,6 +1243,53 @@ export const emailRouter = router({
             eq(emails.userId, ctx.userId!)
           )
         );
-      return drafts;
+      if (drafts.length > 0) {
+        return drafts;
+      }
+
+      const sourceEmail = await ctx.db.query.emails.findFirst({
+        where: and(eq(emails.id, input.emailId), eq(emails.userId, ctx.userId!)),
+        columns: {
+          from_address: true,
+          subject: true,
+          snippet: true,
+          body_text: true,
+          ai_triage_skipped: true,
+        },
+      });
+
+      if (!sourceEmail || sourceEmail.ai_triage_skipped) {
+        return [];
+      }
+
+      const consentRules = await ctx.db.query.aiConsentRules.findMany({
+        where: eq(aiConsentRules.userId, ctx.userId!),
+        columns: { pattern: true, isBlocked: true },
+      });
+
+      if (sourceEmail.from_address && isDomainBlocked(sourceEmail.from_address, consentRules)) {
+        return [];
+      }
+
+      const content = sourceEmail.body_text || sourceEmail.snippet || sourceEmail.subject || '';
+      const replies = await generateAutoReplies(sourceEmail.subject || 'Reply draft', content, { userId: ctx.userId! });
+
+      await ctx.db.delete(autoReplyDrafts)
+        .where(and(eq(autoReplyDrafts.emailId, input.emailId), eq(autoReplyDrafts.userId, ctx.userId!)));
+
+      const inserted = await ctx.db.insert(autoReplyDrafts)
+        .values([
+          { userId: ctx.userId!, emailId: input.emailId, reply_text: replies.direct, status: 'draft' },
+          { userId: ctx.userId!, emailId: input.emailId, reply_text: replies.warm, status: 'draft' },
+          { userId: ctx.userId!, emailId: input.emailId, reply_text: replies.boundary, status: 'draft' },
+        ])
+        .returning({
+          id: autoReplyDrafts.id,
+          reply_text: autoReplyDrafts.reply_text,
+          status: autoReplyDrafts.status,
+          created_at: autoReplyDrafts.created_at,
+        });
+
+      return inserted;
     })
 });
