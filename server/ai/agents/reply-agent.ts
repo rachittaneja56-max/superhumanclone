@@ -13,7 +13,7 @@ export async function runReplyAgent(context: AgentContext): Promise<AgentResult>
 
   return {
     intent: "reply",
-    indicator: "Drafting reply",
+    indicator: "Preparing reply...",
     text: [
       "Direct:",
       sanitiseAgentOutput(replies.direct, 320),

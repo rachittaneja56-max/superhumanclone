@@ -19,8 +19,8 @@ export async function runComposeAgent(context: AgentContext): Promise<AgentResul
   if (!body) {
     return {
       intent: "compose",
-      indicator: "Preparing draft rewrite",
-      text: "Share a draft after the slash command and I’ll prepare a safe rewrite preview.",
+      indicator: "Rewriting draft...",
+      text: "Share a draft after the slash command and I'll prepare a safe rewrite preview.",
     };
   }
 
@@ -31,7 +31,7 @@ export async function runComposeAgent(context: AgentContext): Promise<AgentResul
     });
     return {
       intent: "compose",
-      indicator: "Preparing draft rewrite",
+      indicator: "Rewriting draft...",
       text: sanitiseAgentOutput(translated, 1200),
     };
   }
@@ -40,7 +40,7 @@ export async function runComposeAgent(context: AgentContext): Promise<AgentResul
   if (!instruction) {
     return {
       intent: "compose",
-      indicator: "Preparing draft rewrite",
+      indicator: "Rewriting draft...",
       text: "Available slash actions: /improve, /shorter, /formal, /bullet, /translate <language>.",
     };
   }
@@ -51,7 +51,7 @@ export async function runComposeAgent(context: AgentContext): Promise<AgentResul
 
   return {
     intent: "compose",
-    indicator: "Preparing draft rewrite",
+    indicator: "Rewriting draft...",
     text: sanitiseAgentOutput(rewritten, 1200),
   };
 }

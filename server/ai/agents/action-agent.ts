@@ -136,7 +136,7 @@ export async function runActionAgent(
     if (!parsed.success) {
       return {
         intent: "action",
-        indicator: "Preparing approval card",
+        indicator: "Preparing approval card...",
         text: "To propose a send action safely, share explicit details like `to: person@example.com`, `subject: ...`, and `body: ...`. I will only prepare an approval card.",
       };
     }
@@ -149,7 +149,7 @@ export async function runActionAgent(
 
     return {
       intent: "action",
-      indicator: "Preparing approval card",
+      indicator: "Preparing approval card...",
       text: `Approval requested for sending that email. Review the card before anything happens. Action ID: ${String((proposal as { actionId?: string })?.actionId ?? "pending")}`,
     };
   }
@@ -175,7 +175,7 @@ export async function runActionAgent(
     if (!parsed.success) {
       return {
         intent: "action",
-        indicator: "Preparing approval card",
+        indicator: "Preparing approval card...",
         text: "To propose an event safely, share exact details like `title: ...`, `start: 2026-06-18T15:00:00.000Z`, `end: 2026-06-18T15:30:00.000Z`, and any attendee emails.",
       };
     }
@@ -188,14 +188,14 @@ export async function runActionAgent(
 
     return {
       intent: "action",
-      indicator: "Preparing approval card",
+      indicator: "Preparing approval card...",
       text: `Approval requested for that event. Review the card before anything is created. Action ID: ${String((proposal as { actionId?: string })?.actionId ?? "pending")}`,
     };
   }
 
   return {
     intent: "action",
-    indicator: "Preparing approval card",
-    text: "Write actions stay behind approval in Aethra. I can prepare a send-email or create-event approval card once you provide the exact details.",
+    indicator: "Preparing approval card...",
+    text: "I can only prepare approval cards for explicit send-email or create-event requests with the exact details.",
   };
 }

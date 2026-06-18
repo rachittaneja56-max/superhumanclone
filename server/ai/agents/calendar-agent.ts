@@ -138,7 +138,7 @@ export async function runCalendarAgent(
   if (!looksLikeSchedulingRequest(source)) {
     return {
       intent: "calendar",
-      indicator: "Preparing calendar event",
+      indicator: "Drafting calendar event...",
       text: [
         `Title: ${result.suggestedTitle || "Meeting"}`,
         `Suggested time: ${result.suggestedTime || "Needs confirmation"}`,
@@ -156,7 +156,7 @@ export async function runCalendarAgent(
   if (!draft) {
     return {
       intent: "calendar",
-      indicator: "Preparing calendar event",
+      indicator: "Drafting calendar event...",
       text: [
         `Title: ${result.suggestedTitle || "Meeting"}`,
         `Suggested time: ${result.suggestedTime || "Needs confirmation"}`,
@@ -177,7 +177,7 @@ export async function runCalendarAgent(
 
   return {
     intent: "calendar",
-    indicator: "Preparing calendar event",
+    indicator: "Drafting calendar event...",
     text: [
       `Title: ${draft.title}`,
       `When: ${format(parseISO(draft.startTime), "EEE, MMM d 'at' h:mm a")}`,

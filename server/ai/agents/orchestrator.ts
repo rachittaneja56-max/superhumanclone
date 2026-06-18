@@ -12,9 +12,12 @@ import { runTriageAgent } from "./triage-agent";
 import type { AgentContext, AgentResult } from "./types";
 
 function createSingleChunkStream(text: string) {
+  const chunks = text.match(/\S+\s*/g) ?? (text ? [text] : []);
   return {
     async *[Symbol.asyncIterator]() {
-      yield text;
+      for (const chunk of chunks) {
+        yield chunk;
+      }
     },
   };
 }

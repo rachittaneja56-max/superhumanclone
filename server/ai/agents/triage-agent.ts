@@ -13,7 +13,7 @@ export async function runTriageAgent(context: AgentContext): Promise<AgentResult
 
   return {
     intent: "triage",
-    indicator: "Classifying thread",
+    indicator: "Searching your inbox...",
     text: `Priority: ${result.priority}\nCategory: ${result.tag}\nConfidence: ${Math.round(result.confidence * 100)}%`,
   };
 }

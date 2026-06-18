@@ -315,7 +315,7 @@ export function AgentChat({
               voiceError
             ) : voiceListening ? (
               <>
-                Listening…
+                Listening...
                 {voicePreview ? <span className="ml-2 text-foreground">{voicePreview}</span> : null}
               </>
             ) : (
@@ -371,7 +371,7 @@ export function AgentChat({
           {isStreaming && messages[messages.length - 1]?.role === "user" && (
             <div className="mr-auto flex items-center space-x-2 rounded-full border border-border bg-background px-4 py-2 text-sm text-muted-foreground">
               <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Thinking...</span>
+              <span>Working...</span>
             </div>
           )}
         </div>
