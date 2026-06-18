@@ -13,12 +13,6 @@ export function useKeyboardShortcuts() {
     let keySequence = "";
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Always allow Escape and Cmd+K globally
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        useUIStore.getState().openPalette();
-        return;
-      }
       if (e.key === "Escape") {
         useUIStore.getState().closePalette();
         useUIStore.getState().closeCheatsheet();
@@ -26,17 +20,30 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Skip single-key shortcuts if typing in an input
-      const target = e.target as HTMLElement;
+      const target = e.target;
       const isTyping =
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable;
+        target instanceof HTMLElement &&
+        ((target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") ||
+          target.isContentEditable ||
+          Boolean(target.closest("input, textarea, select, [contenteditable='true']")));
 
       if (isTyping) return;
 
       const { focusLayer } = useUIStore.getState();
       if (focusLayer !== 0) return;
+
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        useUIStore.getState().openPalette();
+        return;
+      }
+
+      if (e.key === "/" && e.shiftKey) {
+        e.preventDefault();
+        useUIStore.getState().openCheatsheet();
+        return;
+      }
+
       const isMailWorkspace = pathname.startsWith("/inbox");
 
       // Handle sequence
@@ -58,6 +65,12 @@ export function useKeyboardShortcuts() {
             break;
           case "c":
             router.push("/calendar");
+            break;
+          case "b":
+            router.push("/billing");
+            break;
+          case "d":
+            router.push("/dashboard");
             break;
           case "a":
             router.push("/agent");
@@ -89,7 +102,17 @@ export function useKeyboardShortcuts() {
         case "r":
           if (!isMailWorkspace) return;
           e.preventDefault();
-          window.dispatchEvent(new CustomEvent("aethra:thread-open"));
+          window.dispatchEvent(new CustomEvent("aethra:thread-reply"));
+          break;
+        case "a":
+          if (!isMailWorkspace) return;
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:thread-reply-all"));
+          break;
+        case "f":
+          if (!isMailWorkspace) return;
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("aethra:thread-forward"));
           break;
         case "c":
           if (!isMailWorkspace) return;

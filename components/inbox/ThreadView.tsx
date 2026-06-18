@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { Archive, Calendar, Forward, MailCheck, MailOpen, Reply, ReplyAll, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -15,6 +15,8 @@ const ContactSidebar = dynamic(
     loading: () => null,
   },
 );
+
+const EMPTY_THREAD: EmailThreadClientItem[] = [];
 
 export function ThreadView({
   threadId,
@@ -66,7 +68,7 @@ export function ThreadView({
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
 
-  const typedThread = (thread as EmailThreadClientItem[] | undefined) ?? [];
+  const typedThread = (thread as EmailThreadClientItem[] | undefined) ?? EMPTY_THREAD;
   const firstEmailId = typedThread[0]?.id;
   const contactEmail = typedThread[0]?.senderAddress || typedThread[0]?.recipientAddress || null;
 
@@ -83,26 +85,6 @@ export function ThreadView({
     setContactOpen(Boolean(contactEmail));
   }, [contactEmail]);
 
-  if (isLoading) {
-    return <ThreadLoading compact={compact} />;
-  }
-
-  if (isError) {
-    return (
-      <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
-        Could not load this thread right now.
-      </div>
-    );
-  }
-
-  if (!typedThread.length) {
-    return (
-      <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
-        No emails found in this thread.
-      </div>
-    );
-  }
-
   const subject = typedThread[0]?.subject || "(No Subject)";
   const showTldr = typedThread[0]?.tldr && !typedThread[0]?.aiTriageSkipped;
   const primaryEmailId = typedThread[0]?.threadId || typedThread[0]?.id || "";
@@ -111,7 +93,7 @@ export function ThreadView({
   const hasUnread = unreadIds.length > 0;
   const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
   const forwardSubject = subject.toLowerCase().startsWith("fwd:") ? subject : `Fwd: ${subject}`;
-  const handleReplyCompose = (mode: "reply" | "replyAll" | "forward") => {
+  const handleReplyCompose = useCallback((mode: "reply" | "replyAll" | "forward") => {
     if (!onReplyCompose) {
       toast.error("Compose is unavailable right now.");
       return;
@@ -138,9 +120,45 @@ export function ThreadView({
             subject: replySubject,
             body: `\n\nOn ${latest?.createdAt ? new Date(latest.createdAt).toLocaleString() : "a previous date"}, ${latest?.senderName || latest?.senderAddress || "someone"} wrote:\n`,
             threadId,
-          }
+        }
     );
-  };
+  }, [forwardSubject, latest, onReplyCompose, replySubject, subject, threadId, typedThread]);
+
+  useEffect(() => {
+    const onReply = () => handleReplyCompose("reply");
+    const onReplyAll = () => handleReplyCompose("replyAll");
+    const onForward = () => handleReplyCompose("forward");
+
+    window.addEventListener("aethra:thread-reply", onReply);
+    window.addEventListener("aethra:thread-reply-all", onReplyAll);
+    window.addEventListener("aethra:thread-forward", onForward);
+
+    return () => {
+      window.removeEventListener("aethra:thread-reply", onReply);
+      window.removeEventListener("aethra:thread-reply-all", onReplyAll);
+      window.removeEventListener("aethra:thread-forward", onForward);
+    };
+  }, [handleReplyCompose]);
+
+  if (isLoading) {
+    return <ThreadLoading compact={compact} />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
+        Could not load this thread right now.
+      </div>
+    );
+  }
+
+  if (!typedThread.length) {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
+        No emails found in this thread.
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface font-sans">

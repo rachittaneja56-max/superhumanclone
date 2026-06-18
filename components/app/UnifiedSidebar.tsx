@@ -2,17 +2,17 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Calendar, CreditCard, Inbox, LayoutDashboard, LogOut, Bot, Settings, Shield } from 'lucide-react'
+import { Calendar, CreditCard, Inbox, LayoutDashboard, LogOut, Bot, Settings, Shield, Keyboard } from 'lucide-react'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { signOutAction } from '@/app/actions/auth'
+import { useUIStore } from '@/store/ui-store'
 
-const APP_ITEMS = [
+const WORKSPACE_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/inbox', label: 'Inbox', icon: Inbox },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/billing', label: 'Billing', icon: CreditCard },
   { href: '/agent', label: 'Agent', icon: Bot },
-  { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
 export function UnifiedSidebar({
@@ -25,6 +25,7 @@ export function UnifiedSidebar({
   isAdmin?: boolean
 }) {
   const pathname = usePathname()
+  const openCheatsheet = useUIStore((state) => state.openCheatsheet)
   const initial = (firstName || email || 'U').charAt(0).toUpperCase()
 
   return (
@@ -42,7 +43,7 @@ export function UnifiedSidebar({
           <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">
             Workspace
           </div>
-          {APP_ITEMS.map((item) => {
+          {WORKSPACE_ITEMS.map((item) => {
             const Icon = item.icon
             const isActive = item.href === '/inbox'
               ? pathname.startsWith('/inbox')
@@ -64,6 +65,29 @@ export function UnifiedSidebar({
               </Link>
             )
           })}
+
+          <button
+            type="button"
+            onClick={openCheatsheet}
+            aria-haspopup="dialog"
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground-muted transition-all duration-100 hover:bg-surface-overlay hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
+          >
+            <Keyboard className="h-4 w-4 shrink-0" />
+            <span className="truncate">Keyboard Shortcuts</span>
+          </button>
+
+          <Link
+            href="/settings"
+            className={[
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-100',
+              pathname === '/settings' || pathname.startsWith('/settings/')
+                ? 'bg-accent/10 text-accent font-medium border-l-2 border-accent pl-[10px]'
+                : 'text-foreground-muted hover:bg-surface-overlay hover:text-foreground',
+            ].join(' ')}
+          >
+            <Settings className="h-4 w-4 shrink-0" />
+            <span className="truncate">Settings</span>
+          </Link>
         </div>
 
         <div className="mt-5 space-y-1">

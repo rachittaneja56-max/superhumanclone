@@ -7,6 +7,7 @@ import { ChevronDown, ChevronLeft, DraftingCompass, Inbox, Loader2, RefreshCw, S
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
+import { useUIStore } from "@/store/ui-store";
 import { mapEmailForListClient, type EmailListClientItem } from "@/lib/email-client";
 import { sendEmailSchema } from "@/lib/schemas";
 import { ThreadView } from "./ThreadView";
@@ -74,6 +75,8 @@ export function MailWorkspace({
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const pushFocusLayer = useUIStore((state) => state.pushFocusLayer);
+  const popFocusLayer = useUIStore((state) => state.popFocusLayer);
 
   const folder = normalizeFolder(searchParams.get("folder") ?? initialFolder);
   const composeFromUrl = searchParams.get("compose") === "true";
@@ -147,6 +150,13 @@ export function MailWorkspace({
   useEffect(() => {
     setComposeOpen(composeFromUrl || initialComposeOpen);
   }, [composeFromUrl, initialComposeOpen]);
+
+  useEffect(() => {
+    if (!composeOpen) return;
+
+    pushFocusLayer();
+    return () => popFocusLayer();
+  }, [composeOpen, popFocusLayer, pushFocusLayer]);
 
   useEffect(() => {
     const focusSearch = () => searchInputRef.current?.focus();

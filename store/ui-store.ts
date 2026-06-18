@@ -42,11 +42,36 @@ export const useUIStore = create<UIState>((set) => ({
         : [...state.selectedEmailIds, id],
     })),
   clearSelectedEmails: () => set({ selectedEmailIds: [] }),
-  openPalette: () => set({ commandPaletteOpen: true, focusLayer: 1 }),
-  closePalette: () => set((state) => ({ commandPaletteOpen: false, focusLayer: Math.max(0, state.focusLayer - 1) })),
-  openCheatsheet: () => set({ cheatsheetOpen: true }),
-  closeCheatsheet: () => set({ cheatsheetOpen: false }),
-  toggleCheatsheet: () => set((state) => ({ cheatsheetOpen: !state.cheatsheetOpen })),
+  openPalette: () =>
+    set((state) =>
+      state.commandPaletteOpen
+        ? state
+        : { commandPaletteOpen: true, focusLayer: state.focusLayer + 1 }
+    ),
+  closePalette: () =>
+    set((state) =>
+      state.commandPaletteOpen
+        ? { commandPaletteOpen: false, focusLayer: Math.max(0, state.focusLayer - 1) }
+        : state
+    ),
+  openCheatsheet: () =>
+    set((state) =>
+      state.cheatsheetOpen
+        ? state
+        : { cheatsheetOpen: true, focusLayer: state.focusLayer + 1 }
+    ),
+  closeCheatsheet: () =>
+    set((state) =>
+      state.cheatsheetOpen
+        ? { cheatsheetOpen: false, focusLayer: Math.max(0, state.focusLayer - 1) }
+        : state
+    ),
+  toggleCheatsheet: () =>
+    set((state) =>
+      state.cheatsheetOpen
+        ? { cheatsheetOpen: false, focusLayer: Math.max(0, state.focusLayer - 1) }
+        : { cheatsheetOpen: true, focusLayer: state.focusLayer + 1 }
+    ),
   openAgentPanel: () => set({ agentPanelOpen: true }),
   closeAgentPanel: () => set({ agentPanelOpen: false }),
   toggleAgentPanel: () => set((state) => ({ agentPanelOpen: !state.agentPanelOpen })),
