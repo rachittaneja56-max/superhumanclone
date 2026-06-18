@@ -20,6 +20,12 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        useUIStore.getState().openPalette();
+        return;
+      }
+
       const target = e.target;
       const isTyping =
         target instanceof HTMLElement &&
@@ -31,12 +37,6 @@ export function useKeyboardShortcuts() {
 
       const { focusLayer } = useUIStore.getState();
       if (focusLayer !== 0) return;
-
-      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        useUIStore.getState().openPalette();
-        return;
-      }
 
       if (e.key === "/" && e.shiftKey) {
         e.preventDefault();
@@ -138,3 +138,4 @@ export function useKeyboardShortcuts() {
     };
   }, [pathname, router]);
 }
+
