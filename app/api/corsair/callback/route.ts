@@ -29,8 +29,8 @@ export async function GET(req: NextRequest) {
       await ensureTenantProvisioned(userId)
 
       if (result.plugin === 'gmail') {
-        // Seed local emails table on first connect
-        await syncInboxIfEmpty(userId).catch((err) =>
+        // Start the initial mailbox sync without blocking the onboarding redirect.
+        void syncInboxIfEmpty(userId).catch((err) =>
           console.error('[OAuth] Initial inbox sync failed:', err)
         )
       }
