@@ -1,6 +1,7 @@
 import { OAuth2RequestError } from "oslo/oauth2";
 import { assertGoogleOAuthConfig, createGoogleOAuthClient } from "@/lib/oauth";
-import { isFixedSuperadminEmail, isAdminUser, normalizeEmail, resolveUserRole } from "@/server/admin/access-utils";
+import { isFixedSuperadminEmail, normalizeEmail, resolveUserRole } from "@/server/admin/access-utils";
+import { sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -114,7 +115,7 @@ export async function GET(request: Request) {
       return redirectToLogin(request, "oauth_userinfo");
     }
 
-    const [{ db, users }, { ensureUserSettings }, { setSession }] = await Promise.all([
+    const [{ db }, { ensureUserSettings }, { setSession }] = await Promise.all([
       import("@/server/db"),
       import("@/server/auth/helpers"),
       import("@/lib/auth"),
@@ -123,27 +124,21 @@ export async function GET(request: Request) {
     let userId: string;
     try {
       const email = normalizeEmail(googleUser.email);
-      const resolvedRole = resolveUserRole({ email, role: isFixedSuperadminEmail(email) ? "superadmin" : "user" });
-      const [savedUser] = await db
-        .insert(users)
-        .values({
-          id: crypto.randomUUID(),
-          email,
-          name: googleUser.name,
-          image: googleUser.picture,
-          ...(isAdminUser(resolvedRole) ? { role: resolvedRole } : {}),
-        })
-        .onConflictDoUpdate({
-          target: users.email,
-          set: {
-            name: googleUser.name,
-            image: googleUser.picture,
-            ...(isAdminUser(resolvedRole) ? { role: resolvedRole } : {}),
-          },
-        })
-        .returning({ id: users.id });
+      const role = resolveUserRole({ email, role: isFixedSuperadminEmail(email) ? "superadmin" : "user" });
+      const upserted = await db.execute(sql<{ id: string }>`
+        insert into "users" ("id", "name", "email", "image", "role")
+        values (${crypto.randomUUID()}, ${googleUser.name}, ${email}, ${googleUser.picture}, ${role})
+        on conflict ("email") do update set
+          "name" = excluded."name",
+          "image" = excluded."image",
+          "role" = excluded."role"
+        returning "id"
+      `);
 
-      userId = savedUser.id;
+      userId = String((upserted.rows[0] as { id?: string } | undefined)?.id ?? "");
+      if (!userId) {
+        throw new Error("oauth_user_upsert_failed");
+      }
 
       const { ensureTenantProvisioned } = await import('@/server/corsair/provision');
       await ensureTenantProvisioned(userId);
