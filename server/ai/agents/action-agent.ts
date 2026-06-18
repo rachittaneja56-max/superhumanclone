@@ -417,7 +417,7 @@ export async function runActionAgent(
     await hitlInterceptor({
       actionType: "create_event",
       payload: parsed.data,
-      humanReadable: `Create "${sanitiseAgentOutput(parsed.data.title, 120)}" starting ${parsed.data.startTime}`,
+      humanReadable: `Create calendar event: ${sanitiseAgentOutput(parsed.data.title, 120)}`,
     });
 
     return {
@@ -425,7 +425,7 @@ export async function runActionAgent(
       indicator: "Preparing approval card...",
       text: [
         "Ready for approval.",
-        `Create event: ${sanitiseAgentOutput(parsed.data.title, 120)}`,
+        `Create calendar event: ${sanitiseAgentOutput(parsed.data.title, 120)}`,
         `When: ${parsed.data.startTime}`,
       ].join("\n"),
     };
@@ -433,7 +433,7 @@ export async function runActionAgent(
 
     return {
       intent: "action",
-      indicator: "Drafting email...",
-      text: "I can only prepare approval cards for explicit send-email or create-event requests with the exact details.",
+      indicator: "Preparing approval card...",
+      text: "Share the missing recipient, title, or time and I can prepare an approval-safe email or calendar draft.",
     };
   }

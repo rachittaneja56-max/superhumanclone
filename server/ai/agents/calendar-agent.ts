@@ -21,8 +21,17 @@ function extractAttendeeSummary(input: string) {
   return match?.[1]?.trim() || "";
 }
 
+function extractField(input: string, label: string) {
+  const regex = new RegExp(`${label}\\s*:\\s*([^\\n]+)`, "i");
+  return input.match(regex)?.[1]?.trim() ?? "";
+}
+
 function extractEmails(input: string) {
   return [...input.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map((match) => match[0]);
+}
+
+function normalizeCalendarText(input: string) {
+  return input.replace(/\s+/g, " ").trim();
 }
 
 function parseDurationMinutes(input: string) {
@@ -39,8 +48,19 @@ function parseDurationMinutes(input: string) {
   return 30;
 }
 
+function hasExplicitTimeSignal(input: string) {
+  return /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.test(input) || /\b\d{1,2}:\d{2}\b/.test(input) || /\b(noon|midnight)\b/i.test(input);
+}
+
+function hasExplicitDateSignal(input: string) {
+  return /\b(today|tomorrow|next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i.test(input);
+}
+
 function parseRelativeDateTime(input: string, preferredIso?: string) {
-  if (preferredIso) {
+  const hasTimeSignal = hasExplicitTimeSignal(input);
+  const hasDateSignal = hasExplicitDateSignal(input);
+
+  if (preferredIso && (hasDateSignal || hasTimeSignal)) {
     const parsed = new Date(preferredIso);
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
@@ -68,8 +88,12 @@ function parseRelativeDateTime(input: string, preferredIso?: string) {
       base.setDate(base.getDate() + delta);
     }
   } else {
-    const sameDay = /\btoday\b/.test(lower) || /\bat\s+\d/.test(lower);
+    const sameDay = /\btoday\b/.test(lower) || hasTimeSignal;
     if (!sameDay) return null;
+  }
+
+  if (!hasTimeSignal) {
+    return null;
   }
 
   const timeMatch = input.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
@@ -90,8 +114,37 @@ function parseRelativeDateTime(input: string, preferredIso?: string) {
     return base;
   }
 
-  base.setHours(15, 0, 0, 0);
-  return base;
+  if (/\bnoon\b/i.test(input)) {
+    base.setHours(12, 0, 0, 0);
+    return base;
+  }
+
+  if (/\bmidnight\b/i.test(input)) {
+    base.setHours(0, 0, 0, 0);
+    return base;
+  }
+
+  return null;
+}
+
+function extractCalendarTitle(source: string, aiResult: Awaited<ReturnType<typeof smartFillFromThread>>, attendeesSummary: string) {
+  const explicitTitle = extractField(source, "title");
+  if (explicitTitle) return explicitTitle;
+
+  const namedMatch = source.match(/\b(?:called|named|titled)\s+(.+?)(?=\b(?:tomorrow|today|next|on|at|with|for\s+\d+|for\s+\d+\s*(?:m|min|mins|minute|minutes|h|hr|hrs|hour|hours)|in)\b|$)/i);
+  if (namedMatch?.[1]) return normalizeCalendarText(namedMatch[1]);
+
+  const eventForMatch = source.match(/\b(?:event|meeting|call|sync)\s+for\s+(.+?)(?=\b(?:tomorrow|today|next|on|at|with|in)\b|$)/i);
+  if (eventForMatch?.[1]) return normalizeCalendarText(eventForMatch[1]);
+
+  const aiTitle = normalizeCalendarText(aiResult.suggestedTitle || "");
+  if (aiTitle && aiTitle.toLowerCase() !== "meeting") return aiTitle;
+
+  if (attendeesSummary) {
+    return `Meeting with ${attendeesSummary}`;
+  }
+
+  return "";
 }
 
 function deriveCalendarDraft(source: string, aiResult: Awaited<ReturnType<typeof smartFillFromThread>>): CalendarDraft | null {
@@ -101,10 +154,8 @@ function deriveCalendarDraft(source: string, aiResult: Awaited<ReturnType<typeof
 
   const attendees = extractEmails(source);
   const attendeesSummary = extractAttendeeSummary(source);
-  const title =
-    aiResult.suggestedTitle?.trim() ||
-    attendeesSummary.replace(/\b(?:tomorrow|today|next|at|for|in)\b.*$/i, "").trim() ||
-    "Meeting";
+  const title = extractCalendarTitle(source, aiResult, attendeesSummary);
+  if (!title) return null;
   const start = startTime;
   const durationMinutes = aiResult.suggestedDuration && aiResult.suggestedDuration > 0 ? aiResult.suggestedDuration : requestedDuration;
   const end = addMinutes(start, durationMinutes);
@@ -123,11 +174,31 @@ function deriveCalendarDraft(source: string, aiResult: Awaited<ReturnType<typeof
 
 function looksLikeSchedulingRequest(source: string) {
   const lower = source.toLowerCase();
-  const createVerb = /\b(schedule|book|set up|set-up|plan|arrange|create)\b/.test(lower);
-  const timeSignal = /\b(tomorrow|today|next|at|on|\d{1,2})(?::\d{2})?\b/.test(lower);
-  const meetingSignal = /\b(call|meeting|event|meet)\b/.test(lower);
+  const createVerb = /\b(schedule|book|set up|set-up|plan|arrange|create|add|invite)\b/.test(lower);
+  const timeSignal = hasExplicitDateSignal(source) || hasExplicitTimeSignal(source);
+  const meetingSignal = /\b(call|meeting|event|meet|calendar|invite)\b/.test(lower);
   const prepSignal = /\b(prep|prepare|brief)\b/.test(lower);
-  return !prepSignal && (createVerb || (meetingSignal && timeSignal));
+  return !prepSignal && ((createVerb && meetingSignal) || (meetingSignal && timeSignal));
+}
+
+function buildCalendarClarification(source: string, aiResult: Awaited<ReturnType<typeof smartFillFromThread>>) {
+  const attendeesSummary = extractAttendeeSummary(source);
+  const title = extractCalendarTitle(source, aiResult, attendeesSummary);
+  const hasTime = Boolean(parseRelativeDateTime(source, aiResult.suggestedTime || undefined));
+
+  if (!title && !hasTime) {
+    return "What title and time should I use for the event?";
+  }
+
+  if (!title) {
+    return "What should I call the event?";
+  }
+
+  if (!hasTime) {
+    return `What time should I use for ${title}?`;
+  }
+
+  return "Share one clearer event detail so I can prepare the calendar draft.";
 }
 
 export async function runCalendarAgent(
@@ -140,14 +211,7 @@ export async function runCalendarAgent(
     return {
       intent: "calendar",
       indicator: "Drafting calendar event...",
-      text: [
-        "Draft ready.",
-        `Title: ${result.suggestedTitle || "Meeting"}`,
-        `Suggested time: ${result.suggestedTime || "Needs confirmation"}`,
-        `Duration: ${result.suggestedDuration || 30} min`,
-        `Description: ${result.suggestedDescription || "No summary available."}`,
-        `Confidence: ${Math.round(result.confidence * 100)}%`,
-      ].join("\n"),
+      text: buildCalendarClarification(source, result),
     };
   }
 
@@ -157,22 +221,14 @@ export async function runCalendarAgent(
     return {
       intent: "calendar",
       indicator: "Drafting calendar event...",
-      text: [
-        "Draft ready.",
-        `Title: ${result.suggestedTitle || "Meeting"}`,
-        `Suggested time: ${result.suggestedTime || "Needs confirmation"}`,
-        `Duration: ${result.suggestedDuration || 30} min`,
-        `Description: ${result.suggestedDescription || "No summary available."}`,
-        `Confidence: ${Math.round(result.confidence * 100)}%`,
-        "I need a clearer time reference before I can prepare an approval card.",
-      ].join("\n"),
+      text: buildCalendarClarification(source, result),
     };
   }
 
   await hitlInterceptor({
     actionType: "create_event",
     payload: draft,
-    humanReadable: `Create "${draft.title}" on ${format(parseISO(draft.startTime), "EEE, MMM d 'at' h:mm a")}`,
+    humanReadable: `Create calendar event: ${draft.title}`,
   });
 
   return {
@@ -180,7 +236,7 @@ export async function runCalendarAgent(
     indicator: "Drafting calendar event...",
     text: [
       "Ready for approval.",
-      `Create event: ${draft.title}`,
+      `Create calendar event: ${draft.title}`,
       `When: ${format(parseISO(draft.startTime), "EEE, MMM d 'at' h:mm a")}`,
       `Duration: ${draft.durationMinutes} min`,
       `Meet: ${draft.addMeetLink ? "enabled" : "disabled"}`,

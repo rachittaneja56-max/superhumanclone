@@ -51,6 +51,21 @@ function parseSendEmailPayload(payload: Record<string, unknown>) {
   return parsed.data;
 }
 
+function parseCreateEventPayload(payload: Record<string, unknown>) {
+  const parsed = createEventProposalSchema.safeParse(payload);
+  if (!parsed.success || !parsed.data.title.trim()) {
+    throw new Error("invalid_create_event_payload");
+  }
+
+  const start = new Date(parsed.data.startTime);
+  const end = new Date(parsed.data.endTime);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+    throw new Error("invalid_create_event_payload");
+  }
+
+  return parsed.data;
+}
+
 async function publishHitlCard(userId: string, safeCard: SafeHitlAction) {
   if (!process.env.ABLY_API_KEY) {
     return;
@@ -82,6 +97,8 @@ export async function createHitlProposal(
   const expiresAt = new Date(Date.now() + PRIVATE_HITL_TTL_SECONDS * 1000);
   if (action.actionType === "send_email") {
     parseSendEmailPayload(action.payload ?? {});
+  } else if (action.actionType === "create_event") {
+    parseCreateEventPayload(action.payload ?? {});
   }
 
   const safePayload = mapHitlPayloadForClient(action.actionType, action.payload ?? {});
@@ -181,7 +198,7 @@ export async function executeApprovedHitlAction(
 
     await invalidateMailCache(redis, userId).catch(() => null);
   } else if (row.action_type === "create_event") {
-    const payload = createEventProposalSchema.parse(privatePayload);
+    const payload = parseCreateEventPayload(privatePayload);
     const result = await createCalendarEvent(userId, payload);
     if (result.needsConnect) {
       throw new Error("calendar_not_connected");

@@ -23,6 +23,9 @@ function isPendingEmailClarification(history?: AgentContext["history"]) {
 export function detectIntent(message: string, threadContext?: string, history?: AgentContext["history"]): AgentIntent {
   const lower = message.toLowerCase().trim();
   const hasThreadContext = !!threadContext?.trim();
+  const hasCalendarVerb = /\b(schedule|book|set up|set-up|plan|arrange|create|add|invite)\b/.test(lower);
+  const hasCalendarObject = /\b(meeting|calendar|event|meet|invite)\b/.test(lower);
+  const hasCalendarTiming = /\b(today|tomorrow|next|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at\s+\d|\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon|midnight)\b/.test(lower);
 
   if (lower.startsWith("/")) return "compose";
   if (/\b(find|search|look for|show me)\b/.test(lower) && /\b(email|emails|mail|inbox|thread|threads)\b/.test(lower)) {
@@ -37,7 +40,7 @@ export function detectIntent(message: string, threadContext?: string, history?: 
   if (/\b(triage|classify|priority|urgent)\b/.test(lower) && !!threadContext) return "triage";
   if (/\b(tl;dr|tldr|summari[sz]e|digest)\b/.test(lower) && !!threadContext) return "summarizer";
   if (/\b(reply|respond|draft a reply|write back)\b/.test(lower) && !!threadContext) return "reply";
-  if (/\b(schedule|book|set up|set-up|plan|arrange|create)\b/.test(lower) && /\b(meeting|calendar|event|meet)\b/.test(lower)) {
+  if ((hasCalendarVerb && hasCalendarObject) || (hasCalendarObject && hasCalendarTiming)) {
     return "calendar";
   }
   if (

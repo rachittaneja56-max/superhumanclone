@@ -22,6 +22,9 @@ const SUGGESTED_PROMPTS = [
 function predictToolIndicator(input: string, threadContext?: string | null) {
   const lower = input.toLowerCase().trim();
   const hasThreadContext = Boolean(threadContext?.trim());
+  const hasCalendarVerb = /\b(schedule|book|set up|set-up|plan|arrange|create|add|invite)\b/.test(lower);
+  const hasCalendarObject = /\b(meeting|calendar|event|meet|invite)\b/.test(lower);
+  const hasCalendarTiming = /\b(today|tomorrow|next|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at\s+\d|\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon|midnight)\b/.test(lower);
 
   if (lower.startsWith("/")) return "Rewriting draft...";
   if (/\b(find|search|look for|show me)\b/.test(lower) && /\b(email|emails|mail|inbox|thread|threads)\b/.test(lower)) {
@@ -36,7 +39,7 @@ function predictToolIndicator(input: string, threadContext?: string | null) {
   if (/\b(triage|classify|priority|urgent)\b/.test(lower) && hasThreadContext) return "Searching your inbox...";
   if (/\b(tl;dr|tldr|summari[sz]e|digest)\b/.test(lower) && hasThreadContext) return "Summarizing thread...";
   if (/\b(reply|respond|draft a reply|write back)\b/.test(lower) && hasThreadContext) return "Preparing reply...";
-  if (/\b(schedule|book|set up|set-up|plan|arrange|create)\b/.test(lower) && /\b(meeting|calendar|event|meet)\b/.test(lower)) {
+  if ((hasCalendarVerb && hasCalendarObject) || (hasCalendarObject && hasCalendarTiming)) {
     return "Drafting calendar event...";
   }
   if (/\bsend\b/.test(lower) && (/\b(email|mail|message|thread|this|that)\b/.test(lower) || hasThreadContext)) {
