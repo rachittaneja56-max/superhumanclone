@@ -1,7 +1,6 @@
 import { OAuth2RequestError } from "oslo/oauth2";
 import { assertGoogleOAuthConfig, createGoogleOAuthClient } from "@/lib/oauth";
 import { isFixedSuperadminEmail, normalizeEmail, resolveUserRole } from "@/server/admin/access-utils";
-import { sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -120,22 +119,43 @@ export async function GET(request: Request) {
       import("@/server/auth/helpers"),
       import("@/lib/auth"),
     ]);
+    const [{ users }, { getUsersColumnPresence }] = await Promise.all([
+      import("@/server/db/schema"),
+      import("@/server/db/users-compat"),
+    ]);
 
     let userId: string;
     try {
       const email = normalizeEmail(googleUser.email);
+      const columns = await getUsersColumnPresence();
       const role = resolveUserRole({ email, role: isFixedSuperadminEmail(email) ? "superadmin" : "user" });
-      const upserted = await db.execute(sql<{ id: string }>`
-        insert into "users" ("id", "name", "email", "image", "role")
-        values (${crypto.randomUUID()}, ${googleUser.name}, ${email}, ${googleUser.picture}, ${role})
-        on conflict ("email") do update set
-          "name" = excluded."name",
-          "image" = excluded."image",
-          "role" = excluded."role"
-        returning "id"
-      `);
+      const isAdmin = role !== "user";
+      type UserInsert = typeof users.$inferInsert;
+      const userValues: UserInsert = {
+        id: crypto.randomUUID(),
+        name: googleUser.name,
+        email,
+        image: googleUser.picture,
+        ...(columns.hasRole ? { role } : {}),
+        ...(columns.hasIsAdmin ? { isAdmin } : {}),
+      };
+      const updateValues: Partial<UserInsert> = {
+        name: googleUser.name,
+        image: googleUser.picture,
+        ...(columns.hasRole ? { role } : {}),
+        ...(columns.hasIsAdmin ? { isAdmin } : {}),
+      };
 
-      userId = String((upserted.rows[0] as { id?: string } | undefined)?.id ?? "");
+      const upserted = await db
+        .insert(users)
+        .values(userValues)
+        .onConflictDoUpdate({
+          target: users.email,
+          set: updateValues,
+        })
+        .returning({ id: users.id });
+
+      userId = String(upserted[0]?.id ?? "");
       if (!userId) {
         throw new Error("oauth_user_upsert_failed");
       }
