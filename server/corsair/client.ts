@@ -111,7 +111,27 @@ export async function isUserConnected(
       .innerJoin(corsairIntegrations, eq(corsairAccounts.integrationId, corsairIntegrations.id))
       .where(and(eq(corsairAccounts.tenantId, userId), eq(corsairIntegrations.name, plugin)))
       .limit(1)
-    return !!account
+
+    if (!account.length) {
+      return false
+    }
+
+    const tenant = await getTenant(userId)
+    try {
+      if (plugin === 'gmail') {
+        await tenant.gmail.db.threads.list({ limit: 1, offset: 0 })
+      } else {
+        await tenant.googlecalendar.db.events.list({ limit: 1, offset: 0 })
+      }
+      return true
+    } catch (err: any) {
+      if (isAuthError(err)) {
+        return false
+      }
+
+      console.warn(`[isUserConnected] Live probe failed for ${plugin}, falling back to stored state:`, err)
+      return true
+    }
   } catch (err: any) {
     console.error(`[isUserConnected] Error checking connection for ${plugin}:`, err)
     return false
@@ -584,3 +604,4 @@ export async function disconnectIntegration(userId: string, integrationId: strin
     return { success: false, reason: 'disconnect_failed' as const }
   }
 }
+
