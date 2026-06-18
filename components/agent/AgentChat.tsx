@@ -40,7 +40,7 @@ function predictToolIndicator(input: string, threadContext?: string | null) {
     return "Drafting calendar event...";
   }
   if (/\bsend\b/.test(lower) && (/\b(email|mail|message|thread|this|that)\b/.test(lower) || hasThreadContext)) {
-    return "Preparing approval card...";
+    return "Drafting email...";
   }
   return "Working...";
 }

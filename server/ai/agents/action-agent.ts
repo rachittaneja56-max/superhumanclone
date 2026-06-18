@@ -1,7 +1,6 @@
 import "server-only";
 
 import { z } from "zod";
-
 import { sanitiseAgentOutput } from "./sanitization";
 import type { AgentContext, AgentResult } from "./types";
 
@@ -127,6 +126,85 @@ function extractField(input: string, label: string) {
   return input.match(regex)?.[1]?.trim() ?? "";
 }
 
+function extractDurationMinutes(input: string) {
+  const hoursMatch = input.match(/\b(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/i);
+  if (hoursMatch) {
+    return Math.max(15, Math.round(Number.parseFloat(hoursMatch[1]) * 60));
+  }
+
+  const minutesMatch = input.match(/\b(\d+)\s*(?:m|min|mins|minute|minutes)\b/i);
+  if (minutesMatch) {
+    return Math.max(15, Number.parseInt(minutesMatch[1], 10));
+  }
+
+  return null;
+}
+
+function extractTimeLabel(input: string) {
+  const timeMatch = input.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (!timeMatch) return null;
+
+  let hour = Number.parseInt(timeMatch[1], 10);
+  const minute = Number.parseInt(timeMatch[2] || "0", 10);
+  const meridiem = timeMatch[3]?.toLowerCase();
+
+  if (meridiem === "am") {
+    hour = hour === 12 ? 0 : hour;
+  } else if (meridiem === "pm") {
+    hour = hour === 12 ? 12 : hour + 12;
+  } else if (hour < 12) {
+    hour += 12;
+  }
+
+  const displayHour = ((hour + 11) % 12) + 1;
+  const displayMinute = String(minute).padStart(2, "0");
+  const displayMeridiem = hour >= 12 ? "PM" : "AM";
+  return `${displayHour}:${displayMinute} ${displayMeridiem}`;
+}
+
+function buildSendEmailDraft(request: string, to: string[], explicitSubject: string, explicitBody: string) {
+  const lower = request.toLowerCase();
+  const hasMeetingSignal = /\b(meet|meeting|call|sync|catch[- ]?up)\b/.test(lower);
+  const hasFollowUpSignal = /\b(follow up|following up|confirm|regarding|about|update|touch base)\b/.test(lower);
+  const timeLabel = extractTimeLabel(request);
+  const durationMinutes = extractDurationMinutes(request);
+  const durationLabel = durationMinutes ? ` for ${durationMinutes} minutes` : "";
+
+  if (!explicitSubject && !explicitBody && !hasMeetingSignal && !hasFollowUpSignal) {
+    return {
+      clarification: "What should I say in the email?",
+    } as const;
+  }
+
+  const subject =
+    explicitSubject ||
+    (hasMeetingSignal && timeLabel
+      ? `Confirming our meeting at ${timeLabel}`
+      : hasFollowUpSignal
+        ? "Following up on our conversation"
+        : "Following up");
+
+  const body =
+    explicitBody ||
+    (hasMeetingSignal && timeLabel
+      ? `Hi, just confirming our meeting at ${timeLabel}${durationLabel}. Let me know if anything changes.`
+      : hasFollowUpSignal
+        ? "Hi, just following up on this. Let me know if anything changes."
+        : "Hi, just reaching out to follow up. Let me know if anything changes.");
+
+  return {
+    proposal: {
+      to,
+      subject: sanitiseAgentOutput(subject, 240),
+      body: sanitiseAgentOutput(body, 4000),
+    },
+    summary: {
+      subject: sanitiseAgentOutput(subject, 160),
+      body: sanitiseAgentOutput(body, 220),
+    },
+  } as const;
+}
+
 export async function runActionAgent(
   context: AgentContext,
   hitlInterceptor: (action: { actionType: string; payload: Record<string, unknown>; humanReadable: string }) => Promise<{ actionId: string } | unknown>,
@@ -144,31 +222,49 @@ export async function runActionAgent(
 
   if (/\b(send|email)\b/.test(lower)) {
     const to = extractEmails(request);
-    const subject = extractField(request, "subject");
-    const body = extractField(request, "body");
-
-    const parsed = sendEmailProposalSchema.safeParse({ to, subject, body });
-    if (!parsed.success) {
+    if (to.length === 0) {
       return {
         intent: "action",
-        indicator: "Preparing approval card...",
-        text: "Share explicit email details like `to: person@example.com`, `subject: ...`, and `body: ...` so I can prepare approval safely.",
+        indicator: "Drafting email...",
+        text: "Who should I send it to?",
+      };
+    }
+
+    const subject = extractField(request, "subject") || extractField(request, "subject line");
+    const body = extractField(request, "body") || extractField(request, "message");
+    const draft = buildSendEmailDraft(request, to, subject, body);
+
+    if ("clarification" in draft && draft.clarification) {
+      return {
+        intent: "action",
+        indicator: "Drafting email...",
+        text: draft.clarification,
+      };
+    }
+
+    const parsed = sendEmailProposalSchema.safeParse(draft.proposal);
+    if (!parsed.success || !parsed.data.subject.trim() || !parsed.data.body.trim()) {
+      return {
+        intent: "action",
+        indicator: "Drafting email...",
+        text: "What should I say in the email?",
       };
     }
 
     await hitlInterceptor({
       actionType: "send_email",
       payload: parsed.data,
-      humanReadable: `Send to ${parsed.data.to.join(", ")}: "${sanitiseAgentOutput(parsed.data.subject || "(no subject)", 120)}"`,
+      humanReadable: "Draft ready for approval.",
     });
 
     return {
       intent: "action",
-      indicator: "Preparing approval card...",
+      indicator: "Drafting email...",
       text: [
-        "Ready for approval.",
-        `Send email to: ${parsed.data.to.join(", ")}`,
-        `Subject: ${sanitiseAgentOutput(parsed.data.subject || "(no subject)", 120)}`,
+        "Draft ready.",
+        `To: ${parsed.data.to.join(", ")}`,
+        `Subject: ${draft.summary.subject}`,
+        `Body: ${draft.summary.body}`,
       ].join("\n"),
     };
   }
@@ -216,9 +312,9 @@ export async function runActionAgent(
     };
   }
 
-  return {
-    intent: "action",
-    indicator: "Preparing approval card...",
-    text: "I can only prepare approval cards for explicit send-email or create-event requests with the exact details.",
-  };
-}
+    return {
+      intent: "action",
+      indicator: "Drafting email...",
+      text: "I can only prepare approval cards for explicit send-email or create-event requests with the exact details.",
+    };
+  }
