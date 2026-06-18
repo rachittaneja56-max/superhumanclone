@@ -15,6 +15,7 @@ import {
   markEmailUnread,
   getMessages as corsairGetMessages,
 } from '@/server/corsair/client';
+import { mapGmailMessageToEmailRow } from '@/server/corsair/email-mapper';
 import { generateAutoReplies, generateDigest, generateTLDR, rewriteDraft } from '@/server/ai/provider';
 import { Client } from '@upstash/qstash';
 import { mapEmailForListClient, mapEmailForThreadClient, redactSensitiveForClient } from '@/lib/email-client';
@@ -150,8 +151,12 @@ async function seedMailboxFromCorsair(
   const pageSize = Math.max(10, seedParams.limit);
   const maxPages = Math.max(1, seedParams.maxPages ?? 20);
   let pageToken: string | undefined;
+  const consentRules = await ctx.db.query.aiConsentRules.findMany({
+    where: eq(aiConsentRules.userId, ctx.userId!),
+    columns: { pattern: true, isBlocked: true },
+  });
 
-  for (let page = 0; page < maxPages; page += 1) {
+  for (let _page = 0; _page < maxPages; _page += 1) {
     const corsairResult = await corsairGetMessages(ctx.userId!, {
       limit: pageSize,
       ...(pageToken ? { pageToken } : {}),
@@ -162,41 +167,13 @@ async function seedMailboxFromCorsair(
     }
 
     for (const msg of corsairResult.data) {
-      const msgId = msg.id;
-      if (!msgId) continue;
-
-      const headers = msg.payload?.headers || [];
-      const fromVal = getHeader(headers, 'From');
-      const toVal = getHeader(headers, 'To');
-      const subjectVal = getHeader(headers, 'Subject') || '(no subject)';
-      const { text: bodyText, html: bodyHtml } = parseEmailBody(msg.payload);
-
-      let fromName: string | null = null;
-      let fromAddress = '';
-      const match = fromVal.match(/^(.*?)\s*<([^>]+)>/);
-      if (match) {
-        fromName = match[1].replace(/['"]/g, '').trim();
-        fromAddress = match[2].trim();
-      } else {
-        fromAddress = fromVal.trim();
-      }
+      if (!msg.id) continue;
+      const row = mapGmailMessageToEmailRow(ctx.userId!, msg);
+      const aiTriageSkipped = row.from_address ? isDomainBlocked(row.from_address, consentRules) : false;
 
       await ctx.db.insert(emails).values({
-        userId: ctx.userId!,
-        corsair_message_id: msgId,
-        thread_id: msg.threadId || msgId,
-        from_address: fromAddress,
-        from_name: fromName,
-        to_address: toVal,
-        subject: subjectVal,
-        snippet: msg.snippet ?? null,
-        body_text: bodyText || null,
-        body_html: bodyHtml || null,
-        is_read: !msg.labelIds?.includes('UNREAD'),
-        is_archived: false,
-        is_deleted: false,
-        ai_triage_skipped: true,
-        created_at: msg.internalDate ? new Date(Number(msg.internalDate)) : new Date(),
+        ...row,
+        ai_triage_skipped: aiTriageSkipped,
       }).onConflictDoNothing();
     }
 
@@ -331,7 +308,7 @@ export const emailRouter = router({
           columns: { email: true, name: true },
         });
         const pattern = normalizeSearchPattern(input.query);
-        const rows = await ctx.db.query.emails.findMany({
+        let rows = await ctx.db.query.emails.findMany({
           where: and(
             eq(emails.userId, ctx.userId!),
             eq(emails.is_deleted, false),
@@ -365,6 +342,41 @@ export const emailRouter = router({
           limit: input.limit + 1,
           offset: cursor ? 0 : input.offset,
         });
+        if (!cursor && input.offset === 0 && !input.query.trim() && rows.length === 0) {
+          try {
+            await seedMailboxFromCorsair(ctx, { limit: Math.max(input.limit, 50), maxPages: 20 });
+            rows = await ctx.db.query.emails.findMany({
+              where: and(
+                eq(emails.userId, ctx.userId!),
+                eq(emails.is_deleted, false),
+                me?.email ? sql`${emails.from_address} = ${me.email} and ${emails.to_address} <> ''` : sql`false`,
+                pattern
+                  ? or(
+                      ilike(emails.subject, pattern),
+                      ilike(emails.to_address, pattern),
+                      ilike(emails.snippet, pattern)
+                    )
+                  : sql`true`
+              ),
+              columns: {
+                id: true,
+                thread_id: true,
+                from_name: true,
+                from_address: true,
+                to_address: true,
+                subject: true,
+                snippet: true,
+                is_read: true,
+                created_at: true,
+              },
+              orderBy: [desc(emails.created_at)],
+              limit: input.limit + 1,
+              offset: cursor ? 0 : input.offset,
+            });
+          } catch (err) {
+            console.warn('[getMailboxThreads] Sent fallback failed:', err);
+          }
+        }
         const mapped = rows
           .filter((r) => isOutboundSentMessage(r, me?.email))
           .map((r) =>
@@ -383,7 +395,7 @@ export const emailRouter = router({
       }
 
       const isSpam = input.folder === 'spam';
-      const rows = await ctx.db.query.emails.findMany({
+      let rows = await ctx.db.query.emails.findMany({
         where: and(
           eq(emails.userId, ctx.userId!),
           input.folder === 'trash' ? eq(emails.is_deleted, true) : eq(emails.is_deleted, false),
@@ -428,6 +440,53 @@ export const emailRouter = router({
         limit: input.limit + 1,
         offset: cursor ? 0 : input.offset,
       });
+
+      if (!cursor && input.offset === 0 && !input.query.trim() && rows.length === 0) {
+        try {
+          await seedMailboxFromCorsair(ctx, { limit: Math.max(input.limit, 50), maxPages: 20 });
+          rows = await ctx.db.query.emails.findMany({
+            where: and(
+              eq(emails.userId, ctx.userId!),
+              input.folder === 'trash' ? eq(emails.is_deleted, true) : eq(emails.is_deleted, false),
+              input.folder === 'inbox' ? eq(emails.is_archived, false) : sql`true`,
+              isSpam
+                ? or(
+                    eq(emails.tag, 'newsletter'),
+                    eq(emails.tag, 'social')
+                  )
+                : sql`true`,
+              input.query.trim()
+                ? or(
+                    ilike(emails.subject, normalizeSearchPattern(input.query)),
+                    ilike(emails.from_address, normalizeSearchPattern(input.query)),
+                    ilike(emails.snippet, normalizeSearchPattern(input.query))
+                  )
+                : sql`true`
+            ),
+            columns: {
+              id: true,
+              thread_id: true,
+              from_name: true,
+              from_address: true,
+              subject: true,
+              snippet: true,
+              is_read: true,
+              tldr: true,
+              ai_triage_skipped: true,
+              tag: true,
+              priority: true,
+              created_at: true,
+              is_archived: true,
+              is_deleted: true,
+            },
+            orderBy: [desc(emails.created_at)],
+            limit: input.limit + 1,
+            offset: cursor ? 0 : input.offset,
+          });
+        } catch (err) {
+          console.warn('[getMailboxThreads] Mailbox fallback failed:', err);
+        }
+      }
 
       const mapped = rows.map((r) => mapEmailForListClient({ ...r, mailbox: input.folder }));
       const items = mapped.slice(0, input.limit);
@@ -606,41 +665,18 @@ export const emailRouter = router({
         }
 
         const messages = Array.isArray(result.data?.messages) ? result.data.messages : []
+        const consentRules = await ctx.db.query.aiConsentRules.findMany({
+          where: eq(aiConsentRules.userId, ctx.userId!),
+          columns: { pattern: true, isBlocked: true },
+        });
         for (const msg of messages) {
           if (!msg?.id) continue;
-
-          const headers = msg.payload?.headers || [];
-          const fromVal = getHeader(headers, 'From');
-          const toVal = getHeader(headers, 'To');
-          const subjectVal = getHeader(headers, 'Subject') || '(no subject)';
-          const { text: bodyText, html: bodyHtml } = parseEmailBody(msg.payload);
-
-          let fromName: string | null = null;
-          let fromAddress = '';
-          const match = fromVal.match(/^(.*?)\s*<([^>]+)>/);
-          if (match) {
-            fromName = match[1].replace(/['"]/g, '').trim();
-            fromAddress = match[2].trim();
-          } else {
-            fromAddress = fromVal.trim();
-          }
+          const row = mapGmailMessageToEmailRow(ctx.userId!, msg);
 
           await ctx.db.insert(emails).values({
-            userId: ctx.userId!,
-            corsair_message_id: msg.id,
+            ...row,
             thread_id: msg.threadId || input.threadId,
-            from_address: fromAddress || 'unknown@unknown.com',
-            from_name: fromName,
-            to_address: toVal || '',
-            subject: subjectVal,
-            snippet: msg.snippet ?? null,
-            body_text: bodyText || null,
-            body_html: bodyHtml || null,
-            is_read: !msg.labelIds?.includes('UNREAD'),
-            is_archived: false,
-            is_deleted: false,
-            ai_triage_skipped: true,
-            created_at: msg.internalDate ? new Date(Number(msg.internalDate)) : new Date(),
+            ai_triage_skipped: row.from_address ? isDomainBlocked(row.from_address, consentRules) : false,
           }).onConflictDoNothing();
         }
 

@@ -29,6 +29,10 @@ export async function continueToDashboard() {
     calendarConnected: true,
   })
 
+  await invalidateSettingsCache(redis, userId).catch(() => null)
+  revalidatePath('/onboarding/connect')
+  revalidatePath('/dashboard')
+
   redirect('/dashboard')
 }
 

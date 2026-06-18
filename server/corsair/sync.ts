@@ -1,9 +1,10 @@
 import 'server-only'
 import { db } from '@/server/db'
-import { emails } from '@/server/db/schema'
+import { aiConsentRules, emails } from '@/server/db/schema'
 import { eq, count } from 'drizzle-orm'
 import { getMessages } from '@/server/corsair/client'
 import { mapGmailMessageToEmailRow } from '@/server/corsair/email-mapper'
+import { isDomainBlocked } from '@/lib/domain-matcher'
 
 export async function syncInboxIfEmpty(userId: string): Promise<void> {
   try {
@@ -22,13 +23,19 @@ export async function syncInboxIfEmpty(userId: string): Promise<void> {
       return
     }
 
+    const consentRules = await db.query.aiConsentRules.findMany({
+      where: eq(aiConsentRules.userId, userId),
+      columns: { pattern: true, isBlocked: true },
+    })
+
     for (const msg of corsairResult.data) {
       if (!msg?.id) continue
       const row = mapGmailMessageToEmailRow(userId, msg)
+      const aiTriageSkipped = row.from_address ? isDomainBlocked(row.from_address, consentRules) : false
 
       await db.insert(emails).values({
         ...row,
-        ai_triage_skipped: true,
+        ai_triage_skipped: aiTriageSkipped,
       }).onConflictDoNothing()
     }
 

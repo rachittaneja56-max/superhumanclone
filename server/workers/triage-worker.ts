@@ -53,6 +53,9 @@ export async function processTriageJob(payload: unknown) {
 
   if (isBlocked) {
     console.log({ event: 'triage_skipped_privacy_gate', emailId, userId: userId.slice(0, 8) });
+    await workerDb.update(emails)
+      .set({ ai_triage_skipped: true })
+      .where(and(eq(emails.id, emailId), eq(emails.userId, userId)));
     return { status: 'skipped', reason: 'privacy_gate' };
   }
 

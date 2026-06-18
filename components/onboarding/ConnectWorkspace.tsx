@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Calendar, Loader2, Mail, RefreshCw, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
@@ -32,6 +32,14 @@ export function ConnectWorkspace({
     calendarConnected: initialCalendarConnected,
   });
   const [pending, setPending] = useState<"gmail" | "calendar" | null>(null);
+
+  useEffect(() => {
+    setState({
+      gmailConnected: initialGmailConnected,
+      calendarConnected: initialCalendarConnected,
+    });
+    setPending(null);
+  }, [initialCalendarConnected, initialGmailConnected]);
 
   const allConnected = state.gmailConnected && state.calendarConnected;
   const canContinue = allConnected;
@@ -169,7 +177,7 @@ function ContinueButton({ disabled }: { disabled: boolean }) {
       style={{ backgroundColor: "var(--accent)" }}
     >
       {formPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-      {formPending ? "Continuing…" : "Continue to Dashboard"}
+      {formPending ? "Continuing..." : "Continue to Dashboard"}
     </button>
   );
 }

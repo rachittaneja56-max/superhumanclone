@@ -74,6 +74,7 @@ export function MailWorkspace({
   const [nextPageToken, setNextPageToken] = useState<string | null>(initialMailboxPage.nextPageToken);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const autoPrefetchedFolderRef = useRef<Folder | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const pushFocusLayer = useUIStore((state) => state.pushFocusLayer);
@@ -170,6 +171,10 @@ export function MailWorkspace({
     setThreads(incoming.items);
     setNextPageToken(incoming.nextPageToken);
   }, [currentMailboxPage, folder, initialMailboxPage]);
+
+  useEffect(() => {
+    autoPrefetchedFolderRef.current = null;
+  }, [folder]);
 
   useEffect(() => {
     if (isSearchMode) return;
@@ -375,6 +380,16 @@ export function MailWorkspace({
       setIsFetchingMore(false);
     }
   }, [folder, isFetchingMore, isSearchMode, mailboxQuery.isLoading, nextPageToken, threads.length, utils.email.getMailboxThreads]);
+
+  useEffect(() => {
+    if (folder !== "inbox") return;
+    if (isSearchMode || mailboxQuery.isLoading || isFetchingMore) return;
+    if (!nextPageToken || threads.length < PAGE_SIZE) return;
+    if (autoPrefetchedFolderRef.current === folder) return;
+
+    autoPrefetchedFolderRef.current = folder;
+    void fetchMore();
+  }, [fetchMore, folder, isFetchingMore, isSearchMode, mailboxQuery.isLoading, nextPageToken, threads.length]);
 
   const handleSend = async (payload: {
     to: string[];
