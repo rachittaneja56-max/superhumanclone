@@ -8,19 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Loader2, ArrowUp, Bot, X, BrainCircuit, Mic, MicOff, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useSpeechToText } from "@/hooks/useSpeechToText";
 
 type Message = { role: "user" | "assistant"; content: string };
-type SpeechRecognitionLike = {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  abort?: () => void;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: any) => void) | null;
-  onerror: ((event?: any) => void) | null;
-  onend: (() => void) | null;
-};
 
 const SUGGESTED_PROMPTS = [
   "What needs my attention today?",
@@ -70,12 +60,12 @@ export function AgentChat({
   const [memoryEnabled, setMemoryEnabled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [hasStarted, setHasStarted] = useState(false);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const [voiceSupported, setVoiceSupported] = useState(false);
-  const [voiceListening, setVoiceListening] = useState(false);
-  const [voicePreview, setVoicePreview] = useState("");
-  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [currentIndicator, setCurrentIndicator] = useState<string | null>(null);
+  const voice = useSpeechToText({
+    onFinalText: (chunk) => {
+      setInputValue((current) => (current.trim() ? `${current.trim()} ${chunk}` : chunk));
+    },
+  });
   
   const { activeHITLAction, setActiveHITLAction } = useUIStore();
   const clearSessionHistory = trpc.agent.clearSessionHistory.useMutation({
@@ -105,80 +95,6 @@ export function AgentChat({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, activeHITLAction]);
-
-  useEffect(() => {
-    const SpeechRecognitionCtor =
-      typeof window !== "undefined"
-        ? ((window as typeof window & {
-            SpeechRecognition?: new () => SpeechRecognitionLike;
-            webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-          }).SpeechRecognition ??
-            (window as typeof window & {
-              SpeechRecognition?: new () => SpeechRecognitionLike;
-              webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-            }).webkitSpeechRecognition ??
-            null)
-        : null;
-
-    if (!SpeechRecognitionCtor) {
-      setVoiceSupported(false);
-      return;
-    }
-
-    setVoiceSupported(true);
-    const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event: any) => {
-      let finalText = "";
-      let interimText = "";
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const transcript = result[0]?.transcript?.trim() ?? "";
-        if (!transcript) continue;
-        if (result.isFinal) {
-          finalText += `${transcript} `;
-        } else {
-          interimText += `${transcript} `;
-        }
-      }
-
-      if (finalText.trim()) {
-        const chunk = finalText.trim();
-        setInputValue((current) => (current.trim() ? `${current.trim()} ${chunk}` : chunk));
-        setVoicePreview("");
-        setVoiceError(null);
-      } else if (interimText.trim()) {
-        setVoicePreview(interimText.trim());
-      }
-    };
-
-    recognition.onerror = (event?: any) => {
-      setVoiceListening(false);
-      setVoicePreview("");
-      const errorName = typeof event?.error === "string" ? event.error : "";
-      setVoiceError(
-        errorName === "not-allowed" || errorName === "service-not-allowed"
-          ? "Microphone access is blocked. Allow microphone permission to use voice input."
-          : "Voice input is unavailable right now.",
-      );
-    };
-
-    recognition.onend = () => {
-      setVoiceListening(false);
-      setVoicePreview("");
-    };
-
-    recognitionRef.current = recognition;
-    return () => {
-      recognition.abort?.();
-      recognition.stop();
-      recognitionRef.current = null;
-    };
-  }, []);
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isStreaming || activeHITLAction) return;
@@ -239,31 +155,6 @@ export function AgentChat({
       setIsStreaming(false);
       setCurrentIndicator(null);
     }
-  };
-
-  const startVoiceInput = () => {
-    if (!voiceSupported || !recognitionRef.current) {
-      setVoiceError("Voice input is not supported in this browser.");
-      return;
-    }
-
-    if (voiceListening) return;
-
-    setVoiceError(null);
-    setVoicePreview("");
-    try {
-      recognitionRef.current.start();
-      setVoiceListening(true);
-    } catch {
-      setVoiceError("Could not start voice input. Check microphone permissions.");
-      setVoiceListening(false);
-    }
-  };
-
-  const stopVoiceInput = () => {
-    if (!voiceListening || !recognitionRef.current) return;
-    recognitionRef.current.stop();
-    setVoiceListening(false);
   };
 
   return (
@@ -340,17 +231,21 @@ export function AgentChat({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5 sm:py-5">
-        {(voiceListening || voicePreview || voiceError) && (
+        {(voice.listening || voice.preview || voice.error || voice.permissionState === "requesting" || voice.permissionState === "unsupported") && (
           <div className="mb-3 rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground-muted" aria-live="polite">
-            {voiceError ? (
-              voiceError
-            ) : voiceListening ? (
+            {voice.error ? (
+              voice.error
+            ) : voice.permissionState === "unsupported" ? (
+              "Voice input is not supported in this browser."
+            ) : voice.permissionState === "requesting" ? (
+              "Requesting microphone access..."
+            ) : voice.listening ? (
               <>
                 Listening...
-                {voicePreview ? <span className="ml-2 text-foreground">{voicePreview}</span> : null}
+                {voice.preview ? <span className="ml-2 text-foreground">{voice.preview}</span> : null}
               </>
             ) : (
-              voicePreview
+              voice.preview
             )}
           </div>
         )}
@@ -435,18 +330,18 @@ export function AgentChat({
                 type="button"
               onPointerDown={(event) => {
                 event.preventDefault();
-                startVoiceInput();
+                void voice.startListening();
               }}
-              onPointerUp={stopVoiceInput}
-              onPointerLeave={stopVoiceInput}
-              onPointerCancel={stopVoiceInput}
-              disabled={!voiceSupported || isStreaming || !!activeHITLAction}
+              onPointerUp={voice.stopListening}
+              onPointerLeave={voice.stopListening}
+              onPointerCancel={voice.stopListening}
+              disabled={!voice.supported || isStreaming || !!activeHITLAction}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label={voiceListening ? "Stop voice input" : "Start voice input"}
-              title={voiceSupported ? (voiceListening ? "Release to stop" : "Hold to speak") : "Voice input unavailable"}
+              aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
+              title={voice.supported ? (voice.listening ? "Release to stop" : "Hold to speak") : "Voice input unavailable"}
             >
-              {voiceSupported ? (
-                voiceListening ? <Square className="h-4 w-4 fill-current" aria-hidden="true" /> : <Mic className="h-4 w-4" aria-hidden="true" />
+              {voice.supported ? (
+                voice.listening ? <Square className="h-4 w-4 fill-current" aria-hidden="true" /> : <Mic className="h-4 w-4" aria-hidden="true" />
               ) : (
                 <MicOff className="h-4 w-4" aria-hidden="true" />
               )}

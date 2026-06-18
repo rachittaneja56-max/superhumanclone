@@ -6,11 +6,12 @@ import { and, eq } from "drizzle-orm";
 import { invalidateCalendarCache, invalidateMailCache } from "@/server/cache";
 import { createCalendarEvent, sendEmail } from "@/server/corsair/client";
 import { db as defaultDb } from "../db";
-import { auditLogs, hitlActions } from "../db/schema";
+import { auditLogs, emails, hitlActions, users } from "../db/schema";
 import { sanitisePayload } from "@/lib/sanitise-payload";
 import { redis as defaultRedis } from "../redis";
 import { mapHitlActionForClient, mapHitlPayloadForClient, type SafeHitlAction } from "../ai/agents/action-agent";
 import type { Redis } from "@upstash/redis";
+import { redactSensitiveForClient } from "@/lib/email-client";
 
 const PRIVATE_HITL_TTL_SECONDS = 60 * 5;
 
@@ -76,7 +77,7 @@ export async function createHitlProposal(
   const [row] = await db.insert(hitlActions).values({
     userId,
     action_type: action.actionType,
-    payload: sanitisePayload(safePayload),
+    payload: action.payload ?? {},
     status: "pending",
     expires_at: expiresAt,
   }).returning({ id: hitlActions.id });
@@ -128,11 +129,13 @@ export async function executeApprovedHitlAction(
   }
 
   const rawPrivatePayload = await redis.get<string>(getPrivatePayloadKey(actionId));
-  if (!rawPrivatePayload) {
+  const privatePayload = rawPrivatePayload
+    ? (JSON.parse(rawPrivatePayload) as Record<string, unknown>)
+    : (row.payload && typeof row.payload === "object" ? (row.payload as Record<string, unknown>) : null);
+
+  if (!privatePayload) {
     throw new Error("HITL action payload expired");
   }
-
-  const privatePayload = JSON.parse(rawPrivatePayload) as Record<string, unknown>;
 
   if (row.action_type === "send_email") {
     const payload = sendEmailProposalSchema.parse(privatePayload);
@@ -140,6 +143,29 @@ export async function executeApprovedHitlAction(
     if (result.needsConnect) {
       throw new Error("gmail_not_connected");
     }
+
+    const currentUser = await db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { email: true, name: true },
+    });
+    const sentMessageId = result?.data?.id || result?.data?.messageId || crypto.randomUUID();
+
+    await db.insert(emails).values({
+      userId,
+      corsair_message_id: sentMessageId,
+      thread_id: payload.threadId || sentMessageId,
+      from_address: currentUser?.email || "me@aethra.local",
+      from_name: currentUser?.name || "Me",
+      to_address: payload.to.join(", "),
+      subject: payload.subject,
+      snippet: redactSensitiveForClient(payload.body).slice(0, 180),
+      body_text: payload.body,
+      body_html: `<pre style="white-space:pre-wrap;font-family:inherit">${payload.body.replace(/[&<>]/g, (ch: string) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch] || ch))}</pre>`,
+      is_read: true,
+      is_archived: false,
+      is_deleted: false,
+      ai_triage_skipped: true,
+    }).onConflictDoNothing();
 
     await invalidateMailCache(redis, userId).catch(() => null);
   } else if (row.action_type === "create_event") {

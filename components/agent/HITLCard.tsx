@@ -11,6 +11,7 @@ import { SmartSchedulerModal, type SchedulerProposal } from "@/components/calend
 
 export function HITLCard({ className }: { className?: string }) {
   const { activeHITLAction, setActiveHITLAction } = useUIStore();
+  const utils = trpc.useUtils();
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -46,6 +47,7 @@ export function HITLCard({ className }: { className?: string }) {
         actionId: activeHITLAction.actionId,
         decision,
       });
+      await utils.agent.getPendingHITL.invalidate();
       setActiveHITLAction(null);
       toast.success(decision === "approved" ? "Action approved" : "Action cancelled");
     } catch {
@@ -63,6 +65,7 @@ export function HITLCard({ className }: { className?: string }) {
         actionId: activeHITLAction.actionId,
         decision: "rejected",
       });
+      await utils.agent.getPendingHITL.invalidate();
       setActiveHITLAction(null);
       setEditProposal(calendarProposal);
       setEditOpen(true);

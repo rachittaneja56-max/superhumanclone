@@ -23,10 +23,12 @@ export function useSpeechToText({
 }) {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const onFinalTextRef = useRef(onFinalText);
+  const streamRef = useRef<MediaStream | null>(null);
   const [supported, setSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [preview, setPreview] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [permissionState, setPermissionState] = useState<"ready" | "requesting" | "denied" | "unsupported">("unsupported");
 
   useEffect(() => {
     onFinalTextRef.current = onFinalText;
@@ -48,10 +50,12 @@ export function useSpeechToText({
 
     if (!SpeechRecognitionCtor) {
       setSupported(false);
+      setPermissionState("unsupported");
       return;
     }
 
     setSupported(true);
+    setPermissionState("ready");
     const recognition = new SpeechRecognitionCtor();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -85,6 +89,9 @@ export function useSpeechToText({
       setListening(false);
       setPreview("");
       const errorName = typeof event?.error === "string" ? event.error : "";
+      if (errorName === "not-allowed" || errorName === "service-not-allowed") {
+        setPermissionState("denied");
+      }
       setError(
         errorName === "not-allowed" || errorName === "service-not-allowed"
           ? "Microphone access is blocked. Allow microphone permission to use voice input."
@@ -99,15 +106,18 @@ export function useSpeechToText({
 
     recognitionRef.current = recognition;
     return () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
       recognition.abort?.();
       recognition.stop();
       recognitionRef.current = null;
     };
   }, [lang]);
 
-  const startListening = () => {
+  const startListening = async () => {
     if (!supported || !recognitionRef.current) {
       setError("Voice input is not supported in this browser.");
+      setPermissionState("unsupported");
       return;
     }
 
@@ -115,6 +125,20 @@ export function useSpeechToText({
 
     setError(null);
     setPreview("");
+    setPermissionState("requesting");
+
+    try {
+      if (!streamRef.current && navigator.mediaDevices?.getUserMedia) {
+        streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      setPermissionState("ready");
+    } catch {
+      setPermissionState("denied");
+      setError("Microphone access is blocked. Allow microphone permission to use voice input.");
+      setListening(false);
+      return;
+    }
+
     try {
       recognitionRef.current.start();
       setListening(true);
@@ -135,6 +159,7 @@ export function useSpeechToText({
     listening,
     preview,
     error,
+    permissionState,
     startListening,
     stopListening,
   };

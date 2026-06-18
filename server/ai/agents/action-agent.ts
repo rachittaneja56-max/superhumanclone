@@ -134,6 +134,14 @@ export async function runActionAgent(
   const request = context.userMessage.trim();
   const lower = request.toLowerCase();
 
+  if (/\b(delete|trash|remove|purge|archive|cancel)\b/.test(lower) && /\b(email|mail|thread|message|event|calendar|meeting)\b/.test(lower)) {
+    return {
+      intent: "action",
+      indicator: "Preparing approval card...",
+      text: "I can help search, summarize, draft, and prepare approval-safe send or calendar actions, but I won't delete or archive items. Please do destructive actions manually in the product UI.",
+    };
+  }
+
   if (/\b(send|email)\b/.test(lower)) {
     const to = extractEmails(request);
     const subject = extractField(request, "subject");

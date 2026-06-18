@@ -32,6 +32,12 @@ const OUT_OF_SCOPE_PATTERNS = [
   /\bflight\b/i,
 ];
 
+const DESTRUCTIVE_ACTION_PATTERNS = [
+  /\b(delete|trash|remove|purge|erase)\b.*\b(email|mail|thread|message|event|calendar)\b/i,
+  /\barchive\b.*\b(email|mail|thread|message)\b/i,
+  /\bcancel\b.*\b(event|meeting|calendar)\b/i,
+];
+
 const ALLOWED_TOOL_REGISTRY = new Set([
   "searchEmails",
   "proposeSendEmail",
@@ -96,6 +102,10 @@ export function isOutsideAethraScope(input: string) {
 export function getScopeLimitMessage(input: string) {
   if (isCodeGenerationRequest(input)) {
     return "Aethra AI only helps with the Aethra product experience. It can summarize mail, help draft replies, prepare calendar suggestions, and propose approval cards, but it will not generate application code.";
+  }
+
+  if (DESTRUCTIVE_ACTION_PATTERNS.some((pattern) => pattern.test(input))) {
+    return "Aethra AI can help search, summarize, draft, and prepare approval-safe send or calendar actions, but it will not delete or archive items. Please do destructive actions manually in the product UI.";
   }
 
   if (isOutsideAethraScope(input)) {

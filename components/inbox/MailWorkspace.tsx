@@ -1035,6 +1035,10 @@ export function ComposeModal({
                 <div className="rounded-xl border border-border bg-background px-3 py-2 text-xs text-foreground-muted" aria-live="polite">
                   {voice.error ? (
                     voice.error
+                  ) : voice.permissionState === "requesting" ? (
+                    "Requesting microphone access..."
+                  ) : voice.permissionState === "unsupported" ? (
+                    "Voice input is not supported in this browser."
                   ) : voice.listening ? (
                     <>
                       Listening...
@@ -1062,7 +1066,7 @@ export function ComposeModal({
               type="button"
               onPointerDown={(event) => {
                 event.preventDefault();
-                voice.startListening();
+                void voice.startListening();
               }}
               onPointerUp={voice.stopListening}
               onPointerLeave={voice.stopListening}

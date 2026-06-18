@@ -1,9 +1,7 @@
 import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
-import { db } from '../../db';
 import { hitlActions, auditLogs, agentSessions } from '../../db/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
-import { redis } from '../../redis';
 import { mapHitlActionForClient } from '../../ai/agents/action-agent';
 import { sanitisePayload } from '@/lib/sanitise-payload';
 import { resolveHitlTransition } from '../../agents/hitl-state';
@@ -24,7 +22,7 @@ export const agentRouter = router({
   getPendingHITL: protectedProcedure
     .input(getPendingHITLSchema)
     .query(async ({ ctx }) => {
-      const pendingAction = await db.query.hitlActions.findFirst({
+      const pendingAction = await ctx.db.query.hitlActions.findFirst({
         where: and(
           eq(hitlActions.userId, ctx.userId!),
           eq(hitlActions.status, 'pending'),
@@ -38,7 +36,7 @@ export const agentRouter = router({
     .use(resolveHitlLimit)
     .input(resolveHITLSchema)
     .mutation(async ({ ctx, input }) => {
-      const row = await db.query.hitlActions.findFirst({
+      const row = await ctx.db.query.hitlActions.findFirst({
         where: eq(hitlActions.id, input.actionId),
       });
 
@@ -61,7 +59,7 @@ export const agentRouter = router({
       }
 
       if (transition.reason === 'expired') {
-        await db.update(hitlActions)
+        await ctx.db.update(hitlActions)
           .set({ status: 'expired', resolved_at: new Date() })
           .where(eq(hitlActions.id, input.actionId));
         throw new TRPCError({ code: 'CONFLICT', message: 'HITL action has expired' });
@@ -71,19 +69,19 @@ export const agentRouter = router({
         await executeApprovedHitlAction(ctx.userId!, input.actionId, { db: ctx.db, redis: ctx.redis });
       }
 
-      await db.update(hitlActions)
+      await ctx.db.update(hitlActions)
         .set({ status: transition.nextStatus, resolved_at: new Date() })
         .where(eq(hitlActions.id, input.actionId));
 
       // Publish to Redis to resume the agent interceptor
-      await redis.publish(`hitl:response:${input.actionId}`, input.decision);
-      await redis.del(`hitl:pending:${input.actionId}`);
+      await ctx.redis.publish(`hitl:response:${input.actionId}`, input.decision);
+      await ctx.redis.del(`hitl:pending:${input.actionId}`);
       if (input.decision === 'rejected') {
-        await redis.del(`hitl:private:${input.actionId}`);
+        await ctx.redis.del(`hitl:private:${input.actionId}`);
       }
 
       // Audit Log
-      await db.insert(auditLogs).values({
+      await ctx.db.insert(auditLogs).values({
         userId: ctx.userId!,
         action: 'hitl_resolved',
         details: sanitisePayload({ actionType: row.action_type, decision: input.decision }),
@@ -95,7 +93,7 @@ export const agentRouter = router({
   clearSessionHistory: protectedProcedure
     .input(clearAgentSessionSchema)
     .mutation(async ({ ctx, input }) => {
-      const session = await db.query.agentSessions.findFirst({
+      const session = await ctx.db.query.agentSessions.findFirst({
         where: eq(agentSessions.id, input.sessionId),
       });
 
@@ -107,8 +105,8 @@ export const agentRouter = router({
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Not authorized to clear this session' });
       }
 
-      await db.delete(agentSessions).where(eq(agentSessions.id, input.sessionId));
-      await db.insert(auditLogs).values({
+      await ctx.db.delete(agentSessions).where(eq(agentSessions.id, input.sessionId));
+      await ctx.db.insert(auditLogs).values({
         userId: ctx.userId!,
         action: 'settings_changed',
         details: sanitisePayload({ type: 'agent_memory_cleared', sessionId: input.sessionId }),
@@ -120,7 +118,7 @@ export const agentRouter = router({
   replaceSessionHistory: protectedProcedure
     .input(replaceAgentSessionHistorySchema)
     .mutation(async ({ ctx, input }) => {
-      const session = await db.query.agentSessions.findFirst({
+      const session = await ctx.db.query.agentSessions.findFirst({
         where: eq(agentSessions.id, input.sessionId),
       });
 
@@ -129,18 +127,18 @@ export const agentRouter = router({
       }
 
       if (!session) {
-        await db.insert(agentSessions).values({
+        await ctx.db.insert(agentSessions).values({
           id: input.sessionId,
           userId: ctx.userId!,
           history: input.history,
         });
       } else {
-        await db.update(agentSessions)
+        await ctx.db.update(agentSessions)
           .set({ history: input.history, updated_at: new Date() })
           .where(eq(agentSessions.id, input.sessionId));
       }
 
-      await db.insert(auditLogs).values({
+      await ctx.db.insert(auditLogs).values({
         userId: ctx.userId!,
         action: 'settings_changed',
         details: sanitisePayload({ type: 'agent_memory_updated', sessionId: input.sessionId, itemCount: input.history.length }),
