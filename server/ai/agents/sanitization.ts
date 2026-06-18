@@ -86,6 +86,12 @@ export function redactSensitiveAgentOutput(input: string) {
     .replace(/\b(?:\+?\d{1,3}[ -]?)?(?:\d[ -]?){10,14}\b/g, "[redacted-phone]");
 }
 
+function stripPassiveContentWrappers(input: string) {
+  return input
+    .replace(/<\/?(?:email|calendar)_content>/gi, "")
+    .trim();
+}
+
 export function enforceAgentOutputLength(input: string, maxChars: number) {
   if (input.length <= maxChars) return input;
   return `${input.slice(0, Math.max(0, maxChars - 1)).trim()}...`;
@@ -130,5 +136,5 @@ export function assertAllowedToolRegistry(input: string) {
 
 export function sanitiseAgentOutput(input: string, maxChars: number) {
   assertAllowedToolRegistry(input);
-  return enforceAgentOutputLength(redactSensitiveAgentOutput(input).trim(), maxChars);
+  return enforceAgentOutputLength(stripPassiveContentWrappers(redactSensitiveAgentOutput(input)).trim(), maxChars);
 }

@@ -65,6 +65,7 @@ export function MailWorkspace({
   const [composeOpen, setComposeOpen] = useState(initialComposeOpen);
   const [composeDraft, setComposeDraft] = useState<ComposeDraft | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [optimisticFolder, setOptimisticFolder] = useState<Folder | null>(null);
   const [threads, setThreads] = useState<EmailListClientItem[]>(initialMailboxPage.items);
   const [nextPageToken, setNextPageToken] = useState<string | null>(initialMailboxPage.nextPageToken);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -79,6 +80,7 @@ export function MailWorkspace({
   const popFocusLayer = useUIStore((state) => state.popFocusLayer);
 
   const folder = normalizeFolder(searchParams.get("folder") ?? initialFolder);
+  const displayFolder = optimisticFolder ?? folder;
   const composeFromUrl = searchParams.get("compose") === "true";
   const selectedThreadFromUrl = searchParams.get("thread");
   const isSearchMode = debouncedQuery.length >= 2;
@@ -133,8 +135,12 @@ export function MailWorkspace({
   }, [folder, initialFolder, initialMailboxPage, isSearchMode, mailboxQuery.data, searchThreads]);
   const hasMore = !isSearchMode && Boolean(nextPageToken);
   const isRefreshing = mailboxQuery.isFetching || searchQuery.isFetching;
-  const visibleThreads = isSearchMode ? searchThreads : threads;
-  const isInitialListLoading = isSearchMode ? searchQuery.isLoading : mailboxQuery.isLoading;
+  const isFolderTransitioning = Boolean(optimisticFolder && optimisticFolder !== folder);
+  const isInitialListLoading = isSearchMode ? searchQuery.isLoading : mailboxQuery.isLoading || isFolderTransitioning;
+  const visibleThreads = useMemo(
+    () => (isSearchMode ? searchThreads : (isInitialListLoading ? [] : threads)),
+    [isInitialListLoading, isSearchMode, searchThreads, threads],
+  );
 
   const selected = useMemo(
     () => visibleThreads.find((thread) => (thread.threadId || thread.id) === activeThreadId) || null,
@@ -150,6 +156,13 @@ export function MailWorkspace({
   useEffect(() => {
     setComposeOpen(composeFromUrl || initialComposeOpen);
   }, [composeFromUrl, initialComposeOpen]);
+
+  useEffect(() => {
+    if (!optimisticFolder) return;
+    if (folder === optimisticFolder && !mailboxQuery.isLoading && !mailboxQuery.isFetching) {
+      setOptimisticFolder(null);
+    }
+  }, [folder, mailboxQuery.isFetching, mailboxQuery.isLoading, optimisticFolder]);
 
   useEffect(() => {
     if (!composeOpen) return;
@@ -216,6 +229,8 @@ export function MailWorkspace({
   }, [pathname, router]);
 
   const openFolder = useCallback((nextFolder: Folder) => {
+    setActiveThreadId(null);
+    setOptimisticFolder(nextFolder);
     const params = new URLSearchParams(searchParams.toString());
     params.set("folder", nextFolder);
     params.delete("thread");
@@ -429,28 +444,36 @@ export function MailWorkspace({
       <main className="flex min-w-0 flex-1 flex-col">
         {!selected && (
           <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-3 sm:px-5">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <h1 className="truncate text-xl font-semibold sm:text-2xl">{FOLDER_LABELS[folder]}</h1>
-                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                    {visibleThreads.length}
-                  </span>
-                  {folder === "inbox" && unreadCountsQuery.data && (
-                    <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground-muted">
-                      {unreadCountsQuery.data.inbox} unread
+                  <h1 className="truncate text-xl font-semibold sm:text-2xl">{FOLDER_LABELS[displayFolder]}</h1>
+                  {isInitialListLoading ? (
+                    <span className="h-5 w-12 animate-pulse rounded-full bg-surface-overlay" />
+                  ) : (
+                    <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+                      {visibleThreads.length}
                     </span>
+                  )}
+                  {displayFolder === "inbox" && (
+                    isInitialListLoading ? (
+                      <span className="h-5 w-20 animate-pulse rounded-full bg-surface-overlay" />
+                    ) : unreadCountsQuery.data ? (
+                      <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs font-medium text-foreground-muted">
+                        {unreadCountsQuery.data.inbox} unread
+                      </span>
+                    ) : null
                   )}
                 </div>
                 <p className="mt-1 text-sm text-foreground-muted">
-                  {folder === "drafts"
+                  {displayFolder === "drafts"
                     ? "Drafts stay saved while you work."
                     : "Click a conversation to open the thread view."}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {MAILBOX_ITEMS.map((item) => {
                     const Icon = item.icon;
-                    const isActive = folder === item.folder;
+                    const isActive = displayFolder === item.folder;
 
                     return (
                       <button
@@ -483,21 +506,30 @@ export function MailWorkspace({
                     className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-foreground-subtle"
                   />
                 </div>
-                <button
-                  onClick={refreshMailbox}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-raised"
-                >
-                  <RefreshCw className={["h-4 w-4", isRefreshing ? "animate-spin" : ""].join(" ")} />
-                  Refresh
-                </button>
-                <button
-                  onClick={() => setComposeOpen(true)}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01]"
-                  style={{ backgroundColor: "var(--accent)" }}
-                >
-                  <SquarePen className="h-4 w-4" />
-                  Compose
-                </button>
+                {isInitialListLoading ? (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <div className="h-11 w-24 animate-pulse rounded-xl border border-border bg-surface-overlay" />
+                    <div className="h-11 w-28 animate-pulse rounded-xl border border-border bg-surface-overlay" />
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={refreshMailbox}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-surface-raised"
+                    >
+                      <RefreshCw className={["h-4 w-4", isRefreshing ? "animate-spin" : ""].join(" ")} />
+                      Refresh
+                    </button>
+                    <button
+                      onClick={() => setComposeOpen(true)}
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-accent-foreground shadow-sm transition-transform hover:scale-[1.01]"
+                      style={{ backgroundColor: "var(--accent)" }}
+                    >
+                      <SquarePen className="h-4 w-4" />
+                      Compose
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -549,13 +581,13 @@ export function MailWorkspace({
             <section className="min-w-0 flex-1">
               <div className="h-full overflow-y-auto">
                 {isInitialListLoading && visibleThreads.length === 0 ? (
-                  <MailboxLoading folder={folder} />
+                  <MailboxLoading folder={displayFolder} />
                 ) : mailboxQuery.isError ? (
                   <div className="flex h-full items-center justify-center px-6 text-sm text-foreground-muted">
                     We couldn&apos;t load this mailbox right now.
                   </div>
                 ) : visibleThreads.length === 0 ? (
-                  <MailboxEmptyState folder={folder} query={debouncedQuery} />
+                  <MailboxEmptyState folder={displayFolder} query={debouncedQuery} />
                 ) : (
                   <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-3 py-3 sm:px-4">
                     {visibleThreads.map((thread) => {
@@ -1134,17 +1166,33 @@ function MailboxLoading({ folder }: { folder: Folder }) {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-3 py-3 sm:px-4">
-      <div className="rounded-2xl border border-border bg-surface px-4 py-4">
-        <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">
-          Loading {copy.label}
+      <div className="rounded-2xl border border-border bg-surface px-4 py-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="h-3.5 w-24 animate-pulse rounded-full bg-surface-overlay" />
+            <div className="mt-3 h-4 w-56 animate-pulse rounded-full bg-surface-overlay" />
+          </div>
+          <div className="flex gap-2">
+            <div className="h-9 w-20 animate-pulse rounded-xl border border-border bg-surface-overlay" />
+            <div className="h-9 w-24 animate-pulse rounded-xl border border-border bg-surface-overlay" />
+          </div>
         </div>
-        <div className="mt-2 text-sm text-foreground-muted">{copy.loading}</div>
+        <div className="mt-4 text-sm text-foreground-muted">{copy.loading}</div>
       </div>
-      {Array.from({ length: 6 }).map((_, index) => (
-        <div key={index} className="w-full animate-pulse rounded-2xl border border-border bg-surface px-4 py-4">
-          <div className="h-4 w-1/3 rounded bg-surface-overlay" />
-          <div className="mt-3 h-4 w-2/3 rounded bg-surface-overlay" />
-          <div className="mt-3 h-3 w-full rounded bg-surface-overlay" />
+      {Array.from({ length: 5 }).map((_, index) => (
+        <div key={index} className="w-full rounded-2xl border border-border bg-background px-4 py-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="h-4 w-28 animate-pulse rounded-full bg-surface-overlay" />
+              <div className="mt-3 h-4 w-2/3 animate-pulse rounded-full bg-surface-overlay" />
+              <div className="mt-3 h-3 w-full animate-pulse rounded-full bg-surface-overlay" />
+              <div className="mt-2 flex gap-2">
+                <div className="h-5 w-14 animate-pulse rounded-full bg-surface-overlay" />
+                <div className="h-5 w-16 animate-pulse rounded-full bg-surface-overlay" />
+              </div>
+            </div>
+            <div className="h-3.5 w-16 animate-pulse rounded-full bg-surface-overlay" />
+          </div>
         </div>
       ))}
     </div>
