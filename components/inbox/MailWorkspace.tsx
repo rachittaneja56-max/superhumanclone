@@ -12,6 +12,8 @@ import { mapEmailForListClient, type EmailListClientItem } from "@/lib/email-cli
 import { sendEmailSchema } from "@/lib/schemas";
 import { ThreadView } from "./ThreadView";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
+import { REWRITE_COMMANDS, filterRewriteCommands, type RewriteCommandId } from "@/lib/ai-rewrite-commands";
+import { RewriteCommandMenu } from "./RewriteCommandMenu";
 
 type Folder = "inbox" | "drafts" | "sent" | "spam" | "trash";
 export type ComposeDraft = {
@@ -44,14 +46,6 @@ type MailboxPage = {
   items: EmailListClientItem[];
   nextPageToken: string | null;
 };
-const AI_COMMANDS = [
-  { id: "improve_tone", label: "Improve" },
-  { id: "make_shorter", label: "Shorten" },
-  { id: "make_formal", label: "Formal" },
-  { id: "convert_to_bullets", label: "Bullets" },
-  { id: "translate", label: "Translate" },
-] as const;
-
 export function MailWorkspace({
   initialMailboxPage,
   initialFolder,
@@ -691,6 +685,7 @@ export function ComposeModal({
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(-1);
   const [slashLength, setSlashLength] = useState(0);
+  const [translateTo, setTranslateTo] = useState("English");
   const [isSending, setIsSending] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voice = useSpeechToText({
@@ -702,9 +697,7 @@ export function ComposeModal({
   const aiAllowed = Boolean(settingsQuery.data?.aiEnabled && settingsQuery.data?.draftSuggestionsEnabled && settingsQuery.data?.privacyConfigured);
 
   const hasContent = [to, cc, bcc, subject, body].some((value) => value.trim().length > 0);
-  const visibleAiCommands = slashQuery.trim()
-    ? AI_COMMANDS.filter((command) => command.id.replaceAll("_", "-").includes(slashQuery.trim()))
-    : AI_COMMANDS;
+  const visibleAiCommands = filterRewriteCommands(slashQuery.trim());
 
   const closeSlashMenu = useCallback(() => {
     setShowSlashMenu(false);
@@ -839,7 +832,7 @@ export function ComposeModal({
     }
   }, [bcc, body, cc, deleteDraft, draftId, onSend, subject, to]);
 
-  const executeAiCommand = useCallback(async (command: typeof AI_COMMANDS[number]["id"]) => {
+  const executeAiCommand = useCallback(async (command: RewriteCommandId) => {
     if (!aiAllowed) {
       toast.error("AI assist is disabled in settings.");
       return;
@@ -856,7 +849,7 @@ export function ComposeModal({
     }
 
     setShowAiTools(true);
-    setShowSlashMenu(false);
+    closeSlashMenu();
     setOriginalBody(sourceBody);
     setRewriteState("loading");
 
@@ -864,7 +857,7 @@ export function ComposeModal({
       const result = await rewriteMutation.mutateAsync({
         draft: sourceBody,
         instruction: command,
-        translateTo: command === "translate" ? "Spanish" : undefined,
+        translateTo: command === "translate" ? translateTo.trim() || "English" : undefined,
       });
       setRewrittenBody(result.rewritten);
       setRewriteState("preview");
@@ -872,7 +865,7 @@ export function ComposeModal({
       toast.error("Could not rewrite this draft.");
       setRewriteState("idle");
     }
-  }, [aiAllowed, body, rewriteMutation, showSlashMenu, slashIndex, slashLength]);
+  }, [aiAllowed, body, closeSlashMenu, rewriteMutation, showSlashMenu, slashIndex, slashLength, translateTo]);
 
   const acceptRewrite = useCallback(() => {
     setBody(rewrittenBody);
@@ -955,7 +948,7 @@ export function ComposeModal({
           {showAiTools && (
             <div className="rounded-xl border border-border bg-background p-3">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">AI tools</span>
+                <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">Rewrite modes</span>
                 {visibleAiCommands.map((command) => (
                   <button
                     key={command.id}
@@ -964,17 +957,21 @@ export function ComposeModal({
                     onClick={() => void executeAiCommand(command.id)}
                     className="rounded-full border border-border px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    /{command.id.replaceAll("_", "-")}
+                    {command.label}
                   </button>
                 ))}
-              </div>
-              {showSlashMenu && (
-                <div className="mt-2 text-[11px] text-foreground-subtle">
-                  Filtering for <span translate="no">/{slashQuery || "…"}</span>
+                <div className="ml-auto flex items-center gap-2 text-xs text-foreground-muted">
+                  <span className="hidden sm:inline">Translate to</span>
+                  <input
+                    value={translateTo}
+                    onChange={(event) => setTranslateTo(event.target.value)}
+                    className="h-8 w-28 rounded-full border border-border bg-surface px-3 text-xs text-foreground outline-none transition-colors focus:border-accent"
+                    placeholder="Language"
+                  />
                 </div>
-              )}
+              </div>
               <div className="mt-2 text-[11px] text-foreground-subtle">
-                Privacy gate and AI settings must allow draft rewrites before these actions run.
+                Type <span translate="no">/</span> in the draft to open the command menu. Privacy gate and AI settings must allow rewrites before these actions run.
               </div>
             </div>
           )}
@@ -1055,13 +1052,21 @@ export function ComposeModal({
                 placeholder="Write your message..."
                 className="min-h-[22rem] w-full rounded-xl border border-border bg-background px-3 py-3 text-sm leading-6 outline-none transition-colors focus:border-accent"
               />
+              {showSlashMenu && (
+                <RewriteCommandMenu
+                  commands={visibleAiCommands}
+                  query={slashQuery}
+                  onSelect={(commandId) => void executeAiCommand(commandId)}
+                  className="mt-3"
+                />
+              )}
             </>
           )}
         </div>
 
         <div className="flex items-center justify-between border-t border-border bg-background/80 px-5 py-4">
           <div className="flex items-center gap-2 text-xs text-foreground-subtle">
-            <span>Type / for AI suggestions.</span>
+            <span>Type `/` for rewrite commands.</span>
             <button
               type="button"
               onPointerDown={(event) => {

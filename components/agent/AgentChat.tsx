@@ -5,7 +5,7 @@ import { trpc } from "@/lib/trpc/client";
 import { useUIStore } from "@/store/ui-store";
 import { HITLCard } from "./HITLCard";
 import { Button } from "@/components/ui/button";
-import { Loader2, ArrowUp, Bot, X, BrainCircuit, Mic, MicOff, Square } from "lucide-react";
+import { Loader2, ArrowUp, Bot, BrainCircuit, Mic, MicOff, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
@@ -48,11 +48,9 @@ function predictToolIndicator(input: string, threadContext?: string | null) {
 export function AgentChat({
   sessionId,
   threadContext,
-  onClearThreadContext,
 }: {
   sessionId: string;
   threadContext?: string | null;
-  onClearThreadContext?: () => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
@@ -167,6 +165,9 @@ export function AgentChat({
               <span>AI Assistant</span>
             </div>
             <p className="mt-1 text-sm text-foreground-muted">Ask Aethra about mail, schedules, and follow-ups.</p>
+            {threadContext ? (
+              <p className="mt-2 text-xs text-foreground-subtle">Using approved page context for this chat.</p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             <button
@@ -199,35 +200,6 @@ export function AgentChat({
           </div>
         </div>
         <p className="mt-3 text-xs text-foreground-subtle">Memory stays off by default.</p>
-
-        {threadContext && (
-          <div className="mt-3 flex items-start gap-2 rounded-xl border border-accent/20 bg-accent-subtle px-3 py-2 text-xs">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-foreground">Context</span>
-                <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-foreground-muted">
-                  attached
-                </span>
-              </div>
-              <div className="mt-1 line-clamp-2 whitespace-pre-wrap break-words text-foreground-muted">
-                {threadContext}
-              </div>
-            </div>
-            {onClearThreadContext && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClearThreadContext();
-                  toast.message("Thread context removed");
-                }}
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground"
-                aria-label="Remove thread context"
-              >
-                <X className="h-4 w-4" aria-hidden="true" />
-              </button>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-5 sm:py-5">

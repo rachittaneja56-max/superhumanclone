@@ -16,24 +16,18 @@ export function AgentContextEntry() {
   const captureContext = buildCaptureContext(pathname, searchParams);
 
   return (
-    <div className="border-b border-border bg-surface/85 px-4 py-3 backdrop-blur sm:px-5 lg:px-6">
-      <div className="mx-auto flex w-full max-w-[1720px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
-            <Sparkles className="h-3.5 w-3.5 text-accent" />
-            Agent context
-          </div>
-          <p className="mt-1 text-sm text-foreground-muted">
-            Capture a safe summary of this page, then continue in the full Agent workspace.
-          </p>
+    <div className="border-b border-border bg-surface/85 px-4 py-2.5 backdrop-blur sm:px-5 lg:px-6">
+      <div className="mx-auto flex w-full max-w-[1720px] items-center justify-between gap-3">
+        <div className="min-w-0 flex items-center gap-2 text-xs text-foreground-muted">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
+          <span className="truncate">Need page context in Agent? Capture this screen and continue in the full workspace.</span>
         </div>
-
         <button
           type="button"
           onClick={() => router.push(`/agent?context=${encodeURIComponent(captureContext)}`)}
-          className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-accent/30 bg-accent/10 px-4 text-sm font-medium text-accent transition-colors hover:bg-accent/15"
+          className="inline-flex h-9 shrink-0 items-center justify-center rounded-xl border border-accent/30 bg-accent/10 px-3.5 text-sm font-medium text-accent transition-colors hover:bg-accent/15"
         >
-          Capture screen context
+          Use this page
         </button>
       </div>
     </div>

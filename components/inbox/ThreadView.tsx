@@ -7,6 +7,7 @@ import { Archive, Calendar, Forward, MailCheck, MailOpen, Reply, ReplyAll, Rotat
 import { toast } from "sonner";
 import type { EmailThreadClientItem } from "@/lib/email-client";
 import { SmartSchedulerModal } from "@/components/calendar/SmartSchedulerModal";
+import { AutoReplyPanel } from "@/components/inbox/AutoReplyPanel";
 
 const ContactSidebar = dynamic(
   () => import("@/components/contacts/ContactSidebar").then((module) => module.ContactSidebar),
@@ -225,6 +226,20 @@ export function ThreadView({
           ))}
         </div>
       </div>
+
+      {mailbox === "inbox" && firstEmailId && onReplyCompose ? (
+        <AutoReplyPanel
+          emailId={firstEmailId}
+          onSelect={(text) =>
+            onReplyCompose({
+              to: latest?.senderAddress || "",
+              subject: replySubject,
+              body: text,
+              threadId,
+            })
+          }
+        />
+      ) : null}
 
       <SmartSchedulerModal
         isOpen={scheduleOpen}

@@ -7,14 +7,8 @@ import { Send, X, Check, Mic, MicOff, Square } from "lucide-react";
 import { toast } from "sonner";
 import { sendEmailSchema } from "@/lib/schemas";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
-
-const COMMANDS = [
-  { id: "improve_tone", label: "Improve Tone" },
-  { id: "make_shorter", label: "Make Shorter" },
-  { id: "make_formal", label: "Make Formal" },
-  { id: "convert_to_bullets", label: "Convert to Bullets" },
-  { id: "translate", label: "Translate" },
-] as const;
+import { REWRITE_COMMANDS, filterRewriteCommands, type RewriteCommandId } from "@/lib/ai-rewrite-commands";
+import { RewriteCommandMenu } from "./RewriteCommandMenu";
 
 export function ComposeBox({
   threadId,
@@ -37,6 +31,7 @@ export function ComposeBox({
   const [rewriteState, setRewriteState] = useState<"idle" | "loading" | "preview">("idle");
   const [subject, setSubject] = useState("");
   const [to, setTo] = useState("");
+  const [translateTo, setTranslateTo] = useState("English");
   const settingsQuery = trpc.settings.getUserSettings.useQuery({});
   const aiAllowed = Boolean(settingsQuery.data?.aiEnabled && settingsQuery.data?.draftSuggestionsEnabled && settingsQuery.data?.privacyConfigured);
 
@@ -66,6 +61,7 @@ export function ComposeBox({
   const rewriteMutation = trpc.email.rewriteDraft.useMutation();
   const sendMutation = trpc.email.sendEmail.useMutation();
   const { startUndoWindow, isPending } = useUndoSend();
+  const visibleCommands = filterRewriteCommands(slashQuery);
 
   const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -97,13 +93,20 @@ export function ComposeBox({
     }
   };
 
-  const executeCommand = async (cmdId: typeof COMMANDS[number]["id"]) => {
+  const closeSlashMenu = () => {
+    setShowSlashMenu(false);
+    setSlashIndex(-1);
+    setSlashLength(0);
+    setSlashQuery("");
+  };
+
+  const executeCommand = async (cmdId: RewriteCommandId) => {
     if (!aiAllowed) {
       toast.error("AI assist is disabled in settings.");
       return;
     }
 
-    setShowSlashMenu(false);
+    closeSlashMenu();
     const hasInlineCommand = slashIndex >= 0 && slashLength > 0;
     const newDraft = hasInlineCommand
       ? draft.substring(0, slashIndex) + draft.substring(slashIndex + slashLength)
@@ -121,7 +124,7 @@ export function ComposeBox({
       const result = await rewriteMutation.mutateAsync({
         draft: newDraft,
         instruction: cmdId,
-        translateTo: cmdId === "translate" ? "Spanish" : undefined, // Stubbed for now, can be improved
+        translateTo: cmdId === "translate" ? translateTo.trim() || "English" : undefined,
       });
       setRewrittenDraft(result.rewritten);
       setRewriteState("preview");
@@ -201,8 +204,8 @@ export function ComposeBox({
 
       <div className="relative w-full">
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-background px-3 py-2">
-          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">AI assist</span>
-          {COMMANDS.map((cmd) => (
+          <span className="text-[11px] font-medium uppercase tracking-[0.18em] text-foreground-subtle">Rewrite modes</span>
+          {REWRITE_COMMANDS.map((cmd) => (
             <button
               key={cmd.id}
               type="button"
@@ -210,9 +213,18 @@ export function ComposeBox({
               disabled={!aiAllowed || rewriteState !== "idle" || isPending}
               className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
             >
-              /{cmd.id.replaceAll("_", "-")}
+              {cmd.label}
             </button>
           ))}
+          <div className="ml-auto flex items-center gap-2 text-xs text-foreground-muted">
+            <span className="hidden sm:inline">Translate to</span>
+            <input
+              value={translateTo}
+              onChange={(event) => setTranslateTo(event.target.value)}
+              className="h-8 w-28 rounded-full border border-border bg-surface px-3 text-xs text-foreground outline-none transition-colors focus:border-accent"
+              placeholder="Language"
+            />
+          </div>
           {!aiAllowed && (
             <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-foreground-subtle">
               AI unavailable
@@ -292,21 +304,12 @@ export function ComposeBox({
               </div>
             )}
             {showSlashMenu && (
-              <div
-                className="absolute left-4 bottom-16 bg-[var(--surface)] border rounded-md shadow-lg p-2 z-50 flex flex-col w-56"
-                style={{ borderColor: "var(--border)" }}
-              >
-                <div className="text-xs font-medium px-2 py-1 mb-1 opacity-50 uppercase tracking-wider">AI Commands</div>
-                {COMMANDS.filter((cmd) => cmd.id.replaceAll("_", "-").includes(slashQuery)).map((cmd) => (
-                  <button
-                    key={cmd.id}
-                    onClick={() => executeCommand(cmd.id)}
-                    className="text-left px-3 py-2 text-sm rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-[var(--text)]"
-                  >
-                    {cmd.label}
-                  </button>
-                ))}
-              </div>
+              <RewriteCommandMenu
+                commands={visibleCommands}
+                query={slashQuery}
+                onSelect={(commandId) => void executeCommand(commandId)}
+                className="absolute left-4 bottom-16 z-50 w-72"
+              />
             )}
           </div>
         )}
@@ -314,7 +317,7 @@ export function ComposeBox({
 
       <div className="flex items-center justify-between">
         <span className="text-[12px] opacity-60">
-          Ctrl/Cmd + Enter to send
+          Type `/` for rewrite commands. Ctrl/Cmd + Enter sends.
         </span>
         <div className="flex items-center gap-2">
           <button

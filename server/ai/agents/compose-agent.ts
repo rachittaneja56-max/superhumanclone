@@ -6,9 +6,12 @@ import type { AgentContext, AgentResult } from "./types";
 
 const SLASH_INSTRUCTION_MAP = {
   "/improve": "improve_tone",
+  "/improve-tone": "improve_tone",
   "/shorter": "make_shorter",
+  "/make-shorter": "make_shorter",
   "/formal": "make_formal",
   "/bullet": "convert_to_bullets",
+  "/bullets": "convert_to_bullets",
 } as const;
 
 export async function runComposeAgent(context: AgentContext): Promise<AgentResult> {
@@ -41,7 +44,7 @@ export async function runComposeAgent(context: AgentContext): Promise<AgentResul
     return {
       intent: "compose",
       indicator: "Rewriting draft...",
-      text: "Available slash actions: /improve, /shorter, /formal, /bullet, /translate <language>.",
+      text: "Available slash actions: /improve, /shorter, /make-shorter, /formal, /bullet, /translate <language>.",
     };
   }
 
