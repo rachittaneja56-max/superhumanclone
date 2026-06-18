@@ -1,9 +1,11 @@
 import { router, protectedProcedure } from '../trpc';
-import { aiConsentRules } from '../../db/schema';
+import { auditLogs, aiConsentRules } from '../../db/schema';
 import { eq } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
 import { getUserSettingsSchema, updateSettingSchema, updatePrivacyRulesSchema } from '@/lib/schemas';
 import { cacheTtls, invalidateSettingsCache, settingsCacheKey, settingsVersionKey } from '@/server/cache';
 import { getSafeUserSettings, saveSafeUserSettings } from '@/server/db/user-settings-compat';
+import { sanitisePayload } from '@/lib/sanitise-payload';
 
 export const settingsRouter = router({
   getUserSettings: protectedProcedure
@@ -29,7 +31,25 @@ export const settingsRouter = router({
     .mutation(async ({ ctx, input }) => {
       await saveSafeUserSettings(ctx.userId!, { [input.key]: input.value })
       await invalidateSettingsCache(ctx.redis, ctx.userId!)
-      return { updated: true }
+
+      const current = await getSafeUserSettings(ctx.userId!)
+      if (current[input.key] !== input.value) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'Settings could not be saved',
+        });
+      }
+
+      await ctx.db.insert(auditLogs).values({
+        userId: ctx.userId!,
+        action: 'settings_changed',
+        details: sanitisePayload({
+          key: input.key,
+          value: input.value,
+        }),
+      }).catch(() => undefined)
+
+      return { updated: true, settings: current }
     }),
 
   updatePrivacyRules: protectedProcedure

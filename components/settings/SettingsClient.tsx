@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ type SettingsModel = {
 };
 
 export function SettingsClient({ initialSettings }: { initialSettings: SettingsModel }) {
+  const utils = trpc.useUtils();
   const { data: settings = initialSettings } = trpc.settings.getUserSettings.useQuery(
     {},
     {
@@ -23,14 +25,47 @@ export function SettingsClient({ initialSettings }: { initialSettings: SettingsM
       staleTime: 60_000,
     }
   );
+  const [optimisticSettings, setOptimisticSettings] = useState<SettingsModel | null>(null);
+  const [pendingKey, setPendingKey] = useState<keyof SettingsModel | null>(null);
+  const resolvedSettings = optimisticSettings ?? settings ?? initialSettings;
 
-  const updateMutation = trpc.settings.updateSetting.useMutation({
-    onSuccess: () => toast.success("Setting saved"),
-    onError: () => toast.error("Failed to save"),
-  });
+  useEffect(() => {
+    if (!optimisticSettings) return;
+    const next = settings ?? initialSettings;
+    if (
+      next.aiEnabled === optimisticSettings.aiEnabled &&
+      next.morningDigestEnabled === optimisticSettings.morningDigestEnabled &&
+      next.draftSuggestionsEnabled === optimisticSettings.draftSuggestionsEnabled &&
+      next.autoTagEnabled === optimisticSettings.autoTagEnabled
+    ) {
+      setOptimisticSettings(null);
+      setPendingKey(null);
+    }
+  }, [initialSettings, optimisticSettings, settings]);
+
+  const updateMutation = trpc.settings.updateSetting.useMutation();
 
   const toggle = (key: "aiEnabled" | "morningDigestEnabled" | "draftSuggestionsEnabled" | "autoTagEnabled", value: boolean) => {
-    updateMutation.mutate({ key, value });
+    const previous = resolvedSettings;
+    setOptimisticSettings({ ...previous, [key]: value });
+    setPendingKey(key);
+
+    updateMutation.mutate(
+      { key, value },
+      {
+        onSuccess: async () => {
+          toast.success("Settings saved");
+          await utils.settings.getUserSettings.invalidate();
+          setOptimisticSettings(null);
+          setPendingKey(null);
+        },
+        onError: () => {
+          setOptimisticSettings(null);
+          setPendingKey(null);
+          toast.error("Failed to save");
+        },
+      }
+    );
   };
 
   const aiRows = [
@@ -38,25 +73,25 @@ export function SettingsClient({ initialSettings }: { initialSettings: SettingsM
       key: "aiEnabled" as const,
       label: "Enable AI",
       description: "Turns on AI features across mail, calendar, and agent workflows.",
-      value: settings?.aiEnabled ?? false,
+      value: resolvedSettings?.aiEnabled ?? false,
     },
     {
       key: "morningDigestEnabled" as const,
       label: "Enable Morning Digest",
       description: "Shows the morning digest card when you ask for it.",
-      value: settings?.morningDigestEnabled ?? false,
+      value: resolvedSettings?.morningDigestEnabled ?? false,
     },
     {
       key: "draftSuggestionsEnabled" as const,
       label: "Enable Reply Suggestions",
       description: "Generates Direct, Warm, and Boundary-setting reply drafts.",
-      value: settings?.draftSuggestionsEnabled ?? false,
+      value: resolvedSettings?.draftSuggestionsEnabled ?? false,
     },
     {
       key: "autoTagEnabled" as const,
       label: "Enable Auto-tagging",
       description: "Categorizes mail after it lands.",
-      value: settings?.autoTagEnabled ?? false,
+      value: resolvedSettings?.autoTagEnabled ?? false,
     },
   ];
 
@@ -66,15 +101,15 @@ export function SettingsClient({ initialSettings }: { initialSettings: SettingsM
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="font-display text-lg font-semibold text-foreground">AI Features</h2>
-            <p className="mt-1 text-sm text-foreground-muted">Choose the AI features you want Aethra to use.</p>
+              <p className="mt-1 text-sm text-foreground-muted">Choose the AI features you want Aethra to use.</p>
           </div>
           <span
             className={cn(
               "rounded-full border px-3 py-1 text-[11px] font-medium",
-              settings?.aiEnabled ? "border-accent/30 bg-accent/10 text-accent" : "border-border bg-background text-foreground-muted"
+              resolvedSettings?.aiEnabled ? "border-accent/30 bg-accent/10 text-accent" : "border-border bg-background text-foreground-muted"
             )}
           >
-            {settings?.aiEnabled ? "AI on" : "AI off"}
+            {resolvedSettings?.aiEnabled ? "AI on" : "AI off"}
           </span>
         </div>
       </div>
@@ -88,8 +123,9 @@ export function SettingsClient({ initialSettings }: { initialSettings: SettingsM
             </div>
             <Switch
               checked={row.value}
-              onCheckedChange={(value) => toggle(row.key, value)}
-              disabled={updateMutation.isPending}
+              onCheckedChange={(value) => toggle(row.key, value === true)}
+              disabled={updateMutation.isPending || (row.key !== "aiEnabled" && !resolvedSettings?.aiEnabled)}
+              aria-busy={updateMutation.isPending && pendingKey === row.key}
             />
           </div>
         ))}
