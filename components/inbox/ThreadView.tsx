@@ -162,65 +162,80 @@ export function ThreadView({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-surface font-sans">
-      <div className="shrink-0 border-b border-border bg-surface px-4 py-5 sm:px-6">
-        <div className="min-w-0">
-          <h2 className="max-w-[40rem] truncate font-display text-2xl font-semibold tracking-tight text-[var(--text)] sm:text-[1.75rem]">
-            {subject}
-          </h2>
-          <p className="mt-2 text-sm text-foreground-muted">
-            {typedThread.length} message{typedThread.length === 1 ? "" : "s"} in this thread
-          </p>
-        </div>
+    <div className="flex h-full min-h-0 flex-col bg-background font-sans">
+      <div className="shrink-0 border-b border-border bg-[rgba(255,255,255,0.86)] px-4 py-4 backdrop-blur dark:bg-surface/95 sm:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <h2 className="max-w-[42rem] truncate font-display text-xl font-semibold tracking-tight text-foreground sm:text-[1.75rem]">
+              {subject}
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground-muted">
+              <span className="font-medium text-foreground-subtle">
+                {typedThread.length} message{typedThread.length === 1 ? "" : "s"}
+              </span>
+              <span aria-hidden="true">•</span>
+              <span className="truncate">
+                From {typedThread[0]?.senderName || typedThread[0]?.senderAddress || "Unknown sender"}
+              </span>
+              {showTldr ? (
+                <>
+                  <span aria-hidden="true">•</span>
+                  <span className="truncate">
+                    Updated {latest?.createdAt ? formatDateLabel(latest.createdAt) : "just now"}
+                  </span>
+                </>
+              ) : null}
+            </div>
+          </div>
 
-        <div className="mt-5 flex flex-wrap gap-2">
-          <ActionButton onClick={() => handleReplyCompose("reply")} icon={<Reply className="h-4 w-4" />} label="Reply" />
-          <ActionButton onClick={() => handleReplyCompose("replyAll")} icon={<ReplyAll className="h-4 w-4" />} label="Reply all" />
-          <ActionButton onClick={() => handleReplyCompose("forward")} icon={<Forward className="h-4 w-4" />} label="Forward" />
-          <ActionButton onClick={() => setScheduleOpen(true)} icon={<Calendar className="h-4 w-4" />} label="Schedule this" />
-          {mailbox === "trash" ? (
-            <ActionButton
-              onClick={() => restoreMutation.mutate({ emailId: primaryEmailId })}
-              icon={<RotateCcw className="h-4 w-4" />}
-              label="Restore"
-            />
-          ) : (
-            <>
+          <div className="flex flex-wrap gap-1.5 lg:justify-end">
+            <ActionButton onClick={() => handleReplyCompose("reply")} icon={<Reply className="h-4 w-4" />} label="Reply" />
+            <ActionButton onClick={() => handleReplyCompose("replyAll")} icon={<ReplyAll className="h-4 w-4" />} label="Reply all" />
+            <ActionButton onClick={() => handleReplyCompose("forward")} icon={<Forward className="h-4 w-4" />} label="Forward" />
+            <ActionButton onClick={() => setScheduleOpen(true)} icon={<Calendar className="h-4 w-4" />} label="Schedule" />
+            {mailbox === "trash" ? (
               <ActionButton
-                onClick={() =>
-                  hasUnread
-                    ? markRead.mutate({ emailIds: unreadIds.slice(0, 50) })
-                    : markUnread.mutate({ emailIds: [latest.id] })
-                }
-                icon={hasUnread ? <MailCheck className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
-                label={hasUnread ? "Mark read" : "Mark unread"}
+                onClick={() => restoreMutation.mutate({ emailId: primaryEmailId })}
+                icon={<RotateCcw className="h-4 w-4" />}
+                label="Restore"
               />
-              <ActionButton onClick={() => archiveMutation.mutate({ emailId: primaryEmailId })} icon={<Archive className="h-4 w-4" />} label="Archive" />
-              <ActionButton
-                onClick={() => deleteMutation.mutate({ emailId: primaryEmailId })}
-                icon={<Trash2 className="h-4 w-4" />}
-                label="Trash"
-                destructive
-              />
-            </>
-          )}
+            ) : (
+              <>
+                <ActionButton
+                  onClick={() =>
+                    hasUnread
+                      ? markRead.mutate({ emailIds: unreadIds.slice(0, 50) })
+                      : markUnread.mutate({ emailIds: [latest.id] })
+                  }
+                  icon={hasUnread ? <MailCheck className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
+                  label={hasUnread ? "Mark read" : "Mark unread"}
+                />
+                <ActionButton onClick={() => archiveMutation.mutate({ emailId: primaryEmailId })} icon={<Archive className="h-4 w-4" />} label="Archive" />
+                <ActionButton
+                  onClick={() => deleteMutation.mutate({ emailId: primaryEmailId })}
+                  icon={<Trash2 className="h-4 w-4" />}
+                  label="Trash"
+                  destructive
+                />
+              </>
+            )}
+          </div>
         </div>
 
         {showTldr && (
-          <div
-            className="mt-5 rounded-xl p-4 text-sm leading-6 text-[var(--text)]"
-            style={{
-              backgroundColor: "var(--accent-subtle)",
-              borderLeft: "3px solid var(--accent)",
-            }}
-          >
-            <strong>TL;DR:</strong> {typedThread[0]?.tldr}
+          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-border bg-background/80 px-4 py-3 text-sm leading-6 text-foreground-muted shadow-sm dark:bg-surface/70">
+            <span className="inline-flex shrink-0 items-center rounded-full border border-accent/20 bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+              TL;DR
+            </span>
+            <p className="min-w-0">
+              {typedThread[0]?.tldr}
+            </p>
           </div>
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 sm:gap-4">
           {typedThread.map((email, index) => (
             <EmailMessageCard key={email.id} email={email} showRecipientSummary={index === 0} />
           ))}
@@ -274,15 +289,15 @@ export function ThreadEmptyState() {
 function ThreadLoading({ compact }: { compact: boolean }) {
   return (
     <div className={compact ? "flex h-full flex-col" : "flex h-full flex-col"}>
-      <div className="border-b border-border px-4 py-4 sm:px-6">
-        <div className="h-7 w-2/3 animate-pulse rounded bg-surface-overlay" />
-        <div className="mt-3 h-4 w-1/2 animate-pulse rounded bg-surface-overlay" />
+      <div className="border-b border-border bg-[rgba(255,255,255,0.86)] px-4 py-4 sm:px-6 dark:bg-surface/95">
+        <div className="h-6 w-1/2 animate-pulse rounded bg-surface-overlay" />
+        <div className="mt-3 h-4 w-1/3 animate-pulse rounded bg-surface-overlay" />
       </div>
-      <div className="flex-1 space-y-4 p-4 sm:p-5">
+      <div className="flex-1 space-y-4 px-3 py-4 sm:px-6 sm:py-6">
         {Array.from({ length: 3 }).map((_, index) => (
-          <div key={index} className="rounded-2xl border border-border bg-surface p-5">
+          <div key={index} className="rounded-[1.5rem] border border-border bg-background p-5 shadow-[0_8px_24px_rgba(38,28,14,0.04)] dark:bg-surface">
             <div className="h-4 w-1/3 animate-pulse rounded bg-surface-overlay" />
-            <div className="mt-4 h-24 animate-pulse rounded bg-surface-overlay" />
+            <div className="mt-4 h-20 animate-pulse rounded bg-surface-overlay" />
           </div>
         ))}
       </div>
@@ -303,12 +318,13 @@ function ActionButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className={[
-        "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
         destructive
-          ? "border-border bg-background text-red-500 hover:bg-red-500/10"
-          : "border-border bg-background text-foreground hover:bg-surface-raised",
+          ? "border-border bg-background text-red-600 hover:bg-red-500/10 dark:text-red-400"
+          : "border-border bg-background/90 text-foreground hover:bg-surface-raised dark:bg-background/70",
       ].join(" ")}
     >
       {icon}
@@ -328,38 +344,42 @@ function EmailMessageCard({
 
   return (
     <div
-      className="overflow-hidden rounded-2xl border p-6 shadow-sm"
+      className="overflow-hidden rounded-[1.5rem] border bg-background p-4 shadow-[0_8px_24px_rgba(38,28,14,0.04)] sm:p-5 dark:bg-surface"
       style={{
-        backgroundColor: "var(--surface)",
         borderColor: "var(--border)",
         borderLeft: !email.isRead ? "2px solid var(--accent)" : "1px solid var(--border)",
       }}
     >
-      <div className="mb-5 border-b pb-4" style={{ borderColor: "var(--border)" }}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 border-b pb-3" style={{ borderColor: "var(--border)" }}>
+        <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="truncate text-base font-semibold text-[var(--text)]">{email.senderName}</div>
-            <div className="mt-1 text-xs text-foreground-subtle">{createdLabel}</div>
-            {showRecipientSummary && (
-              <div className="mt-2 text-xs text-foreground-subtle">{email.recipientSummary}</div>
-            )}
+            <div className="truncate text-sm font-semibold text-foreground sm:text-base">{email.senderName}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground-subtle">
+              <span>{createdLabel}</span>
+              {showRecipientSummary ? (
+                <>
+                  <span aria-hidden="true">•</span>
+                  <span className="truncate">{email.recipientSummary}</span>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
 
       {email.bodyHtml ? (
-        <div className="overflow-hidden rounded-xl border border-border bg-white">
+        <div className="overflow-hidden rounded-2xl border border-border bg-white">
           <iframe
             srcDoc={email.bodyHtml}
             sandbox=""
             referrerPolicy="no-referrer"
             title={`Email from ${email.senderName}`}
-            className="block w-full border-0"
-            style={{ height: "min(72vh, 50rem)" }}
+            className="block min-h-[32rem] w-full border-0"
+            style={{ height: "min(88vh, 60rem)" }}
           />
         </div>
       ) : (
-        <div className="space-y-4 text-[15px] leading-7 text-[var(--text)]">
+        <div className="space-y-4 text-[15px] leading-7 text-foreground sm:text-[16px]">
           {renderReadableText(email.bodyText || email.snippet || "No content available.")}
         </div>
       )}

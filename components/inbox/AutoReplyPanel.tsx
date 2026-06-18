@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Sparkles, ShieldAlert, PencilLine } from "lucide-react";
+import { PencilLine, ShieldAlert, Sparkles } from "lucide-react";
 
 import { trpc } from "@/lib/trpc/client";
 
@@ -33,7 +33,7 @@ export function AutoReplyPanel({ emailId, onSelect }: { emailId: string; onSelec
     if (!replies.length) {
       return (
         <UnavailableState
-          title="Generating suggestions…"
+          title="Generating suggestions..."
           body="Aethra is preparing three reply drafts for this thread."
           pulse
         />
@@ -45,29 +45,29 @@ export function AutoReplyPanel({ emailId, onSelect }: { emailId: string; onSelec
         <div className="flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Reply Suggestions</h3>
-            <p className="mt-1 text-xs text-foreground-muted">Select a draft to open it in the composer and edit before sending.</p>
+            <p className="mt-1 text-xs text-foreground-muted">Pick a draft to edit before sending.</p>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-foreground-muted">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-foreground-muted shadow-sm">
             <PencilLine className="h-3.5 w-3.5" aria-hidden="true" />
             Editable drafts
           </div>
         </div>
 
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-2.5 md:grid-cols-3">
           {replies.slice(0, 3).map((reply, index) => (
             <button
               key={reply.id}
               type="button"
               onClick={() => onSelect(reply.reply_text)}
-              className="group rounded-2xl border border-border bg-surface p-4 text-left transition-colors hover:border-accent/30 hover:bg-accent/5"
+              className="group flex min-h-[7.5rem] flex-col rounded-2xl border border-border bg-background p-3 text-left transition-colors hover:border-accent/30 hover:bg-accent/5"
             >
               <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/10 text-accent">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/10 text-accent">
                   <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                 </div>
                 <div className="text-sm font-medium text-foreground">{VARIANT_LABELS[index] ?? "Reply"}</div>
               </div>
-              <p className="mt-3 line-clamp-5 text-xs leading-5 text-foreground-muted">{reply.reply_text}</p>
+              <p className="mt-2 line-clamp-4 text-xs leading-5 text-foreground-muted">{reply.reply_text}</p>
             </button>
           ))}
         </div>
@@ -75,12 +75,12 @@ export function AutoReplyPanel({ emailId, onSelect }: { emailId: string; onSelec
     );
   }, [allowSuggestions, onSelect, replies]);
 
-  return <div className="border-t border-border bg-surface px-4 py-4">{content}</div>;
+  return <div className="border-t border-border bg-background/80 px-4 py-3 sm:px-6">{content}</div>;
 }
 
 function UnavailableState({ title, body, pulse = false }: { title: string; body: string; pulse?: boolean }) {
   return (
-    <div className={`flex items-start gap-3 rounded-2xl border border-border bg-background px-4 py-3 text-sm ${pulse ? "animate-pulse" : ""}`}>
+    <div className={`flex items-start gap-3 rounded-2xl border border-border bg-background px-4 py-3 text-sm shadow-sm ${pulse ? "animate-pulse" : ""}`}>
       <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-foreground-subtle" aria-hidden="true" />
       <div>
         <div className="font-medium text-foreground">{title}</div>
