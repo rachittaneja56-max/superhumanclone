@@ -104,6 +104,82 @@ function sanitizeOutput(value: string, maxChars: number) {
   return sanitiseAgentOutput(truncateText(redactSensitiveText(value), maxChars), maxChars);
 }
 
+function stripWeakClosers(lines: string[]) {
+  return lines.filter(
+    (line) =>
+      !/^(would you like me to|let me know if you'd like|if you'd like,? i can|happy to help(?: with that)?)/i.test(line),
+  );
+}
+
+function stripPlaceholderClaims(line: string) {
+  return line.replace(/\[[^\]]+\]\s*(?:unread|read|threads?|emails?)/gi, "").trim();
+}
+
+function cleanLines(value: string, maxChars: number) {
+  return stripWeakClosers(
+    sanitizeOutput(value, maxChars)
+      .split(/\r?\n/)
+      .map((line) => stripPlaceholderClaims(line.trim()))
+      .filter(Boolean),
+  );
+}
+
+function normalizeShortText(value: string, maxChars: number, fallback: string) {
+  const lines = cleanLines(value, maxChars);
+  const first = lines[0]?.replace(/^[-•*]\s*/, "").trim();
+  return first || fallback;
+}
+
+function normalizeBulletSummary(value: string, maxChars: number, fallback: string) {
+  const lines = cleanLines(value, maxChars);
+  if (lines.length === 0) return fallback;
+
+  const headline = lines[0].replace(/^[-•*]\s*/, "").trim();
+  const bullets = lines
+    .slice(1)
+    .filter((line) => /^[-•*]/.test(line))
+    .map((line) => line.replace(/^[-•*]\s*/, "").trim())
+    .filter(Boolean)
+    .slice(0, 5);
+
+  if (bullets.length === 0) {
+    return headline || fallback;
+  }
+
+  return [headline, ...bullets.map((bullet) => `- ${bullet}`)].join("\n");
+}
+
+function normalizeReplyText(value: string, fallback: string) {
+  return truncateText(normalizeShortText(value, 320, fallback), 320);
+}
+
+function normalizeMeetingPrepResult(result: z.infer<typeof meetingPrepSchema>) {
+  return {
+    summary: normalizeShortText(
+      result.summary,
+      220,
+      "Not enough mailbox detail to prep this meeting precisely.",
+    ),
+    attendees: result.attendees.map((entry) => sanitizeOutput(entry, 120)).filter(Boolean).slice(0, 12),
+    recentEmails: result.recentEmails.slice(0, 5).map((email) => ({
+      sender: sanitizeOutput(email.sender, 120),
+      subject: sanitizeOutput(email.subject, 180),
+      snippet: sanitizeOutput(email.snippet, 220),
+      receivedAt: email.receivedAt,
+    })),
+    openQuestions: result.openQuestions.map((item) => normalizeShortText(item, 180, "")).filter(Boolean).slice(0, 3),
+    talkingPoints: result.talkingPoints.map((item) => normalizeShortText(item, 180, "")).filter(Boolean).slice(0, 3),
+  };
+}
+
+function normalizeAgentResult(value: string) {
+  return normalizeBulletSummary(
+    value,
+    4200,
+    "Not enough mailbox detail to rank threads precisely.",
+  );
+}
+
 function normalizeAgentResponse(value: string) {
   const cleaned = sanitizeOutput(value, 4200);
   const lines = cleaned
@@ -463,9 +539,10 @@ export async function classifyEmail(
 
 export async function generateTLDR(subject: string, bodyText: string, options?: { userId?: string }) {
   const promptBody = `${wrapEmailContent(`Subject: ${subject}\nBody: ${bodyText}`)}`;
+  const fallback = "Not enough mailbox detail to summarize precisely.";
 
   if (hasThinContent(bodyText) && hasThinContent(subject)) {
-    return "Not enough mailbox detail to summarize precisely.";
+    return fallback;
   }
 
   try {
@@ -474,9 +551,9 @@ export async function generateTLDR(subject: string, bodyText: string, options?: 
       capability: "fast",
       prompt: prompts.tldrGenerator,
     });
-    return text;
+    return normalizeShortText(text, 220, fallback);
   } catch {
-    return "Not enough mailbox detail to summarize precisely.";
+    return fallback;
   }
 }
 
@@ -495,7 +572,11 @@ export async function generateAutoReplies(subject: string, bodyText: string, opt
         prompt: prompts.autoReplyGenerator,
       },
     );
-    return object;
+    return {
+      direct: normalizeReplyText(object.direct, "Thanks for the note. I need a bit more detail before replying precisely."),
+      warm: normalizeReplyText(object.warm, "Thanks for reaching out. I need a bit more detail before replying precisely."),
+      boundary: normalizeReplyText(object.boundary, "Thanks for the message. I need a bit more context before I can reply precisely."),
+    };
   } catch {
     const short = fallbackTextFromContent(bodyText || subject, 120);
     return {
@@ -553,15 +634,18 @@ export async function generateDigest(
       capability: "smart",
       prompt: prompts.morningDigest,
     });
-    return text;
+    return normalizeBulletSummary(text, 900, "Not enough mailbox detail to rank threads precisely.");
   } catch {
     if (emailRows.length + eventRows.length < 2) {
       return "Not enough mailbox detail to rank threads precisely.";
     }
 
-    const topEmail = emailRows[0]?.subject ? `Top email: ${emailRows[0].subject}.` : "No urgent mail found.";
-    const nextEvent = eventRows[0]?.title ? `Next event: ${eventRows[0].title}.` : "No upcoming events found.";
-    return `${topEmail} ${nextEvent}`.trim();
+    const headline = "Today at a glance";
+    const bullets = [
+      emailRows[0]?.subject ? `Top thread: ${sanitizeOutput(emailRows[0].subject, 160)}` : "",
+      eventRows[0]?.title ? `Next event: ${sanitizeOutput(eventRows[0].title, 160)}` : "",
+    ].filter(Boolean);
+    return bullets.length > 0 ? [headline, ...bullets.map((bullet) => `- ${bullet}`)].join("\n") : headline;
   }
 }
 
@@ -583,7 +667,7 @@ export async function rewriteDraft(
       capability: "fast",
       prompt: prompts.rewriteDraft,
     });
-    return text;
+    return sanitizeOutput(text, 4000);
   } catch {
     return sanitizeOutput(draft, 4000);
   }
@@ -627,10 +711,10 @@ export async function generateMeetingPrepBrief(content: string, options?: { user
         prompt: prompts.meetingPrepBrief,
       },
     );
-    return object;
+    return normalizeMeetingPrepResult(object);
   } catch {
     return {
-      summary: "Prep brief unavailable right now.",
+      summary: "Not enough mailbox detail to prep this meeting precisely.",
       attendees: [],
       recentEmails: [],
       openQuestions: [],
@@ -646,9 +730,9 @@ export async function generateContactSummary(snippets: string[], options?: { use
       capability: "fast",
       prompt: prompts.contactRelationship,
     });
-    return text;
+    return normalizeShortText(text, 160, "Not enough recent email detail to summarize this relationship.");
   } catch {
-    return "No relationship summary available yet.";
+    return "Not enough recent email detail to summarize this relationship.";
   }
 }
 
@@ -673,8 +757,8 @@ export async function streamAgentResponse(
       prompt: prompts.agentSystem,
     });
 
-    const cleaned = normalizeAgentResponse(text);
-    const fallback = "I can help with inbox and calendar workflows. If you share a thread or meeting context, I can be more specific.";
+    const cleaned = normalizeAgentResult(text);
+    const fallback = "I can help with inbox, calendar, reply drafts, and meeting prep. Share a thread or event for a grounded answer.";
 
     return { textStream: createSingleChunkStream(isLikelyAgentText(cleaned) ? cleaned : fallback) };
   } catch (error) {
