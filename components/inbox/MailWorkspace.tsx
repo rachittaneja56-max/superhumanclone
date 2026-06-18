@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { useUndoSend } from "@/hooks/useUndoSend";
 import { useUIStore } from "@/store/ui-store";
 import { mapEmailForListClient, type EmailListClientItem } from "@/lib/email-client";
+import { getEmailPriorityPresentation } from "@/lib/email-priority";
 import { sendEmailSchema } from "@/lib/schemas";
 import { ThreadView } from "./ThreadView";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
@@ -560,6 +561,13 @@ export function MailWorkspace({
                     {visibleThreads.map((thread) => {
                       const id = thread.threadId || thread.id;
                       const active = id === activeThreadId;
+                      const priority = thread.priorityLabel && thread.priorityClassName
+                        ? {
+                            label: thread.priorityLabel,
+                            chipClassName: thread.priorityClassName,
+                          }
+                        : getEmailPriorityPresentation(thread);
+                      const visibleBadges = thread.badges.filter((badge) => badge.toLowerCase() !== priority.label.toLowerCase());
 
                       return (
                         <button
@@ -592,9 +600,19 @@ export function MailWorkspace({
                               <div className="mt-1 line-clamp-2 break-words text-xs leading-5 text-foreground-muted">
                                 {thread.snippet || "No preview available."}
                               </div>
-                              {thread.badges.length > 0 && (
+                              {(priority || visibleBadges.length > 0) && (
                                 <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {thread.badges.slice(0, 3).map((badge) => (
+                                  {priority ? (
+                                    <span
+                                      className={[
+                                        "rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em]",
+                                        priority.chipClassName,
+                                      ].join(" ")}
+                                    >
+                                      {priority.label}
+                                    </span>
+                                  ) : null}
+                                  {visibleBadges.slice(0, priority ? 2 : 3).map((badge) => (
                                     <span
                                       key={badge}
                                       className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-foreground-subtle"

@@ -16,6 +16,8 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { compareEmailPriority, getEmailPriorityPresentation, resolveEmailPriority } from "@/lib/email-priority";
+import type { EmailListClientItem } from "@/lib/email-client";
 import { cn } from "@/lib/utils";
 import { serverTrpc } from "@/lib/trpc/server";
 
@@ -39,18 +41,7 @@ type ConnectionState = {
   calendarConnected: boolean;
 };
 
-type InboxThread = {
-  id: string;
-  threadId: string;
-  senderName: string;
-  subject: string;
-  snippet: string;
-  isRead: boolean;
-  aiTriageSkipped?: boolean;
-  tldr?: string | null;
-  receivedAt: string | null;
-  badges: string[];
-};
+type InboxThread = EmailListClientItem;
 
 type CalendarEvent = {
   id: string;
@@ -211,15 +202,20 @@ export async function DashboardData({
   })) as AuditLog[];
 
   const inboxItems = inboxThreads.items ?? [];
+  const sortedInboxItems = [...inboxItems].sort(compareEmailPriority);
   const now = new Date();
-  const urgentThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Urgent") || isUrgentThread(thread));
-  const replyThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Needs reply")).slice(0, 4);
-  const financeThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Finance")).slice(0, 4);
-  const calendarThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Calendar")).slice(0, 4);
-  const workThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Work")).slice(0, 4);
-  const updatesThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Updates")).slice(0, 4);
-  const followUpThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Follow-up")).slice(0, 4);
-  const privateThreads = inboxItems.filter((thread: InboxThread) => hasBadge(thread, "Private")).slice(0, 4);
+  const urgentThreads = sortedInboxItems.filter((thread: InboxThread) => resolveEmailPriority(thread) === "urgent");
+  const highPriorityThreads = sortedInboxItems.filter((thread: InboxThread) => resolveEmailPriority(thread) === "high");
+  const mediumPriorityThreads = sortedInboxItems.filter((thread: InboxThread) => resolveEmailPriority(thread) === "medium");
+  const lowPriorityThreads = sortedInboxItems.filter((thread: InboxThread) => resolveEmailPriority(thread) === "low");
+  const highPrioritySummaryCount = urgentThreads.length + highPriorityThreads.length;
+  const replyThreads = sortedInboxItems.filter((thread: InboxThread) => hasBadge(thread, "Needs reply")).slice(0, 4);
+  const financeThreads = sortedInboxItems.filter((thread: InboxThread) => hasBadge(thread, "Finance")).slice(0, 4);
+  const calendarThreads = sortedInboxItems.filter((thread: InboxThread) => hasBadge(thread, "Calendar")).slice(0, 4);
+  const workThreads = sortedInboxItems.filter((thread: InboxThread) => hasBadge(thread, "Work")).slice(0, 4);
+  const updatesThreads = sortedInboxItems.filter((thread: InboxThread) => hasBadge(thread, "Updates")).slice(0, 4);
+  const followUpThreads = sortedInboxItems.filter((thread: InboxThread) => hasBadge(thread, "Follow-up")).slice(0, 4);
+  const privateThreads = sortedInboxItems.filter((thread: InboxThread) => hasBadge(thread, "Private")).slice(0, 4);
   const staleThreads = inboxItems
     .filter((thread: InboxThread) => {
       if (thread.isRead || thread.receivedAt === null) return false;
@@ -228,7 +224,7 @@ export async function DashboardData({
       return now.getTime() - receivedAt.getTime() >= 1000 * 60 * 60 * 24 * 3;
     })
     .slice(0, 4);
-  const priorityThreads = [...urgentThreads, ...replyThreads, ...financeThreads, ...calendarThreads, ...workThreads]
+  const priorityThreads = sortedInboxItems
     .filter((thread: InboxThread, index: number, items: InboxThread[]) => items.findIndex((candidate) => candidate.id === thread.id) === index)
     .slice(0, 4);
   const todayEvents = normalizedCalendarEvents.filter((event) => isSameDay(event.startTime, today));
@@ -243,6 +239,9 @@ export async function DashboardData({
   const plan = billing?.currentPlan ?? null;
   const intelligenceBuckets = [
     { label: "Urgent", value: urgentThreads.length, icon: Mail },
+    { label: "High", value: highPriorityThreads.length, icon: Mail },
+    { label: "Medium", value: mediumPriorityThreads.length, icon: Mail },
+    { label: "Low", value: lowPriorityThreads.length, icon: Mail },
     { label: "Needs reply", value: replyThreads.length, icon: MessageSquareReply },
     { label: "Finance / banking", value: financeThreads.length, icon: Landmark },
     { label: "Work / hiring", value: workThreads.length, icon: BriefcaseBusiness },
@@ -270,10 +269,10 @@ export async function DashboardData({
           tone={replyThreads.length > 0 ? "warn" : "good"}
         />
         <SummaryCard
-          label="Finance / alerts"
-          value={String(financeThreads.length)}
-          helper={financeThreads.length > 0 ? "Invoices, billing, and banking messages" : "No finance alerts today"}
-          tone={financeThreads.length > 0 ? "warn" : "muted"}
+          label="High priority"
+          value={String(highPrioritySummaryCount)}
+          helper={urgentThreads.length > 0 ? `${urgentThreads.length} urgent right now` : "No urgent threads right now"}
+          tone={highPrioritySummaryCount > 0 ? "warn" : "muted"}
         />
         <SummaryCard
           label="Meetings today"
@@ -545,6 +544,17 @@ function ThreadList({
           href={`/inbox/${thread.threadId}`}
           className="block rounded-2xl border border-border bg-[rgba(255,255,255,0.82)] px-4 py-3 transition-colors hover:bg-surface-raised dark:bg-background"
         >
+          {(() => {
+            const priority = thread.priorityLabel && thread.priorityClassName
+              ? {
+                  label: thread.priorityLabel,
+                  chipClassName: thread.priorityClassName,
+                }
+              : getEmailPriorityPresentation(thread);
+            const visibleBadges = thread.badges.filter((badge) => badge.toLowerCase() !== priority.label.toLowerCase());
+
+            return (
+              <>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-foreground">{thread.senderName}</div>
@@ -556,12 +566,18 @@ function ThreadList({
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {thread.badges.slice(0, 3).map((badge) => (
+            <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em]", priority.chipClassName)}>
+              {priority.label}
+            </span>
+            {visibleBadges.slice(0, 2).map((badge) => (
               <span key={badge} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em]", badgeTone(badge))}>
                 {badge}
               </span>
             ))}
           </div>
+              </>
+            );
+          })()}
         </Link>
       ))}
     </div>
@@ -604,11 +620,6 @@ function EmptyState({ label }: { label: string }) {
       {label}
     </div>
   );
-}
-
-function isUrgentThread(thread: InboxThread) {
-  const haystack = `${thread.subject} ${thread.snippet} ${thread.tldr ?? ""}`.toLowerCase();
-  return /\b(urgent|asap|action required|needs reply|follow up|important|deadline|today)\b/.test(haystack);
 }
 
 function hasBadge(thread: InboxThread, badge: string) {

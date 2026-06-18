@@ -13,6 +13,8 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import { compareEmailPriority, getEmailPriorityPresentation, resolveEmailPriority } from "@/lib/email-priority";
+import type { EmailListClientItem } from "@/lib/email-client";
 import { cn } from "@/lib/utils";
 
 type BillingOverview = {
@@ -30,18 +32,7 @@ type DashboardSettings = {
   morningDigestEnabled: boolean;
 } | null;
 
-type InboxThread = {
-  id: string;
-  threadId: string;
-  senderName: string;
-  subject: string;
-  snippet: string;
-  isRead: boolean;
-  aiTriageSkipped?: boolean;
-  tldr?: string | null;
-  receivedAt: string | null;
-  badges: string[];
-};
+type InboxThread = EmailListClientItem;
 
 type CalendarEvent = {
   id: string;
@@ -99,16 +90,18 @@ export function CommandCenterDashboard({
   const privacyReady = Boolean(settings?.privacyConfigured);
   const gmailConnected = connectionState.gmailConnected;
   const calendarConnected = connectionState.calendarConnected;
-  const urgentThreads = inboxThreads.filter((thread) => isUrgentThread(thread));
-  const replyThreads = inboxThreads.filter((thread) => !thread.isRead).slice(0, 4);
-  const priorityThreads = [...urgentThreads, ...inboxThreads.filter((thread) => !thread.isRead && !isUrgentThread(thread))]
-    .filter((thread, index, items) => items.findIndex((candidate) => candidate.id === thread.id) === index)
-    .slice(0, 4);
+  const sortedThreads = [...inboxThreads].sort(compareEmailPriority);
+  const urgentThreads = sortedThreads.filter((thread) => resolveEmailPriority(thread) === "urgent");
+  const highPriorityThreads = sortedThreads.filter((thread) => resolveEmailPriority(thread) === "high");
+  const mediumPriorityThreads = sortedThreads.filter((thread) => resolveEmailPriority(thread) === "medium");
+  const lowPriorityThreads = sortedThreads.filter((thread) => resolveEmailPriority(thread) === "low");
+  const highPrioritySummaryCount = urgentThreads.length + highPriorityThreads.length;
+  const replyThreads = sortedThreads.filter((thread) => !thread.isRead).slice(0, 4);
+  const priorityThreads = sortedThreads.slice(0, 4);
   const todayEvents = calendarEvents.filter((event) => isSameDay(event.startTime, new Date()));
   const nextEvent = [...calendarEvents].sort((a, b) => a.startTime.getTime() - b.startTime.getTime()).find((event) => event.endTime >= new Date()) ?? null;
   const inboxUnread = unreadCounts?.inbox ?? replyThreads.length;
   const archivedNoise = (unreadCounts?.spam ?? 0) + (unreadCounts?.trash ?? 0);
-  const fyiThreads = inboxThreads.filter((thread) => thread.isRead).slice(0, 3);
   const recentActions = auditLogs.slice(0, 4);
   const aiUsage = billing?.usage?.ai ?? null;
   const plan = billing?.currentPlan ?? null;
@@ -138,10 +131,10 @@ export function CommandCenterDashboard({
                   tone={gmailConnected && calendarConnected ? "good" : "warn"}
                 />
                 <SummaryCard
-                  label="Urgent items"
-                  value={String(urgentThreads.length)}
-                  helper="Threads needing quick attention"
-                  tone={urgentThreads.length > 0 ? "warn" : "muted"}
+                  label="High priority"
+                  value={String(highPrioritySummaryCount)}
+                  helper={urgentThreads.length > 0 ? `${urgentThreads.length} urgent right now` : "No urgent threads right now"}
+                  tone={highPrioritySummaryCount > 0 ? "warn" : "muted"}
                 />
                 <SummaryCard
                   label="Replies pending"
@@ -277,8 +270,10 @@ export function CommandCenterDashboard({
           <PanelCard title="Inbox intelligence" icon={<Inbox className="h-4 w-4" />} description="Useful counts without the noise." className="xl:col-span-1">
             <div className="space-y-3">
               <CountRow label="Urgent" value={String(urgentThreads.length)} />
+              <CountRow label="High" value={String(Math.max(0, highPriorityThreads.length - urgentThreads.length))} />
+              <CountRow label="Medium" value={String(mediumPriorityThreads.length)} />
+              <CountRow label="Low" value={String(lowPriorityThreads.length)} />
               <CountRow label="Needs reply" value={String(replyThreads.length)} />
-              <CountRow label="FYI" value={String(fyiThreads.length)} />
               <CountRow label="Archived noise" value={String(archivedNoise)} />
             </div>
           </PanelCard>
@@ -403,11 +398,18 @@ function ThreadList({
   return (
     <div className={cn("space-y-2", compact ? "space-y-2" : "space-y-3")}>
       {threads.map((thread) => (
-        <Link
-          key={thread.id}
-          href={`/inbox/${thread.threadId}`}
-          className="block rounded-2xl border border-border bg-background px-4 py-3 transition-colors hover:bg-surface-raised"
-        >
+        <Link key={thread.id} href={`/inbox/${thread.threadId}`} className="block rounded-2xl border border-border bg-background px-4 py-3 transition-colors hover:bg-surface-raised">
+          {(() => {
+            const priority = thread.priorityLabel && thread.priorityClassName
+              ? {
+                  label: thread.priorityLabel,
+                  chipClassName: thread.priorityClassName,
+                }
+              : getEmailPriorityPresentation(thread);
+            const visibleBadges = thread.badges.filter((badge) => badge.toLowerCase() !== priority.label.toLowerCase());
+
+            return (
+              <>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold text-foreground">{thread.senderName}</div>
@@ -419,12 +421,18 @@ function ThreadList({
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {thread.badges.slice(0, 3).map((badge) => (
+            <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em]", priority.chipClassName)}>
+              {priority.label}
+            </span>
+            {visibleBadges.slice(0, 2).map((badge) => (
               <span key={badge} className="rounded-full border border-border bg-surface px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-foreground-subtle">
                 {badge}
               </span>
             ))}
           </div>
+              </>
+            );
+          })()}
         </Link>
       ))}
     </div>
@@ -467,11 +475,6 @@ function EmptyState({ label }: { label: string }) {
       {label}
     </div>
   );
-}
-
-function isUrgentThread(thread: InboxThread) {
-  const haystack = `${thread.subject} ${thread.snippet} ${thread.tldr ?? ""}`.toLowerCase();
-  return /\b(urgent|asap|action required|needs reply|follow up|important|deadline|today)\b/.test(haystack);
 }
 
 function humanizeAction(action: string) {

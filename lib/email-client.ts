@@ -1,3 +1,10 @@
+import {
+  getEmailPriorityPresentation,
+  normalizeEmailPriority,
+  type EmailPriority,
+  type EmailPriorityTone,
+} from "./email-priority";
+
 export type EmailListClientItem = {
   id: string
   threadId: string
@@ -9,6 +16,11 @@ export type EmailListClientItem = {
   aiTriageSkipped?: boolean
   tldr?: string | null
   receivedAt: string | null
+  priority?: EmailPriority | null
+  priorityLabel: string
+  priorityTone: EmailPriorityTone
+  priorityClassName: string
+  priorityRank: number
   badges: string[]
 }
 
@@ -27,6 +39,11 @@ export type EmailThreadClientItem = {
   aiTriageSkipped?: boolean
   tldr?: string | null
   createdAt: string | null
+  priority?: EmailPriority | null
+  priorityLabel: string
+  priorityTone: EmailPriorityTone
+  priorityClassName: string
+  priorityRank: number
 }
 
 const NAMED_HTML_ENTITIES: Record<string, string> = {
@@ -138,6 +155,7 @@ export function mapEmailForListClient(row: {
   const subject = redactSensitiveForClient(row.subject) || '(no subject)'
   const snippet = redactSensitiveForClient(row.snippet) || 'No preview available.'
   const threadId = row.thread_id || row.id || crypto.randomUUID()
+  const priority = getEmailPriorityPresentation(row)
 
   return {
     id: threadId,
@@ -150,7 +168,12 @@ export function mapEmailForListClient(row: {
     aiTriageSkipped: Boolean(row.ai_triage_skipped),
     tldr: row.tldr ? redactSensitiveForClient(row.tldr) : null,
     receivedAt: row.created_at ? new Date(row.created_at).toISOString() : null,
-    badges: buildBadges(row),
+    priority: normalizeEmailPriority(row.priority),
+    priorityLabel: priority.label,
+    priorityTone: priority.tone,
+    priorityClassName: priority.chipClassName,
+    priorityRank: priority.sortOrder,
+    badges: buildBadges(row, priority.value),
   }
 }
 
@@ -168,7 +191,9 @@ export function mapEmailForThreadClient(row: {
   ai_triage_skipped?: boolean | null
   tldr?: string | null
   created_at?: string | Date | null
+  priority?: string | null
 }): EmailThreadClientItem {
+  const priority = getEmailPriorityPresentation(row)
   return {
     id: row.id,
     threadId: row.thread_id || row.id,
@@ -184,6 +209,11 @@ export function mapEmailForThreadClient(row: {
     aiTriageSkipped: Boolean(row.ai_triage_skipped),
     tldr: row.tldr ? redactSensitiveForClient(row.tldr) : null,
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    priority: normalizeEmailPriority(row.priority),
+    priorityLabel: priority.label,
+    priorityTone: priority.tone,
+    priorityClassName: priority.chipClassName,
+    priorityRank: priority.sortOrder,
   }
 }
 
@@ -197,13 +227,13 @@ function buildBadges(row: {
   from_address?: string | null
   tag?: string | null
   priority?: string | null
-}) {
+}, priority: EmailPriority) {
   const badges: string[] = []
   const haystack = `${row.subject ?? ''} ${row.snippet ?? ''} ${row.tldr ?? ''}`.toLowerCase()
   const sender = (row.from_address ?? '').toLowerCase()
 
   if (!row.is_read) badges.push('Unread')
-  if (row.priority === 'urgent' || row.priority === 'high' || /\b(urgent|asap|action required|deadline|today)\b/.test(haystack)) {
+  if (priority === 'urgent') {
     badges.push('Urgent')
   }
   if (!row.is_read && /\b(reply|respond|revert|let me know|can you|could you|review|approve|\?)\b/.test(haystack)) {
