@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { Fragment, useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { useUIStore } from "@/store/ui-store";
 import { HITLCard } from "./HITLCard";
@@ -18,6 +18,142 @@ const SUGGESTED_PROMPTS = [
   "Schedule a meeting with people from my last thread",
   "Summarize my unread emails",
 ];
+
+type MarkdownSegment =
+  | { type: "text"; value: string }
+  | { type: "strong"; value: string }
+  | { type: "code"; value: string }
+  | { type: "link"; label: string; href: string };
+
+function parseInlineMarkdown(text: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    const match = remaining.match(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/);
+    if (!match || match.index === undefined) {
+      segments.push({ type: "text", value: remaining });
+      break;
+    }
+
+    if (match.index > 0) {
+      segments.push({ type: "text", value: remaining.slice(0, match.index) });
+    }
+
+    const token = match[0];
+    if (token.startsWith("**") && token.endsWith("**")) {
+      segments.push({ type: "strong", value: token.slice(2, -2) });
+    } else if (token.startsWith("`") && token.endsWith("`")) {
+      segments.push({ type: "code", value: token.slice(1, -1) });
+    } else {
+      const linkMatch = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
+      if (linkMatch) {
+        segments.push({ type: "link", label: linkMatch[1], href: linkMatch[2] });
+      } else {
+        segments.push({ type: "text", value: token });
+      }
+    }
+
+    remaining = remaining.slice(match.index + token.length);
+  }
+
+  return segments;
+}
+
+function renderInlineMarkdown(text: string) {
+  return parseInlineMarkdown(text).map((segment, index) => {
+    if (segment.type === "strong") {
+      return <strong key={`${segment.type}-${index}`} className="font-semibold text-foreground">{segment.value}</strong>;
+    }
+
+    if (segment.type === "code") {
+      return (
+        <code
+          key={`${segment.type}-${index}`}
+          className="rounded bg-background/80 px-1.5 py-0.5 font-mono text-[0.92em] text-foreground"
+        >
+          {segment.value}
+        </code>
+      );
+    }
+
+    if (segment.type === "link") {
+      return (
+        <a
+          key={`${segment.type}-${index}`}
+          href={segment.href}
+          target="_blank"
+          rel="noreferrer"
+          className="text-accent underline underline-offset-4 hover:text-accent/80"
+        >
+          {segment.label}
+        </a>
+      );
+    }
+
+    return <Fragment key={`${segment.type}-${index}`}>{segment.value}</Fragment>;
+  });
+}
+
+function renderAssistantMarkdown(content: string) {
+  const lines = content.split("\n");
+  const blocks: React.ReactNode[] = [];
+  let currentParagraph: string[] = [];
+  let currentList: string[] = [];
+
+  const flushParagraph = () => {
+    if (currentParagraph.length === 0) return;
+    const text = currentParagraph.join(" ").trim();
+    if (text) {
+      blocks.push(
+        <p key={`p-${blocks.length}`} className="whitespace-pre-wrap">
+          {renderInlineMarkdown(text)}
+        </p>,
+      );
+    }
+    currentParagraph = [];
+  };
+
+  const flushList = () => {
+    if (currentList.length === 0) return;
+    blocks.push(
+      <ul key={`ul-${blocks.length}`} className="space-y-1.5 pl-5">
+        {currentList.map((item, index) => (
+          <li key={`li-${index}`} className="list-disc marker:text-accent">
+            {renderInlineMarkdown(item)}
+          </li>
+        ))}
+      </ul>,
+    );
+    currentList = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      flushParagraph();
+      currentList.push(bulletMatch[1].trim());
+      continue;
+    }
+
+    flushList();
+    currentParagraph.push(trimmed);
+  }
+
+  flushParagraph();
+  flushList();
+
+  return blocks.length > 0 ? blocks : <span className="whitespace-pre-wrap">{content}</span>;
+}
 
 function predictToolIndicator(input: string, threadContext?: string | null) {
   const lower = input.toLowerCase().trim();
@@ -277,7 +413,11 @@ export function AgentChat({
                   : "mr-auto border border-border bg-background text-foreground rounded-bl-sm"
               )}
             >
-              <span className="whitespace-pre-wrap">{msg.content}</span>
+              {msg.role === "assistant" ? (
+                <div className="space-y-2">{renderAssistantMarkdown(msg.content)}</div>
+              ) : (
+                <span className="whitespace-pre-wrap">{msg.content}</span>
+              )}
               {isStreaming && i === messages.length - 1 && msg.role === "assistant" && (
                 <span className="inline-block w-1.5 h-4 ml-1 bg-amber-500 animate-pulse align-middle" />
               )}
