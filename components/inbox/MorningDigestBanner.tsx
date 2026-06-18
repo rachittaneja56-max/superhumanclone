@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { X, Sparkles } from "lucide-react";
+import { Sparkles, X } from "lucide-react";
+
 import { trpc } from "@/lib/trpc/client";
 
 export function MorningDigestBanner() {
@@ -21,7 +22,7 @@ export function MorningDigestBanner() {
 
   return (
     <div className="border-b border-border bg-surface px-4 py-3">
-      <div className="flex items-start gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+      <div className="flex items-start gap-3 rounded-2xl border border-border bg-background px-4 py-3 shadow-sm">
         <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent">
           <Sparkles className="h-4 w-4" aria-hidden="true" />
         </div>
@@ -41,12 +42,12 @@ export function MorningDigestBanner() {
               disabled={digestQuery.isFetching}
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-xs font-medium text-foreground hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {digestQuery.isFetching ? "Generating…" : hasDigest ? "Regenerate" : "Generate"}
+              {digestQuery.isFetching ? "Generating..." : hasDigest ? "Regenerate" : "Generate"}
             </button>
           </div>
 
           {digestQuery.isFetching ? (
-            <p className="mt-3 text-sm text-foreground-muted">Preparing your digest…</p>
+            <p className="mt-3 text-sm text-foreground-muted">Preparing your digest...</p>
           ) : digestQuery.data?.digest ? (
             <p className="mt-3 line-clamp-2 text-sm leading-6 text-foreground">{digestQuery.data.digest}</p>
           ) : null}

@@ -70,10 +70,11 @@ export function MailWorkspace({
   const [nextPageToken, setNextPageToken] = useState<string | null>(initialMailboxPage.nextPageToken);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const autoPrefetchedFolderRef = useRef<Folder | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const folderPageCacheRef = useRef<Partial<Record<Folder, MailboxPage>>>({
     [initialFolder]: initialMailboxPage,
   });
+  const listScrollRef = useRef<HTMLDivElement | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const pushFocusLayer = useUIStore((state) => state.pushFocusLayer);
@@ -97,6 +98,7 @@ export function MailWorkspace({
     {
       enabled: debouncedQuery.length < 2,
       initialData: folder === initialFolder ? initialMailboxPage : undefined,
+      staleTime: 30_000,
       refetchOnWindowFocus: false,
     }
   );
@@ -192,10 +194,6 @@ export function MailWorkspace({
     setNextPageToken(incoming.nextPageToken);
     folderPageCacheRef.current[folder] = incoming;
   }, [currentMailboxPage, folder, initialMailboxPage, isSearchMode]);
-
-  useEffect(() => {
-    autoPrefetchedFolderRef.current = null;
-  }, [folder]);
 
   useEffect(() => {
     if (isSearchMode) return;
@@ -413,13 +411,28 @@ export function MailWorkspace({
   }, [folder, isFetchingMore, isSearchMode, mailboxQuery.isLoading, nextPageToken, threads.length, utils.email.getMailboxThreads]);
 
   useEffect(() => {
-    if (isSearchMode || mailboxQuery.isLoading || isFetchingMore) return;
-    if (!nextPageToken || threads.length < PAGE_SIZE) return;
-    if (autoPrefetchedFolderRef.current === folder) return;
+    if (isSearchMode || !nextPageToken) return;
 
-    autoPrefetchedFolderRef.current = folder;
-    void fetchMore();
-  }, [fetchMore, folder, isFetchingMore, isSearchMode, mailboxQuery.isLoading, nextPageToken, threads.length]);
+    const sentinel = loadMoreSentinelRef.current;
+    const root = listScrollRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          void fetchMore();
+        }
+      },
+      {
+        root,
+        rootMargin: "200px 0px",
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [fetchMore, isSearchMode, nextPageToken, threads.length, folder]);
 
   const handleSend = async (payload: {
     to: string[];
@@ -579,7 +592,7 @@ export function MailWorkspace({
         ) : (
           <div className="flex min-h-0 flex-1 overflow-hidden">
             <section className="min-w-0 flex-1">
-              <div className="h-full overflow-y-auto">
+              <div ref={listScrollRef} className="h-full overflow-y-auto">
                 {isInitialListLoading && visibleThreads.length === 0 ? (
                   <MailboxLoading folder={displayFolder} />
                 ) : mailboxQuery.isError ? (
@@ -681,6 +694,7 @@ export function MailWorkspace({
                         <span className="text-xs text-foreground-subtle">You&apos;re caught up.</span>
                       )}
                     </div>
+                    <div ref={loadMoreSentinelRef} className="h-px w-full" aria-hidden="true" />
                   </div>
                 )}
               </div>

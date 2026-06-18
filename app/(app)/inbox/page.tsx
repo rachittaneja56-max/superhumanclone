@@ -2,6 +2,7 @@ import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { serverTrpc } from '@/lib/trpc/server'
 import { MailWorkspace } from '@/components/inbox/MailWorkspace'
+import { MorningDigestBanner } from '@/components/inbox/MorningDigestBanner'
 import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
 import Link from 'next/link'
 import { endOfDay, startOfDay } from 'date-fns'
@@ -105,6 +106,7 @@ export default async function InboxPage({
     <div className="flex h-full min-h-0 overflow-hidden">
       <div className="grid h-full min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-h-0 min-w-0 overflow-hidden">
+          {folder === "inbox" ? <MorningDigestBanner /> : null}
           <MailWorkspace initialMailboxPage={initialMailboxPage} initialFolder={folder} initialComposeOpen={composeOpen} />
         </div>
         <InboxRightRail calendarConnected={calendarConnected} events={agendaEvents} />

@@ -266,6 +266,13 @@ export const emailRouter = router({
       }
 
       const cursor = decodePageToken(input.pageToken);
+      const me = input.folder === 'inbox' || input.folder === 'sent'
+        ? await ctx.db.query.users.findFirst({
+            where: eq(users.id, ctx.userId!),
+            columns: { email: true, name: true },
+          })
+        : null;
+      const isNotSentByMe = me?.email ? sql`${emails.from_address} <> ${me.email}` : sql`true`;
 
       if (input.folder === 'drafts') {
         const draftResult = await corsairGetDraftMessages(ctx.userId!, {
@@ -303,10 +310,6 @@ export const emailRouter = router({
       }
 
       if (input.folder === 'sent') {
-        const me = await ctx.db.query.users.findFirst({
-          where: eq(users.id, ctx.userId!),
-          columns: { email: true, name: true },
-        });
         const pattern = normalizeSearchPattern(input.query);
         let rows = await ctx.db.query.emails.findMany({
           where: and(
@@ -399,7 +402,7 @@ export const emailRouter = router({
         where: and(
           eq(emails.userId, ctx.userId!),
           input.folder === 'trash' ? eq(emails.is_deleted, true) : eq(emails.is_deleted, false),
-          input.folder === 'inbox' ? eq(emails.is_archived, false) : sql`true`,
+          input.folder === 'inbox' ? and(eq(emails.is_archived, false), isNotSentByMe) : sql`true`,
           cursor
             ? or(
                 lt(emails.created_at, new Date(cursor.createdAt)),
@@ -448,7 +451,7 @@ export const emailRouter = router({
             where: and(
               eq(emails.userId, ctx.userId!),
               input.folder === 'trash' ? eq(emails.is_deleted, true) : eq(emails.is_deleted, false),
-              input.folder === 'inbox' ? eq(emails.is_archived, false) : sql`true`,
+              input.folder === 'inbox' ? and(eq(emails.is_archived, false), isNotSentByMe) : sql`true`,
               isSpam
                 ? or(
                     eq(emails.tag, 'newsletter'),
@@ -606,6 +609,7 @@ export const emailRouter = router({
           eq(emails.userId, ctx.userId!),
           eq(emails.is_deleted, false),
           eq(emails.is_archived, false),
+          me?.email ? sql`${emails.from_address} <> ${me.email}` : sql`true`,
           eq(emails.is_read, false)
         )),
         corsairGetDraftMessages(ctx.userId!, { limit: 1 }).then((result) => {
