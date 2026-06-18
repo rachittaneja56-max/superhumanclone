@@ -187,17 +187,22 @@ export function ThreadView({
         </div>
       </div>
 
-      {mailbox === "inbox" && firstEmailId && onReplyCompose ? (
+      {mailbox === "inbox" && firstEmailId ? (
         <AutoReplyPanel
           emailId={firstEmailId}
-          onSelect={(text) =>
+          onSelect={(text) => {
+            if (!onReplyCompose) {
+              toast.error("Compose is unavailable right now.");
+              return;
+            }
+
             onReplyCompose({
               to: latest?.senderAddress || "",
               subject: replySubject,
               body: text,
               threadId,
-            })
-          }
+            });
+          }}
         />
       ) : null}
 
@@ -340,5 +345,6 @@ function renderReadableText(value: string) {
       </p>
     ));
 }
+
 
 

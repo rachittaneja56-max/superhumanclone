@@ -458,37 +458,51 @@ export async function createCalendarEvent(userId: string, event: {
   addMeetLink?: boolean
 }) {
   const t = await getTenant(userId)
-  try {
-    const eventPayload: any = {
-      summary: event.title,
-      start: { dateTime: event.startTime },
-      end: { dateTime: event.endTime },
-      attendees: event.attendees.map(email => ({ email })),
-      ...(event.description && { description: event.description }),
-      ...(event.location && { location: event.location }),
-    }
+  const eventPayload: any = {
+    summary: event.title,
+    start: { dateTime: event.startTime },
+    end: { dateTime: event.endTime },
+    attendees: event.attendees.map(email => ({ email })),
+    ...(event.description && { description: event.description }),
+    ...(event.location && { location: event.location }),
+  }
 
-    const createParams: any = { event: eventPayload, calendarId: 'primary' }
-
-    if (event.addMeetLink) {
-      createParams.conferenceDataVersion = 1
-      eventPayload.conferenceData = {
+  const buildCreateParams = (includeMeetLink: boolean): any => {
+    const params: any = { event: { ...eventPayload }, calendarId: 'primary' }
+    if (includeMeetLink) {
+      params.conferenceDataVersion = 1
+      params.event.conferenceData = {
         createRequest: {
           requestId: crypto.randomUUID(),
           conferenceSolutionKey: { type: 'hangoutsMeet' },
         },
       }
     }
+    return params
+  }
 
+  try {
     // Corsair SDK uses events.create (not events.insert)
-    const result = await t.googlecalendar.api.events.create(createParams)
-
+    const result = await t.googlecalendar.api.events.create(buildCreateParams(Boolean(event.addMeetLink)))
     const meetLink = result?.conferenceData?.entryPoints
       ?.find((e: any) => e.entryPointType === 'video')?.uri ?? null
 
     return { success: true, data: result, meetLink, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, data: null, meetLink: null, needsConnect: true }
+
+    if (event.addMeetLink) {
+      try {
+        const result = await t.googlecalendar.api.events.create(buildCreateParams(false))
+        const meetLink = result?.conferenceData?.entryPoints
+          ?.find((e: any) => e.entryPointType === 'video')?.uri ?? null
+        return { success: true, data: result, meetLink, needsConnect: false }
+      } catch (retryErr: any) {
+        if (isAuthError(retryErr)) return { success: false, data: null, meetLink: null, needsConnect: true }
+        throw retryErr
+      }
+    }
+
     throw err
   }
 }
@@ -504,38 +518,54 @@ export async function updateCalendarEvent(userId: string, event: {
   addMeetLink?: boolean
 }) {
   const t = await getTenant(userId)
-  try {
-    const eventPayload: any = {
-      summary: event.title,
-      start: { dateTime: event.startTime },
-      end: { dateTime: event.endTime },
-      attendees: event.attendees.map(email => ({ email })),
-      ...(event.description && { description: event.description }),
-      ...(event.location && { location: event.location }),
-    }
+  const eventPayload: any = {
+    summary: event.title,
+    start: { dateTime: event.startTime },
+    end: { dateTime: event.endTime },
+    attendees: event.attendees.map(email => ({ email })),
+    ...(event.description && { description: event.description }),
+    ...(event.location && { location: event.location }),
+  }
 
-    if (event.addMeetLink) {
-      eventPayload.conferenceData = {
+  const buildUpdateParams = (includeMeetLink: boolean): any => {
+    const params: any = {
+      calendarId: 'primary',
+      eventId: event.eventId,
+      event: { ...eventPayload },
+    }
+    if (includeMeetLink) {
+      params.event.conferenceData = {
         createRequest: {
           requestId: crypto.randomUUID(),
           conferenceSolutionKey: { type: 'hangoutsMeet' },
         },
       }
+      params.conferenceDataVersion = 1
     }
+    return params
+  }
 
-    const result = await t.googlecalendar.api.events.update({
-      calendarId: 'primary',
-      eventId: event.eventId,
-      event: eventPayload,
-      ...(event.addMeetLink ? { conferenceDataVersion: 1 } : {}),
-    })
-
+  try {
+    const result = await t.googlecalendar.api.events.update(buildUpdateParams(Boolean(event.addMeetLink)))
     const meetLink = result?.conferenceData?.entryPoints
       ?.find((e: any) => e.entryPointType === 'video')?.uri ?? null
 
     return { success: true, data: result, meetLink, needsConnect: false }
   } catch (err: any) {
     if (isAuthError(err)) return { success: false, data: null, meetLink: null, needsConnect: true }
+
+    if (event.addMeetLink) {
+      try {
+        const result = await t.googlecalendar.api.events.update(buildUpdateParams(false))
+        const meetLink = result?.conferenceData?.entryPoints
+          ?.find((e: any) => e.entryPointType === 'video')?.uri ?? null
+        return { success: true, data: result, meetLink, needsConnect: false }
+      } catch (retryErr: any) {
+        if (isAuthError(retryErr)) return { success: false, data: null, meetLink: null, needsConnect: true }
+        throw retryErr
+      }
+    }
+
     throw err
   }
 }
@@ -604,4 +634,5 @@ export async function disconnectIntegration(userId: string, integrationId: strin
     return { success: false, reason: 'disconnect_failed' as const }
   }
 }
+
 
