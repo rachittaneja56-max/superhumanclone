@@ -15,6 +15,11 @@ function normalizeFolder(folder?: string) {
   return 'inbox'
 }
 
+function isReconnectRequiredError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return message.includes('gmail_not_connected') || message.includes('Authentication required')
+}
+
 export default async function InboxPage({
   searchParams,
 }: {
@@ -72,6 +77,7 @@ export default async function InboxPage({
   // Fetch from our local DB. The inbox must render even if sync/Corsair is down.
   let initialMailboxPage = { items: [], nextPageToken: null } as { items: any[]; nextPageToken: string | null }
   let agendaEvents: any[] = []
+  let mailboxNeedsReconnect = false
   try {
     const trpc = await serverTrpc()
     const rawThreads = await trpc.email.getMailboxThreads({
@@ -82,7 +88,45 @@ export default async function InboxPage({
     })
     initialMailboxPage = JSON.parse(JSON.stringify(rawThreads))
   } catch (err) {
+    if (isReconnectRequiredError(err)) {
+      mailboxNeedsReconnect = true
+    }
     console.error('Failed to fetch threads:', err)
+  }
+
+  if (mailboxNeedsReconnect) {
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="border-b border-border px-6 py-4">
+          <h1 className="font-display text-lg font-semibold">Inbox</h1>
+        </div>
+        <div className="flex flex-1 items-center justify-center px-6">
+          <div className="max-w-md rounded-2xl border border-border bg-surface p-8 text-center shadow-sm">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-mail-x">
+                <path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8" />
+                <path d="m22 22-5-5" />
+                <path d="m17 22 5-5" />
+                <path d="m22 6-10 7L2 6" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-foreground">Gmail needs reconnecting</h2>
+            <p className="mt-2 text-sm leading-6 text-foreground-muted">
+              We found a saved Gmail connection, but the provider now needs the account to be connected again before mail can load.
+            </p>
+            <div className="mt-6 flex justify-center gap-3">
+              <Link
+                href="/onboarding/connect"
+                className="rounded-xl px-5 py-2.5 text-sm font-medium text-accent-foreground"
+                style={{ backgroundColor: 'var(--accent)' }}
+              >
+                Reconnect Gmail
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (calendarConnected) {

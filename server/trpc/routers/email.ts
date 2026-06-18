@@ -151,6 +151,7 @@ async function seedMailboxFromCorsair(
   const pageSize = Math.max(10, seedParams.limit);
   const maxPages = Math.max(1, seedParams.maxPages ?? 20);
   let pageToken: string | undefined;
+  let inserted = 0;
   const consentRules = await ctx.db.query.aiConsentRules.findMany({
     where: eq(aiConsentRules.userId, ctx.userId!),
     columns: { pattern: true, isBlocked: true },
@@ -161,6 +162,10 @@ async function seedMailboxFromCorsair(
       limit: pageSize,
       ...(pageToken ? { pageToken } : {}),
     });
+
+    if (corsairResult.needsConnect) {
+      return { inserted, needsConnect: true };
+    }
 
     if (!corsairResult.success || !Array.isArray(corsairResult.data) || corsairResult.data.length === 0) {
       break;
@@ -175,11 +180,14 @@ async function seedMailboxFromCorsair(
         ...row,
         ai_triage_skipped: aiTriageSkipped,
       }).onConflictDoNothing();
+      inserted += 1;
     }
 
     pageToken = corsairResult.nextPageToken ?? undefined;
     if (!pageToken) break;
   }
+
+  return { inserted, needsConnect: false };
 }
 
 async function queueSendJob(ctx: any, undoToken: string) {
@@ -347,7 +355,10 @@ export const emailRouter = router({
         });
         if (!cursor && input.offset === 0 && !input.query.trim() && rows.length === 0) {
           try {
-            await seedMailboxFromCorsair(ctx, { limit: input.limit, maxPages: 1 });
+            const seedResult = await seedMailboxFromCorsair(ctx, { limit: input.limit, maxPages: 1 });
+            if (seedResult.needsConnect) {
+              throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+            }
             rows = await ctx.db.query.emails.findMany({
               where: and(
                 eq(emails.userId, ctx.userId!),
@@ -377,6 +388,7 @@ export const emailRouter = router({
               offset: cursor ? 0 : input.offset,
             });
           } catch (err) {
+            if (err instanceof TRPCError) throw err;
             console.warn('[getMailboxThreads] Sent fallback failed:', err);
           }
         }
@@ -446,7 +458,10 @@ export const emailRouter = router({
 
       if (!cursor && input.offset === 0 && !input.query.trim() && rows.length === 0) {
         try {
-          await seedMailboxFromCorsair(ctx, { limit: input.limit, maxPages: 1 });
+          const seedResult = await seedMailboxFromCorsair(ctx, { limit: input.limit, maxPages: 1 });
+          if (seedResult.needsConnect) {
+            throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+          }
           rows = await ctx.db.query.emails.findMany({
             where: and(
               eq(emails.userId, ctx.userId!),
@@ -485,8 +500,9 @@ export const emailRouter = router({
             orderBy: [desc(emails.created_at)],
             limit: input.limit + 1,
             offset: cursor ? 0 : input.offset,
-          });
+            });
         } catch (err) {
+          if (err instanceof TRPCError) throw err;
           console.warn('[getMailboxThreads] Mailbox fallback failed:', err);
         }
       }

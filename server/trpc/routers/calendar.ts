@@ -25,11 +25,17 @@ import {
   updateEventSchema,
 } from '@/lib/schemas';
 import { decodeHtmlEntities, safeDisplayName } from '@/lib/email-client';
+import {
+  findCalendarEventCompat,
+  listCalendarEventsCompat,
+  type CalendarEventCompatRow,
+  upsertCalendarEventCompat,
+} from '@/server/db/calendar-events-compat';
 
-function mapDbEvent(row: typeof calendarEvents.$inferSelect) {
+function mapDbEvent(row: CalendarEventCompatRow) {
   return {
     id: row.id,
-    userId: row.userId,
+    userId: row.user_id,
     corsair_event_id: row.corsair_event_id,
     title: row.title,
     description: row.description,
@@ -88,24 +94,7 @@ async function upsertRemoteEvents(ctx: any, items: Record<string, unknown>[]) {
   if (rows.length === 0) return;
 
   for (const row of rows) {
-    await ctx.db
-      .insert(calendarEvents)
-      .values(row)
-      .onConflictDoUpdate({
-        target: calendarEvents.corsair_event_id,
-        set: {
-          title: sql`excluded.title`,
-          description: sql`excluded.description`,
-          start_time: sql`excluded.start_time`,
-          end_time: sql`excluded.end_time`,
-          location: sql`excluded.location`,
-          meeting_link: sql`excluded.meeting_link`,
-          attendees_summary: sql`excluded.attendees_summary`,
-          is_all_day: sql`excluded.is_all_day`,
-          status: sql`excluded.status`,
-          updated_at: new Date(),
-        },
-      });
+    await upsertCalendarEventCompat(ctx.db, row);
   }
 }
 
@@ -228,6 +217,8 @@ export const calendarRouter = router({
           eq(calendarEvents.userId, ctx.userId!),
           or(eq(calendarEvents.id, input.eventId), eq(calendarEvents.corsair_event_id, input.eventId)),
         ),
+      }).catch(async () => {
+        return findCalendarEventCompat(ctx.db, ctx.userId!, input.eventId);
       });
 
       if (!localEvent) {
@@ -370,17 +361,7 @@ export const calendarRouter = router({
       }
 
       const [events, mails] = await Promise.all([
-        ctx.db
-          .select()
-          .from(calendarEvents)
-          .where(
-            and(
-              eq(calendarEvents.userId, ctx.userId!),
-              gte(calendarEvents.start_time, input.startDate),
-              lte(calendarEvents.start_time, input.endDate),
-            ),
-          )
-          .orderBy(asc(calendarEvents.start_time)),
+        listCalendarEventsCompat(ctx.db, ctx.userId!, input.startDate, input.endDate),
         ctx.db
           .select({
             id: emails.id,
@@ -457,17 +438,7 @@ export const calendarRouter = router({
         });
         if (remote.success && Array.isArray(remote.data) && remote.data.length > 0) {
           await upsertRemoteEvents(ctx, remote.data as Record<string, unknown>[]);
-          const refreshed = await ctx.db
-            .select()
-            .from(calendarEvents)
-            .where(
-              and(
-                eq(calendarEvents.userId, ctx.userId!),
-                gte(calendarEvents.start_time, input.startDate),
-                lte(calendarEvents.start_time, input.endDate),
-              )
-            )
-            .orderBy(asc(calendarEvents.start_time));
+          const refreshed = await listCalendarEventsCompat(ctx.db, ctx.userId!, input.startDate, input.endDate);
           const mapped = refreshed.map(mapDbEvent).map(serializeEvent);
           await ctx.redis.set(cacheKey, JSON.stringify(mapped), { ex: cacheTtls.calendar });
           return mapped;
@@ -476,17 +447,7 @@ export const calendarRouter = router({
         console.warn('[getEvents] Corsair fallback failed:', err);
       }
 
-      const localEvents = await ctx.db
-        .select()
-        .from(calendarEvents)
-        .where(
-          and(
-            eq(calendarEvents.userId, ctx.userId!),
-            gte(calendarEvents.start_time, input.startDate),
-            lte(calendarEvents.start_time, input.endDate),
-          )
-        )
-        .orderBy(asc(calendarEvents.start_time));
+      const localEvents = await listCalendarEventsCompat(ctx.db, ctx.userId!, input.startDate, input.endDate);
 
       if (localEvents.length > 0) {
         const mapped = localEvents.map(mapDbEvent).map(serializeEvent);
@@ -519,22 +480,7 @@ export const calendarRouter = router({
       if (event) {
         const mapped = mapRemoteEvent(ctx.userId!, event);
         if (mapped) {
-          await ctx.db
-            .insert(calendarEvents)
-            .values(mapped)
-            .onConflictDoUpdate({
-              target: calendarEvents.corsair_event_id,
-              set: {
-                title: sql`excluded.title`,
-                description: sql`excluded.description`,
-                start_time: sql`excluded.start_time`,
-                end_time: sql`excluded.end_time`,
-                location: sql`excluded.location`,
-                is_all_day: sql`excluded.is_all_day`,
-                status: sql`excluded.status`,
-                updated_at: new Date(),
-              },
-            });
+          await upsertCalendarEventCompat(ctx.db, mapped);
         }
       }
 
@@ -569,22 +515,7 @@ export const calendarRouter = router({
       if (event) {
         const mapped = mapRemoteEvent(ctx.userId!, event);
         if (mapped) {
-          await ctx.db
-            .insert(calendarEvents)
-            .values(mapped)
-            .onConflictDoUpdate({
-              target: calendarEvents.corsair_event_id,
-              set: {
-                title: sql`excluded.title`,
-                description: sql`excluded.description`,
-                start_time: sql`excluded.start_time`,
-                end_time: sql`excluded.end_time`,
-                location: sql`excluded.location`,
-                is_all_day: sql`excluded.is_all_day`,
-                status: sql`excluded.status`,
-                updated_at: new Date(),
-              },
-            });
+          await upsertCalendarEventCompat(ctx.db, mapped);
         }
       }
 
