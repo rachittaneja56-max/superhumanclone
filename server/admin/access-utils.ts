@@ -43,3 +43,7 @@ export function resolveAdminAccess(params: {
 }) {
   return resolveUserRole(params) !== "user";
 }
+
+export function isAdminUser(role?: string | null) {
+  return role === "admin" || role === "superadmin";
+}

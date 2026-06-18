@@ -100,7 +100,7 @@ export function AgentChat({
 
     setVoiceSupported(true);
     const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
@@ -212,17 +212,13 @@ export function AgentChat({
     }
   };
 
-  const toggleVoiceInput = () => {
+  const startVoiceInput = () => {
     if (!voiceSupported || !recognitionRef.current) {
       setVoiceError("Voice input is not supported in this browser.");
       return;
     }
 
-    if (voiceListening) {
-      recognitionRef.current.stop();
-      setVoiceListening(false);
-      return;
-    }
+    if (voiceListening) return;
 
     setVoiceError(null);
     setVoicePreview("");
@@ -233,6 +229,12 @@ export function AgentChat({
       setVoiceError("Could not start voice input. Check microphone permissions.");
       setVoiceListening(false);
     }
+  };
+
+  const stopVoiceInput = () => {
+    if (!voiceListening || !recognitionRef.current) return;
+    recognitionRef.current.stop();
+    setVoiceListening(false);
   };
 
   return (
@@ -401,13 +403,19 @@ export function AgentChat({
             rows={1}
           />
           <div className="flex items-center gap-2 p-2">
-            <button
-              type="button"
-              onClick={toggleVoiceInput}
+              <button
+                type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                startVoiceInput();
+              }}
+              onPointerUp={stopVoiceInput}
+              onPointerLeave={stopVoiceInput}
+              onPointerCancel={stopVoiceInput}
               disabled={!voiceSupported || isStreaming || !!activeHITLAction}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={voiceListening ? "Stop voice input" : "Start voice input"}
-              title={voiceSupported ? (voiceListening ? "Stop voice input" : "Tap to speak") : "Voice input unavailable"}
+              title={voiceSupported ? (voiceListening ? "Release to stop" : "Hold to speak") : "Voice input unavailable"}
             >
               {voiceSupported ? (
                 voiceListening ? <Square className="h-4 w-4 fill-current" aria-hidden="true" /> : <Mic className="h-4 w-4" aria-hidden="true" />

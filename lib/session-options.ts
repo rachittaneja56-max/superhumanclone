@@ -10,5 +10,8 @@ export const sessionOptions: SessionOptions = {
   cookieName: 'aethra_session',
   cookieOptions: {
     secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
   },
 }

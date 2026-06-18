@@ -1,11 +1,20 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import React, { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { Archive, Calendar, Forward, MailCheck, MailOpen, Reply, ReplyAll, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { EmailThreadClientItem } from "@/lib/email-client";
 import { SmartSchedulerModal } from "@/components/calendar/SmartSchedulerModal";
+
+const ContactSidebar = dynamic(
+  () => import("@/components/contacts/ContactSidebar").then((module) => module.ContactSidebar),
+  {
+    ssr: false,
+    loading: () => null,
+  },
+);
 
 export function ThreadView({
   threadId,
@@ -55,9 +64,11 @@ export function ThreadView({
     onError: () => toast.error("Failed to restore"),
   });
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
 
   const typedThread = (thread as EmailThreadClientItem[] | undefined) ?? [];
   const firstEmailId = typedThread[0]?.id;
+  const contactEmail = typedThread[0]?.senderAddress || typedThread[0]?.recipientAddress || null;
 
   useEffect(() => {
     if (!typedThread.length) return;
@@ -67,6 +78,10 @@ export function ThreadView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstEmailId]);
+
+  useEffect(() => {
+    setContactOpen(Boolean(contactEmail));
+  }, [contactEmail]);
 
   if (isLoading) {
     return <ThreadLoading compact={compact} />;
@@ -197,6 +212,11 @@ export function ThreadView({
         isOpen={scheduleOpen}
         onClose={() => setScheduleOpen(false)}
         threadId={threadId}
+      />
+      <ContactSidebar
+        email={contactEmail}
+        isOpen={contactOpen && Boolean(contactEmail)}
+        onClose={() => setContactOpen(false)}
       />
     </div>
   );

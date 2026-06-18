@@ -4,6 +4,7 @@ import { db } from '@/server/db'
 import { invalidateSettingsCache } from '@/server/cache'
 import { redis } from '@/server/redis'
 import { ensureSafeUserSettings, saveSafeUserSettings } from '@/server/db/user-settings-compat'
+import { isAdminUser } from '@/server/admin/access-utils'
 
 export async function ensureUserSettings(userId: string): Promise<void> {
   await ensureSafeUserSettings(userId)
@@ -41,3 +42,5 @@ export async function reconcileGoogleConnectionState(userId: string) {
 
   return { gmailConnected, calendarConnected }
 }
+
+export { isAdminUser }

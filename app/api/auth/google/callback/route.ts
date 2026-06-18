@@ -1,7 +1,6 @@
 import { OAuth2RequestError } from "oslo/oauth2";
 import { assertGoogleOAuthConfig, createGoogleOAuthClient } from "@/lib/oauth";
-import { isFixedSuperadminEmail } from "@/server/admin/access-utils";
-import { getUsersColumnPresence } from "@/server/db/users-compat";
+import { isFixedSuperadminEmail, isAdminUser, normalizeEmail, resolveUserRole } from "@/server/admin/access-utils";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
@@ -115,55 +114,39 @@ export async function GET(request: Request) {
       return redirectToLogin(request, "oauth_userinfo");
     }
 
-    const [{ db, users }, { ensureUserSettings }, { setSession }, { eq, sql }] = await Promise.all([
+    const [{ db, users }, { ensureUserSettings }, { setSession }] = await Promise.all([
       import("@/server/db"),
       import("@/server/auth/helpers"),
       import("@/lib/auth"),
-      import("drizzle-orm")
     ]);
 
     let userId: string;
     try {
-      const columns = await getUsersColumnPresence();
-      const isSuperadmin = isFixedSuperadminEmail(googleUser.email);
-      const existingUsers = await db
-        .select({
-          id: sql<string>`"id"`,
+      const email = normalizeEmail(googleUser.email);
+      const resolvedRole = resolveUserRole({ email, role: isFixedSuperadminEmail(email) ? "superadmin" : "user" });
+      const [savedUser] = await db
+        .insert(users)
+        .values({
+          id: crypto.randomUUID(),
+          email,
+          name: googleUser.name,
+          image: googleUser.picture,
+          ...(isAdminUser(resolvedRole) ? { role: resolvedRole } : {}),
         })
-        .from(users)
-        .where(eq(users.email, googleUser.email))
-        .limit(1);
+        .onConflictDoUpdate({
+          target: users.email,
+          set: {
+            name: googleUser.name,
+            image: googleUser.picture,
+            ...(isAdminUser(resolvedRole) ? { role: resolvedRole } : {}),
+          },
+        })
+        .returning({ id: users.id });
 
-      const existingUser = existingUsers[0];
+      userId = savedUser.id;
 
-      if (!existingUser) {
-        userId = crypto.randomUUID();
-        await db.insert(users).values({
-          id: userId,
-          email: googleUser.email,
-          name: googleUser.name,
-          image: googleUser.picture,
-          ...(isSuperadmin && columns.hasRole ? { role: "superadmin" as const } : {}),
-          ...(isSuperadmin && columns.hasIsAdmin ? { isAdmin: true } : {}),
-        });
-
-        const { ensureTenantProvisioned } = await import('@/server/corsair/provision');
-        await ensureTenantProvisioned(userId).catch((error) =>
-          console.error("[Auth] Corsair tenant provisioning failed", {
-            stage: "corsair_provision",
-            message: error instanceof Error ? error.message : "Unknown error",
-          })
-        );
-      } else {
-        userId = existingUser.id;
-        await db.update(users).set({
-          name: googleUser.name,
-          image: googleUser.picture,
-          ...(isSuperadmin && columns.hasRole ? { role: "superadmin" as const } : {}),
-          ...(isSuperadmin && columns.hasIsAdmin ? { isAdmin: true } : {}),
-        }).where(eq(users.id, userId));
-      }
-
+      const { ensureTenantProvisioned } = await import('@/server/corsair/provision');
+      await ensureTenantProvisioned(userId);
       await ensureUserSettings(userId);
     } catch (error) {
       logGoogleAuthFailure("oauth_db", error);

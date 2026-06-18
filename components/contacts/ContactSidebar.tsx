@@ -4,7 +4,7 @@ import React, { useMemo } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { trpc } from "@/lib/trpc/client";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { CalendarIcon, MailIcon } from "lucide-react";
+import { CalendarIcon, MailIcon, ShieldAlert } from "lucide-react";
 
 interface ContactSidebarProps {
   email: string | null;
@@ -53,21 +53,29 @@ export function ContactSidebar({ email, isOpen, onClose }: ContactSidebarProps) 
               <div className="h-24 bg-border/40 rounded-md"></div>
             </div>
           ) : !intel ? (
-            <div className="text-sm text-muted-foreground text-center mt-10">No intelligence available.</div>
+            <div className="text-sm text-muted-foreground text-center mt-10">No contact intel yet.</div>
           ) : (
             <>
-              {/* Relationship Summary */}
               <div className="space-y-2">
                 <h4 className="text-xs font-semibold tracking-wide uppercase text-foreground opacity-60">Relationship</h4>
-                <p className="text-sm text-foreground leading-relaxed">
-                  {intel.summary}
-                </p>
+                {intel.privacyBlocked ? (
+                  <div className="flex items-start gap-2 rounded-md border border-border bg-background p-3 text-sm text-foreground-muted">
+                    <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                    <div>
+                      <div className="font-medium text-foreground">Hidden by Privacy Gate</div>
+                      <p className="mt-1 leading-relaxed">This contact&apos;s summary is blocked by your consent rules.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm leading-relaxed text-foreground">
+                    {intel.summary || "No relationship summary yet."}
+                  </p>
+                )}
               </div>
 
-              {/* Next Meeting */}
               {intel.nextEvent && (
                 <div className="space-y-2">
-                  <h4 className="text-xs font-semibold tracking-wide uppercase text-foreground opacity-60">Next Meeting</h4>
+                  <h4 className="text-xs font-semibold tracking-wide uppercase text-foreground opacity-60">Next event</h4>
                   <div className="p-3 rounded-md border border-border bg-accent/5 border-l-4 border-l-amber-500">
                     <div className="flex items-start space-x-2">
                       <CalendarIcon className="w-4 h-4 text-amber-600 mt-0.5" />
@@ -82,9 +90,8 @@ export function ContactSidebar({ email, isOpen, onClose }: ContactSidebarProps) 
                 </div>
               )}
 
-              {/* Recent Emails */}
               <div className="space-y-2">
-                <h4 className="text-xs font-semibold tracking-wide uppercase text-foreground opacity-60">Recent Interactions</h4>
+                <h4 className="text-xs font-semibold tracking-wide uppercase text-foreground opacity-60">Recent mail</h4>
                 {intel.recentEmails.length > 0 ? (
                   <div className="space-y-2">
                     {intel.recentEmails.map((e: any) => (
