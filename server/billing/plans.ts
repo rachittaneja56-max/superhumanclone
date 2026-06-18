@@ -1,6 +1,5 @@
 import "server-only";
 
-export type BillingMode = "dummy" | "razorpay";
 export type UserPlan = "free" | "pro" | "team";
 
 export type PlanConfig = {
@@ -39,12 +38,8 @@ export const PLAN_CONFIGS: Record<UserPlan, PlanConfig> = {
   },
 };
 
-export function getBillingMode(): BillingMode {
+export function getBillingMode(): "dummy" {
   return "dummy";
-}
-
-export function isRazorpayConfigured() {
-  return false;
 }
 
 export function getPlanConfig(plan: string | null | undefined): PlanConfig {

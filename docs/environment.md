@@ -54,6 +54,3 @@ Recommended defaults:
 
 ### Billing
 - `BILLING_MODE`
-- `RAZORPAY_KEY_ID`
-- `RAZORPAY_KEY_SECRET`
-- `RAZORPAY_WEBHOOK_SECRET`

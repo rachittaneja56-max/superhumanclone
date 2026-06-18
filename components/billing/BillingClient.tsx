@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc/client";
 
 type BillingOverview = {
-  mode: "dummy" | "razorpay";
+  mode: "dummy";
   currentPlan: "free" | "pro" | "team";
   aiDisabled: boolean;
   isFlagged: boolean;
