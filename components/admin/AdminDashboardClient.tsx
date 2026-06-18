@@ -35,10 +35,22 @@ export function AdminDashboardClient({ initialDashboard }: { initialDashboard: a
   return (
     <div className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-y-auto px-6 py-6">
       <div className="mb-6 border-b border-border pb-4">
-        <h1 className="font-display text-2xl font-semibold text-foreground">Admin</h1>
-        <p className="mt-1 text-sm text-foreground-muted">
-          Usage, prompt versions, health checks, and safe user controls.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="font-display text-2xl font-semibold text-foreground">Admin</h1>
+            <p className="mt-1 text-sm text-foreground-muted">
+              Usage, prompt versions, health checks, and safe user controls.
+            </p>
+          </div>
+          <a
+            href="/api-docs"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-7 items-center justify-center rounded-lg border border-border bg-background px-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            API docs
+          </a>
+        </div>
       </div>
 
       <div className="mb-6 grid gap-4 lg:grid-cols-4">
