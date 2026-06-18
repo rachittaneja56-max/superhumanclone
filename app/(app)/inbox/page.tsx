@@ -75,7 +75,7 @@ export default async function InboxPage({
     const trpc = await serverTrpc()
     const rawThreads = await trpc.email.getMailboxThreads({
       folder,
-      limit: 20,
+      limit: 10,
       offset: 0,
       query: '',
     })

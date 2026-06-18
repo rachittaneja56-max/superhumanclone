@@ -344,7 +344,7 @@ export const emailRouter = router({
         });
         if (!cursor && input.offset === 0 && !input.query.trim() && rows.length === 0) {
           try {
-            await seedMailboxFromCorsair(ctx, { limit: Math.max(input.limit, 50), maxPages: 20 });
+            await seedMailboxFromCorsair(ctx, { limit: input.limit, maxPages: 1 });
             rows = await ctx.db.query.emails.findMany({
               where: and(
                 eq(emails.userId, ctx.userId!),
@@ -443,7 +443,7 @@ export const emailRouter = router({
 
       if (!cursor && input.offset === 0 && !input.query.trim() && rows.length === 0) {
         try {
-          await seedMailboxFromCorsair(ctx, { limit: Math.max(input.limit, 50), maxPages: 20 });
+          await seedMailboxFromCorsair(ctx, { limit: input.limit, maxPages: 1 });
           rows = await ctx.db.query.emails.findMany({
             where: and(
               eq(emails.userId, ctx.userId!),
@@ -536,8 +536,8 @@ export const emailRouter = router({
       // If local DB is empty (e.g. first load before webhooks), pull from Corsair
       if (results.length === 0) {
         try {
-          await seedMailboxFromCorsair(ctx, { limit: Math.max(input.limit, 50), maxPages: 20 });
-          // Re-fetch after seeding multiple pages so the local mailbox is not artificially capped.
+          await seedMailboxFromCorsair(ctx, { limit: input.limit, maxPages: 1 });
+          // Re-fetch after seeding the first page so the local mailbox can render immediately.
           results = await ctx.db.query.emails.findMany({
             where: and(
               eq(emails.userId, ctx.userId!),

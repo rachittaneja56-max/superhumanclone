@@ -42,7 +42,7 @@ const MAILBOX_ITEMS: Array<{ folder: Folder; label: string; icon: ComponentType<
   { folder: "trash", label: "Trash", icon: Trash2 },
 ];
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 type MailboxPage = {
   items: EmailListClientItem[];
   nextPageToken: string | null;
