@@ -459,7 +459,7 @@ export function CalendarView({
           <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-surface">
             {view === "month" ? (
             <MonthGrid
-                weeks={monthWeeks}
+              weeks={monthWeeks}
                 currentDate={currentDate}
                 eventsByDay={eventsByDay}
                 selectedDay={selectedDay}
@@ -561,7 +561,7 @@ function MonthGrid({
   const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-auto">
       <div className="grid grid-cols-7 border-b border-border bg-background/60">
         {dayLabels.map((label) => (
           <div key={label} className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-foreground-subtle">
@@ -570,7 +570,10 @@ function MonthGrid({
         ))}
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-7 gap-px bg-border">
+      <div
+        className="grid min-h-0 flex-1 grid-cols-7 gap-px bg-border"
+        style={{ gridAutoRows: "minmax(8.5rem, 1fr)" }}
+      >
         {weeks.flat().map((day) => {
           const key = format(day, "yyyy-MM-dd");
           const dayEvents = eventsByDay[key] ?? [];
@@ -590,7 +593,7 @@ function MonthGrid({
                 }
               }}
               className={[
-                "group min-h-[9.5rem] overflow-hidden bg-surface p-2 text-left transition-colors cursor-pointer",
+                "group min-h-[8.5rem] overflow-hidden bg-surface p-2 text-left transition-colors cursor-pointer",
                 inMonth ? "" : "opacity-40",
                 selected ? "bg-accent-subtle" : "hover:bg-surface-raised",
               ].join(" ")}
@@ -650,7 +653,7 @@ function TimelineView({
   }, [days, events]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-auto">
       <div className="grid border-b border-border bg-background/60" style={{ gridTemplateColumns: `64px repeat(${days.length}, minmax(0, 1fr))` }}>
         <div className="px-2 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-foreground-subtle">Time</div>
         {days.map((day) => (
@@ -735,7 +738,7 @@ function UnifiedTimelineFeed({
   }, [items]);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col overflow-auto">
       <div className="border-b border-border px-4 py-3 text-sm text-foreground-muted">
         Unified timeline of emails and events, sorted by time.
       </div>
@@ -1064,3 +1067,7 @@ function CalendarEmpty({ onCreate }: { onCreate: () => void }) {
     </div>
   );
 }
+
+
+
+
