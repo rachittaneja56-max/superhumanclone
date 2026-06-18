@@ -101,14 +101,14 @@ export async function DashboardShell({
   const digestText = digestSummary?.digest?.trim() ?? "";
 
   return (
-    <section className="overflow-hidden rounded-[2rem] border border-border bg-[linear-gradient(145deg,rgba(255,255,255,0.96),rgba(244,238,229,0.96))] p-6 shadow-[0_24px_60px_rgba(38,28,14,0.08)] sm:p-8 dark:bg-[radial-gradient(circle_at_top_right,rgba(217,119,6,0.14),transparent_35%),linear-gradient(180deg,rgba(22,22,22,0.96),rgba(12,12,12,0.98))] dark:shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
+    <section className="overflow-hidden rounded-[2rem] border border-border bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(246,241,233,0.98))] p-6 shadow-[0_24px_60px_rgba(38,28,14,0.08)] sm:p-8 dark:bg-[radial-gradient(circle_at_top_right,rgba(217,119,6,0.14),transparent_35%),linear-gradient(180deg,rgba(22,22,22,0.96),rgba(12,12,12,0.98))] dark:shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.9fr)]">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-foreground-subtle">
             <Sparkles className="h-4 w-4 text-accent" />
             AI digest
           </div>
-          <div className="mt-3 rounded-[1.75rem] border border-border bg-[rgba(255,255,255,0.82)] p-5 shadow-[0_18px_36px_rgba(28,20,12,0.06)] dark:bg-background/55 dark:shadow-none">
+          <div className="mt-3 rounded-[1.75rem] border border-border bg-[rgba(255,255,255,0.92)] p-5 shadow-[0_18px_36px_rgba(28,20,12,0.06)] dark:bg-background/55 dark:shadow-none">
             <div className="flex items-start gap-3">
               <div className="rounded-2xl border border-border bg-background p-3 text-accent dark:bg-surface">
                 <Activity className="h-5 w-5" />
@@ -138,7 +138,7 @@ export async function DashboardShell({
           </div>
         </div>
 
-        <div className="flex h-full flex-col justify-between gap-4 rounded-[1.5rem] border border-border bg-white/70 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] dark:bg-background/60 dark:shadow-none">
+        <div className="flex h-full flex-col justify-between gap-4 rounded-[1.5rem] border border-border bg-white/82 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] dark:bg-background/60 dark:shadow-none">
           <div className="text-xs font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
             Quick actions
           </div>
@@ -446,7 +446,7 @@ function PanelCard({
   className?: string;
 }) {
   return (
-    <section className={cn("h-full rounded-[1.5rem] border border-border bg-surface p-5 shadow-[0_16px_34px_rgba(28,20,12,0.06)] dark:shadow-sm", className)}>
+    <section className={cn("h-full rounded-[1.5rem] border border-border bg-[rgba(255,255,255,0.88)] p-5 shadow-[0_16px_34px_rgba(28,20,12,0.06)] dark:bg-surface dark:shadow-sm", className)}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -463,14 +463,14 @@ function PanelCard({
 
 function SummaryCard({ label, value, helper, tone = "default" }: SummaryCardProps) {
   const toneClasses = {
-    default: "border-border bg-white/80 dark:bg-background/60",
+    default: "border-border bg-white/88 dark:bg-background/60",
     good: "border-emerald-500/30 bg-emerald-500/10",
     warn: "border-amber-500/30 bg-amber-500/10",
-    muted: "border-border bg-[rgba(255,255,255,0.72)] dark:bg-background/50",
+    muted: "border-border bg-[rgba(255,255,255,0.8)] dark:bg-background/50",
   }[tone];
 
   return (
-    <div className={cn("rounded-2xl border p-4", toneClasses)}>
+    <div className={cn("rounded-2xl border p-4 shadow-[0_8px_24px_rgba(38,28,14,0.03)]", toneClasses)}>
       <div className="text-[11px] uppercase tracking-[0.18em] text-foreground-subtle">{label}</div>
       <div className="mt-2 text-xl font-semibold text-foreground">{value}</div>
       {helper ? <div className="mt-1 text-sm leading-5 text-foreground-muted">{helper}</div> : null}
@@ -488,7 +488,7 @@ function StatusRow({
   tone: "good" | "warn";
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] px-4 py-3 dark:bg-background">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.82)] px-4 py-3 shadow-[0_8px_24px_rgba(38,28,14,0.03)] dark:bg-background">
       <div className="text-sm text-foreground-muted">{label}</div>
       <span
         className={cn(
@@ -504,7 +504,7 @@ function StatusRow({
 
 function MiniStat({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] p-4 dark:bg-background/60">
+    <div className="rounded-2xl border border-border bg-[rgba(255,255,255,0.82)] p-4 shadow-[0_8px_24px_rgba(38,28,14,0.03)] dark:bg-background/60">
       <div className="text-[11px] uppercase tracking-[0.18em] text-foreground-subtle">{label}</div>
       <div className="mt-2 text-lg font-semibold text-foreground">{value}</div>
       {helper ? <div className="mt-1 text-xs text-foreground-muted">{helper}</div> : null}
@@ -514,7 +514,7 @@ function MiniStat({ label, value, helper }: { label: string; value: string; help
 
 function CountRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.72)] px-4 py-3 dark:bg-background">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.82)] px-4 py-3 shadow-[0_8px_24px_rgba(38,28,14,0.03)] dark:bg-background">
       <div className="text-sm text-foreground-muted">{label}</div>
       <div className="text-base font-semibold text-foreground">{value}</div>
     </div>

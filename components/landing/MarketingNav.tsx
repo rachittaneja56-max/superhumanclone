@@ -32,10 +32,10 @@ export function MarketingNav({ userEmail, userName }: { userEmail?: string | nul
           : 'bg-transparent'
       }`}
     >
-      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm">
-          <span className="font-display font-semibold text-2xl tracking-tight">
-            aethra<span className="text-accent">.</span>
+      <div className="mx-auto flex h-20 w-full max-w-7xl items-center justify-between px-6 lg:px-8">
+        <Link href="/" className="flex items-center gap-1 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+          <span className="font-display text-[1.75rem] font-semibold tracking-tight sm:text-[1.9rem]">
+            Aethra<span className="text-accent">.</span>
           </span>
         </Link>
         

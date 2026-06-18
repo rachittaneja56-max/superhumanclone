@@ -31,8 +31,8 @@ export function UnifiedSidebar({
     <aside className="flex h-full w-60 shrink-0 flex-col overflow-hidden border-r border-border/80 bg-surface/95">
       <div className="border-b border-border px-4 py-4">
         <Link href="/dashboard" className="inline-flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-          <span className="font-display text-base font-semibold tracking-tight text-foreground">
-            aethra<span className="text-accent">.</span>
+          <span className="font-display text-lg font-semibold tracking-tight text-foreground">
+            Aethra<span className="text-accent">.</span>
           </span>
         </Link>
       </div>

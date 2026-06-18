@@ -107,9 +107,9 @@ export function CommandCenterDashboard({
   const plan = billing?.currentPlan ?? null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-background text-foreground">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-        <section className="overflow-hidden rounded-[2rem] border border-border bg-[radial-gradient(circle_at_top_right,rgba(217,119,6,0.14),transparent_35%),linear-gradient(180deg,rgba(22,22,22,0.96),rgba(12,12,12,0.98))] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.35)] sm:p-8">
+        <section className="overflow-hidden rounded-[2rem] border border-border bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(246,241,233,0.98))] p-6 shadow-[0_24px_70px_rgba(38,28,14,0.08)] sm:p-8 dark:bg-[radial-gradient(circle_at_top_right,rgba(217,119,6,0.14),transparent_35%),linear-gradient(180deg,rgba(22,22,22,0.96),rgba(12,12,12,0.98))] dark:shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.9fr)]">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-foreground-subtle">
@@ -150,7 +150,7 @@ export function CommandCenterDashboard({
               </div>
 
               {digest?.digest ? (
-                <div className="mt-5 max-w-3xl rounded-2xl border border-border/80 bg-black/20 p-4">
+                <div className="mt-5 max-w-3xl rounded-2xl border border-border/80 bg-[rgba(255,255,255,0.84)] p-4 shadow-[0_10px_24px_rgba(38,28,14,0.04)] dark:bg-black/20 dark:shadow-none">
                   <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
                     <Activity className="h-4 w-4 text-accent" />
                     Morning digest
@@ -170,7 +170,7 @@ export function CommandCenterDashboard({
               ) : null}
             </div>
 
-            <div className="flex h-full flex-col justify-between gap-4 rounded-[1.5rem] border border-border bg-background/60 p-5">
+            <div className="flex h-full flex-col justify-between gap-4 rounded-[1.5rem] border border-border bg-[rgba(255,255,255,0.84)] p-5 shadow-[0_10px_24px_rgba(38,28,14,0.04)] dark:bg-background/60 dark:shadow-none">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-[0.2em] text-foreground-subtle">
                   Quick actions
@@ -310,7 +310,7 @@ function PanelCard({
   className?: string;
 }) {
   return (
-    <section className={cn("rounded-[1.5rem] border border-border bg-surface p-5 shadow-sm", className)}>
+    <section className={cn("rounded-[1.5rem] border border-border bg-[rgba(255,255,255,0.88)] p-5 shadow-[0_16px_34px_rgba(38,28,14,0.05)] dark:bg-surface dark:shadow-sm", className)}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -327,14 +327,14 @@ function PanelCard({
 
 function SummaryCard({ label, value, helper, tone = "default" }: SummaryCardProps) {
   const toneClasses = {
-    default: "border-border bg-background/60",
+    default: "border-border bg-[rgba(255,255,255,0.85)]",
     good: "border-emerald-500/30 bg-emerald-500/10",
     warn: "border-amber-500/30 bg-amber-500/10",
-    muted: "border-border bg-background/50",
+    muted: "border-border bg-[rgba(255,255,255,0.78)]",
   }[tone];
 
   return (
-    <div className={cn("rounded-2xl border p-4", toneClasses)}>
+    <div className={cn("rounded-2xl border p-4 shadow-[0_8px_24px_rgba(38,28,14,0.03)]", toneClasses)}>
       <div className="text-[11px] uppercase tracking-[0.18em] text-foreground-subtle">{label}</div>
       <div className="mt-2 text-xl font-semibold text-foreground">{value}</div>
       {helper ? <div className="mt-1 text-sm leading-5 text-foreground-muted">{helper}</div> : null}
@@ -344,7 +344,7 @@ function SummaryCard({ label, value, helper, tone = "default" }: SummaryCardProp
 
 function MiniStat({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-background/60 p-4">
+    <div className="rounded-2xl border border-border bg-[rgba(255,255,255,0.85)] p-4 shadow-[0_8px_24px_rgba(38,28,14,0.03)] dark:bg-background/60">
       <div className="text-[11px] uppercase tracking-[0.18em] text-foreground-subtle">{label}</div>
       <div className="mt-2 text-lg font-semibold text-foreground">{value}</div>
       {helper ? <div className="mt-1 text-xs text-foreground-muted">{helper}</div> : null}
@@ -362,7 +362,7 @@ function StatusRow({
   tone: "good" | "warn";
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.85)] px-4 py-3 shadow-[0_8px_24px_rgba(38,28,14,0.03)] dark:bg-background">
       <div className="text-sm text-foreground-muted">{label}</div>
       <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]", tone === "good" ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300")}>
         {value}
@@ -373,7 +373,7 @@ function StatusRow({
 
 function CountRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3">
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-[rgba(255,255,255,0.85)] px-4 py-3 shadow-[0_8px_24px_rgba(38,28,14,0.03)] dark:bg-background">
       <div className="text-sm text-foreground-muted">{label}</div>
       <div className="text-base font-semibold text-foreground">{value}</div>
     </div>
@@ -398,7 +398,7 @@ function ThreadList({
   return (
     <div className={cn("space-y-2", compact ? "space-y-2" : "space-y-3")}>
       {threads.map((thread) => (
-        <Link key={thread.id} href={`/inbox/${thread.threadId}`} className="block rounded-2xl border border-border bg-background px-4 py-3 transition-colors hover:bg-surface-raised">
+        <Link key={thread.id} href={`/inbox/${thread.threadId}`} className="block rounded-2xl border border-border bg-[rgba(255,255,255,0.88)] px-4 py-3 shadow-[0_8px_24px_rgba(38,28,14,0.03)] transition-colors hover:bg-surface-raised dark:bg-background">
           {(() => {
             const priority = thread.priorityLabel && thread.priorityClassName
               ? {
@@ -453,7 +453,7 @@ function ActionList({
   return (
     <div className="space-y-2">
       {actions.map((action) => (
-        <div key={action.id} className="rounded-2xl border border-border bg-background px-4 py-3">
+        <div key={action.id} className="rounded-2xl border border-border bg-[rgba(255,255,255,0.88)] px-4 py-3 shadow-[0_8px_24px_rgba(38,28,14,0.03)] dark:bg-background">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-sm font-semibold text-foreground">{humanizeAction(action.action)}</div>
