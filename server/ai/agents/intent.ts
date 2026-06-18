@@ -1,8 +1,26 @@
 import "server-only";
 
-import type { AgentIntent } from "./types";
+import type { AgentContext, AgentIntent } from "./types";
 
-export function detectIntent(message: string, threadContext?: string): AgentIntent {
+function isPendingEmailClarification(history?: AgentContext["history"]) {
+  if (!history?.length) return false;
+
+  const recentAssistant = [...history]
+    .reverse()
+    .find((message) => message.role === "assistant" && message.content.trim());
+
+  if (!recentAssistant) return false;
+
+  const lower = recentAssistant.content.toLowerCase();
+  return (
+    /what should i say in the email\??/.test(lower) ||
+    /share a draft after the slash command/i.test(lower) ||
+    /drafting email/i.test(lower) ||
+    /subject.*body/i.test(lower)
+  );
+}
+
+export function detectIntent(message: string, threadContext?: string, history?: AgentContext["history"]): AgentIntent {
   const lower = message.toLowerCase().trim();
   const hasThreadContext = !!threadContext?.trim();
 
@@ -26,6 +44,9 @@ export function detectIntent(message: string, threadContext?: string): AgentInte
     /\bsend\b/.test(lower) &&
     (/\b(email|mail|message|thread|this|that)\b/.test(lower) || hasThreadContext)
   ) {
+    return "action";
+  }
+  if (isPendingEmailClarification(history) && message.trim().length > 0 && message.trim().length <= 200) {
     return "action";
   }
   return "general";

@@ -121,9 +121,86 @@ function extractEmails(input: string) {
   return [...input.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)].map((match) => match[0]);
 }
 
+function extractEmailsFromHistory(history?: AgentContext["history"]) {
+  if (!history?.length) return [];
+  const emails = new Set<string>();
+
+  for (const message of history) {
+    for (const email of extractEmails(message.content)) {
+      emails.add(email);
+    }
+  }
+
+  return [...emails];
+}
+
 function extractField(input: string, label: string) {
   const regex = new RegExp(`${label}\\s*:\\s*([^\\n]+)`, "i");
   return input.match(regex)?.[1]?.trim() ?? "";
+}
+
+function normalizeDraftText(input: string) {
+  return input.replace(/\s+/g, " ").trim();
+}
+
+function extractNaturalBody(input: string) {
+  const bodyPatterns = [
+    /\b(?:saying|say|message|tell(?: them| him| her| us| me)?|write)\b(?:\s+that)?\s+(.+?)(?=\s+\b(?:in the body|as the body|for the body|body|please|thanks|thank you)\b|[.!?]|$)/i,
+    /\bin the body\b\s*[:\-]?\s*([^\n]+)/i,
+    /\bbody\b\s*[:\-]\s*([^\n]+)/i,
+    /\bmessage\b\s*[:\-]\s*([^\n]+)/i,
+  ];
+
+  for (const pattern of bodyPatterns) {
+    const match = input.match(pattern);
+    if (match?.[1]) {
+      const body = normalizeDraftText(match[1]).replace(/[.!?]+$/u, "").trim();
+      if (body) return body;
+    }
+  }
+
+  return "";
+}
+
+function extractContinuationBody(request: string, history?: AgentContext["history"]) {
+  const directBody = extractNaturalBody(request);
+  if (directBody) return directBody;
+
+  const trimmed = normalizeDraftText(request);
+  if (!trimmed || trimmed.length > 160) return "";
+  if (extractEmails(trimmed).length > 0) return "";
+  if (/\b(send|email|mail)\b/i.test(trimmed)) return "";
+
+  const recentAssistant = history
+    ?.slice()
+    .reverse()
+    .find((message) => message.role === "assistant" && message.content.trim());
+
+  if (!recentAssistant) return "";
+
+  const lower = recentAssistant.content.toLowerCase();
+  if (
+    /what should i say in the email\??/.test(lower) ||
+    /drafting email/i.test(lower) ||
+    /share a draft/i.test(lower) ||
+    /subject.*body/i.test(lower)
+  ) {
+    return trimmed;
+  }
+
+  return "";
+}
+
+function capitalizeDraftSubject(input: string) {
+  if (!input) return "Quick note";
+  if (input.length <= 2) return input.toUpperCase();
+  return input.charAt(0).toUpperCase() + input.slice(1);
+}
+
+function inferSubjectFromBody(body: string) {
+  const normalized = normalizeDraftText(body).replace(/[.!?]+$/u, "");
+  if (!normalized) return "Quick note";
+  return capitalizeDraftSubject(normalized);
 }
 
 function extractDurationMinutes(input: string) {
@@ -162,15 +239,22 @@ function extractTimeLabel(input: string) {
   return `${displayHour}:${displayMinute} ${displayMeridiem}`;
 }
 
-function buildSendEmailDraft(request: string, to: string[], explicitSubject: string, explicitBody: string) {
+function buildSendEmailDraft(
+  request: string,
+  history: AgentContext["history"],
+  to: string[],
+  explicitSubject: string,
+  explicitBody: string,
+) {
   const lower = request.toLowerCase();
   const hasMeetingSignal = /\b(meet|meeting|call|sync|catch[- ]?up)\b/.test(lower);
   const hasFollowUpSignal = /\b(follow up|following up|confirm|regarding|about|update|touch base)\b/.test(lower);
   const timeLabel = extractTimeLabel(request);
   const durationMinutes = extractDurationMinutes(request);
   const durationLabel = durationMinutes ? ` for ${durationMinutes} minutes` : "";
+  const inferredBody = explicitBody || extractContinuationBody(request, history);
 
-  if (!explicitSubject && !explicitBody && !hasMeetingSignal && !hasFollowUpSignal) {
+  if (!explicitSubject && !inferredBody && !hasMeetingSignal && !hasFollowUpSignal) {
     return {
       clarification: "What should I say in the email?",
     } as const;
@@ -182,10 +266,10 @@ function buildSendEmailDraft(request: string, to: string[], explicitSubject: str
       ? `Confirming our meeting at ${timeLabel}`
       : hasFollowUpSignal
         ? "Following up on our conversation"
-        : "Following up");
+        : inferSubjectFromBody(inferredBody || request));
 
   const body =
-    explicitBody ||
+    inferredBody ||
     (hasMeetingSignal && timeLabel
       ? `Hi, just confirming our meeting at ${timeLabel}${durationLabel}. Let me know if anything changes.`
       : hasFollowUpSignal
@@ -211,6 +295,8 @@ export async function runActionAgent(
 ): Promise<AgentResult> {
   const request = context.userMessage.trim();
   const lower = request.toLowerCase();
+  const continuationBody = extractContinuationBody(request, context.history);
+  const shouldHandleSendEmail = /\b(send|email)\b/.test(lower) || Boolean(continuationBody);
 
   if (/\b(delete|trash|remove|purge|archive|cancel)\b/.test(lower) && /\b(email|mail|thread|message|event|calendar|meeting)\b/.test(lower)) {
     return {
@@ -220,9 +306,11 @@ export async function runActionAgent(
     };
   }
 
-  if (/\b(send|email)\b/.test(lower)) {
+  if (shouldHandleSendEmail) {
     const to = extractEmails(request);
-    if (to.length === 0) {
+    const historyTo = extractEmailsFromHistory(context.history);
+    const recipients = to.length > 0 ? to : historyTo;
+    if (recipients.length === 0) {
       return {
         intent: "action",
         indicator: "Drafting email...",
@@ -231,8 +319,8 @@ export async function runActionAgent(
     }
 
     const subject = extractField(request, "subject") || extractField(request, "subject line");
-    const body = extractField(request, "body") || extractField(request, "message");
-    const draft = buildSendEmailDraft(request, to, subject, body);
+    const body = extractField(request, "body") || extractField(request, "message") || extractNaturalBody(request);
+    const draft = buildSendEmailDraft(request, context.history, recipients, subject, body);
 
     if ("clarification" in draft && draft.clarification) {
       return {

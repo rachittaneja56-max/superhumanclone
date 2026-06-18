@@ -101,23 +101,45 @@ export async function ensureLocalUserForClerk(clerkUserId: string) {
     ...(columns.hasIsAdmin ? { isAdmin: profile.isAdmin } : {}),
   }
 
-  const updateValues: Partial<typeof users.$inferInsert> = {
-    name: profile.name,
-    image: profile.image,
-    ...(profile.emailVerified ? { emailVerified: profile.emailVerified } : {}),
-    ...(columns.hasClerkUserId ? { clerkUserId: profile.clerkUserId } : {}),
+  const upsertColumns: Array<{ column: string; value: unknown }> = [
+    { column: "id", value: insertValues.id },
+    { column: "email", value: insertValues.email },
+    { column: "name", value: insertValues.name },
+    { column: "image", value: insertValues.image },
+  ]
+
+  if (profile.emailVerified) {
+    upsertColumns.push({ column: "email_verified", value: profile.emailVerified })
   }
 
-  const [upsertedUser] = await db
-    .insert(users)
-    .values(insertValues)
-    .onConflictDoUpdate({
-      target: users.email,
-      set: updateValues,
-    })
-    .returning({ id: users.id })
+  if (columns.hasClerkUserId) {
+    upsertColumns.push({ column: "clerk_user_id", value: profile.clerkUserId })
+  }
 
-  const userId = String(upsertedUser?.id ?? '')
+  if (columns.hasRole) {
+    upsertColumns.push({ column: "role", value: profile.role })
+  }
+
+  if (columns.hasIsAdmin) {
+    upsertColumns.push({ column: "isAdmin", value: profile.isAdmin })
+  }
+
+  const updateAssignments = upsertColumns
+    .filter(({ column }) => column !== "id" && column !== "email")
+    .map(({ column }) => sql.raw(`"${column}" = excluded."${column}"`))
+
+  await db.execute(sql`
+    insert into "users" (${sql.raw(upsertColumns.map(({ column }) => `"${column}"`).join(", "))})
+    values (${sql.join(upsertColumns.map(({ value }) => sql`${value}`), sql`, `)})
+    on conflict ("email") do update set ${sql.join(updateAssignments, sql`, `)}
+  `)
+
+  const upsertedUser = await db.query.users.findFirst({
+    where: sql`lower(${users.email}) = ${profile.email}`,
+    columns: { id: true },
+  })
+
+  const userId = String(upsertedUser?.id ?? "")
   if (!userId) {
     throw new Error('local_user_upsert_failed')
   }

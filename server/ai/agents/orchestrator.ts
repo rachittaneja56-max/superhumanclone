@@ -29,7 +29,7 @@ async function runSpecialist(
   context: AgentContext,
   hitlInterceptor: (action: { actionType: string; payload: Record<string, unknown>; humanReadable: string }) => Promise<unknown>,
 ): Promise<AgentResult | null> {
-  const intent = detectIntent(context.userMessage, context.threadContext);
+  const intent = detectIntent(context.userMessage, context.threadContext, context.history);
 
   if (intent === "triage") return runTriageAgent(context);
   if (intent === "search") return runSearchAgent(context);
