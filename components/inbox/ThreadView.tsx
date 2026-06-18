@@ -1,6 +1,5 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import React, { useCallback, useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc/client";
 import { Calendar, Forward, MailOpen, Reply, ReplyAll, RotateCcw } from "lucide-react";
@@ -8,14 +7,6 @@ import { toast } from "sonner";
 import type { EmailThreadClientItem } from "@/lib/email-client";
 import { SmartSchedulerModal } from "@/components/calendar/SmartSchedulerModal";
 import { AutoReplyPanel } from "@/components/inbox/AutoReplyPanel";
-
-const ContactSidebar = dynamic(
-  () => import("@/components/contacts/ContactSidebar").then((module) => module.ContactSidebar),
-  {
-    ssr: false,
-    loading: () => null,
-  },
-);
 
 const EMPTY_THREAD: EmailThreadClientItem[] = [];
 
@@ -47,11 +38,9 @@ export function ThreadView({
     onError: () => toast.error("Failed to restore"),
   });
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [contactOpen, setContactOpen] = useState(false);
 
   const typedThread = (thread as EmailThreadClientItem[] | undefined) ?? EMPTY_THREAD;
   const firstEmailId = typedThread[0]?.id;
-  const contactEmail = typedThread[0]?.senderAddress || typedThread[0]?.recipientAddress || null;
 
   useEffect(() => {
     if (!typedThread.length) return;
@@ -62,9 +51,6 @@ export function ThreadView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstEmailId]);
 
-  useEffect(() => {
-    setContactOpen(Boolean(contactEmail));
-  }, [contactEmail]);
 
   const subject = typedThread[0]?.subject || "(No Subject)";
   const showTldr = typedThread[0]?.tldr && !typedThread[0]?.aiTriageSkipped;
@@ -220,11 +206,6 @@ export function ThreadView({
         onClose={() => setScheduleOpen(false)}
         threadId={threadId}
       />
-      <ContactSidebar
-        email={contactEmail}
-        isOpen={contactOpen && Boolean(contactEmail)}
-        onClose={() => setContactOpen(false)}
-      />
     </div>
   );
 }
@@ -359,3 +340,5 @@ function renderReadableText(value: string) {
       </p>
     ));
 }
+
+
