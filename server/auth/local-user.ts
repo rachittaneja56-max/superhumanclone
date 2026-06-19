@@ -9,6 +9,15 @@ import { ensureTenantProvisioned } from '@/server/corsair/provision'
 import { db } from '@/server/db'
 import { users } from '@/server/db/schema'
 import { getUsersColumnPresence } from '@/server/db/users-compat'
+import { redis } from '@/server/redis'
+
+// Cache the Clerk → local user ID mapping for 24 hours.
+// This is safe because the mapping never changes after creation.
+const LOCAL_USER_CACHE_TTL = 60 * 60 * 24
+
+function localUserCacheKey(clerkUserId: string) {
+  return `auth:clerk-to-local:${clerkUserId}`
+}
 
 type ClerkProfile = {
   clerkUserId: string
@@ -45,6 +54,16 @@ function buildClerkProfile(user: NonNullable<Awaited<ReturnType<typeof currentUs
 }
 
 export async function ensureLocalUserForClerk(clerkUserId: string) {
+  // Fast path: check Redis cache first (avoids DB round-trip on every request)
+  try {
+    const cached = await redis.get<string>(localUserCacheKey(clerkUserId))
+    if (cached) {
+      return cached
+    }
+  } catch {
+    // Redis unavailable — fall through to DB
+  }
+
   const columns = await getUsersColumnPresence()
 
   if (columns.hasClerkUserId) {
@@ -55,6 +74,8 @@ export async function ensureLocalUserForClerk(clerkUserId: string) {
 
     if (existingByClerkId) {
       await ensureUserSettings(existingByClerkId.id)
+      // Warm the cache for future requests
+      await redis.set(localUserCacheKey(clerkUserId), existingByClerkId.id, { ex: LOCAL_USER_CACHE_TTL }).catch(() => null)
       return existingByClerkId.id
     }
   }
@@ -87,6 +108,8 @@ export async function ensureLocalUserForClerk(clerkUserId: string) {
 
     await db.update(users).set(updateValues).where(eq(users.id, existingByEmail.id))
     await ensureUserSettings(existingByEmail.id)
+    // Warm the cache
+    await redis.set(localUserCacheKey(clerkUserId), existingByEmail.id, { ex: LOCAL_USER_CACHE_TTL }).catch(() => null)
     return existingByEmail.id
   }
 
@@ -149,5 +172,9 @@ export async function ensureLocalUserForClerk(clerkUserId: string) {
     ensureUserSettings(userId),
   ])
 
+  // Warm the cache for new users
+  await redis.set(localUserCacheKey(clerkUserId), userId, { ex: LOCAL_USER_CACHE_TTL }).catch(() => null)
+
   return userId
 }
+
