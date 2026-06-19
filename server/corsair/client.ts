@@ -119,9 +119,9 @@ export async function isUserConnected(
     const tenant = await getTenant(userId)
     try {
       if (plugin === 'gmail') {
-        await tenant.gmail.db.threads.list({ limit: 1, offset: 0 })
+        await tenant.gmail.api.messages.list({ maxResults: 1 })
       } else {
-        await tenant.googlecalendar.db.events.list({ limit: 1, offset: 0 })
+        await tenant.googlecalendar.api.events.getMany({ calendarId: 'primary', maxResults: 1 })
       }
       return true
     } catch (err: any) {
