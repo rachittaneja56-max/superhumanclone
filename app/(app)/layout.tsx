@@ -30,7 +30,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const settings = await getSafeUserSettings(userId)
 
-  if (!settings.hasRecord || !settings.onboardingCompleted) {
+  if (
+    !settings.hasRecord || 
+    !settings.onboardingCompleted || 
+    !settings.gmailConnected || 
+    !settings.calendarConnected
+  ) {
     redirect('/onboarding/connect')
   }
 

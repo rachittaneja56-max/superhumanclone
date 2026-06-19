@@ -649,28 +649,30 @@ export async function generateDigest(
   }
 }
 
+type RewriteInstruction = "improve_tone" | "make_shorter" | "make_formal" | "convert_to_bullets" | "translate";
+
 export async function rewriteDraft(
   draft: string,
-  instruction: "improve_tone" | "make_shorter" | "make_formal" | "convert_to_bullets" | "translate",
+  instruction: RewriteInstruction,
   translateTo?: string,
   options?: { userId?: string },
 ) {
-  const normalizedInstruction =
-    instruction === "translate" && translateTo
-      ? `Instruction: translate to ${translateTo}`
-      : `Instruction: ${instruction.replace(/_/g, " ")}`;
-  const promptBody = `${normalizedInstruction}\n${wrapEmailContent(draft)}`;
+  const instructionMap: Record<RewriteInstruction, string> = {
+    improve_tone: "Rewrite the draft to sound warmer, clearer, and more polished without changing the meaning.",
+    make_shorter: "Rewrite the draft to be shorter and tighter while keeping the important information.",
+    make_formal: "Rewrite the draft in a more formal, professional tone while keeping the meaning.",
+    convert_to_bullets: "Rewrite the draft as a concise bullet list that keeps the message email-safe and editable.",
+    translate: `Translate the draft into ${translateTo?.trim() || "English"} while preserving the meaning and keeping it email-ready.`,
+  };
 
-  try {
-    const { text } = await executeTextTask(promptBody, {
-      userId: options?.userId,
-      capability: "fast",
-      prompt: prompts.rewriteDraft,
-    });
-    return sanitizeOutput(text, 4000);
-  } catch {
-    return sanitizeOutput(draft, 4000);
-  }
+  const promptBody = `${instructionMap[instruction]}\n${wrapEmailContent(draft)}`;
+
+  const { text } = await executeTextTask(promptBody, {
+    userId: options?.userId,
+    capability: "fast",
+    prompt: prompts.rewriteDraft,
+  });
+  return sanitizeOutput(text, 4000);
 }
 
 export async function smartFillFromThread(content: string, options?: { userId?: string }) {
@@ -777,3 +779,6 @@ export async function streamAgentResponse(
     };
   }
 }
+
+
+

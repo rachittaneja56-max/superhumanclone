@@ -73,7 +73,7 @@ export const settingsRouter = router({
       // Invalidate consent cache
       await ctx.redis.incr('consent_version:' + ctx.userId)
       // Set privacyConfigured to true
-      await saveSafeUserSettings(ctx.userId!, { privacyConfigured: true })
+      await saveSafeUserSettings(ctx.userId!, { privacyConfigured: true, onboardingCompleted: true })
       await invalidateSettingsCache(ctx.redis, ctx.userId!)
       return { updated: true, count: input.rules.length }
     }),
