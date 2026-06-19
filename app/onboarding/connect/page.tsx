@@ -10,7 +10,7 @@ import { ensureSafeUserSettings, getSafeUserSettings, saveSafeUserSettings } fro
 export default async function ConnectPage({
   searchParams,
 }: {
-  searchParams: Promise<{ connected?: string; disconnected?: string; error?: string; plugin?: string }>;
+  searchParams: Promise<{ connected?: string; disconnected?: string; error?: string; plugin?: string; flow?: string }>;
 }) {
   const resolvedSearchParams = await searchParams;
   const session = await getSession();
@@ -38,7 +38,6 @@ export default async function ConnectPage({
     settings.gmailConnected !== gmailConnected ||
     settings.calendarConnected !== calendarConnected
   ) {
-    // Keep onboarding state in sync with the actual provider connection state.
     await saveSafeUserSettings(userId, {
       gmailConnected,
       calendarConnected,
@@ -53,20 +52,26 @@ export default async function ConnectPage({
     <div className="flex min-h-screen flex-col">
       {resolvedSearchParams.connected === "true" && (
         <div className="mx-auto mt-4 w-full max-w-2xl rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-center text-sm text-emerald-700">
-          {resolvedSearchParams.plugin === "gmail"
-            ? "Gmail connected successfully. Finalizing your workspace."
-            : resolvedSearchParams.plugin === "googlecalendar"
-              ? "Calendar connected successfully. Finalizing your workspace."
-              : "Connection completed successfully."}
+          {resolvedSearchParams.flow === "workspace"
+            ? resolvedSearchParams.plugin === "gmail"
+              ? "Gmail connected. Finishing Google Workspace setup."
+              : resolvedSearchParams.plugin === "googlecalendar"
+                ? "Calendar connected. Finishing Google Workspace setup."
+                : "Google Workspace connected successfully."
+            : resolvedSearchParams.plugin === "gmail"
+              ? "Gmail connected successfully. Finalizing your workspace."
+              : resolvedSearchParams.plugin === "googlecalendar"
+                ? "Calendar connected successfully. Finalizing your workspace."
+                : "Connection completed successfully."}
         </div>
       )}
       {(resolvedSearchParams.error || resolvedSearchParams.connected === "false") && (
         <div className="mx-auto mt-4 w-full max-w-2xl rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-center text-sm text-destructive">
           {resolvedSearchParams.error === "workspace_required"
-            ? "Connect both Gmail and Calendar before continuing to the dashboard."
+            ? "Connect Gmail and Calendar before continuing to the dashboard."
             : resolvedSearchParams.error === "gmail_required"
               ? "Connect Gmail before continuing to the dashboard."
-            : "Connection failed. Please try again."}
+              : "Connection failed. Please try again."}
         </div>
       )}
       {resolvedSearchParams.disconnected && (
@@ -81,8 +86,7 @@ export default async function ConnectPage({
 
       <ConnectWorkspace
         firstName={firstName}
-        gmailConnectUrl="/api/corsair/connect?provider=gmail"
-        calendarConnectUrl="/api/corsair/connect?provider=googlecalendar"
+        workspaceConnectUrl="/api/corsair/connect?provider=workspace"
         initialGmailConnected={gmailConnected}
         initialCalendarConnected={calendarConnected}
       />

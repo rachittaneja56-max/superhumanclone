@@ -5,11 +5,14 @@ import { ensureTenantProvisioned } from '@/server/corsair/provision'
 import { syncInboxIfEmpty } from '@/server/corsair/sync'
 import { getCorsairCallbackUrl } from '@/server/corsair/url'
 import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
-import { ensureSafeUserSettings, getSafeUserSettings } from '@/server/db/user-settings-compat'
+import { invalidateConnectionCache, invalidateSettingsCache } from '@/server/cache'
+import { redis } from '@/server/redis'
+import { ensureSafeUserSettings, getSafeUserSettings, saveSafeUserSettings } from '@/server/db/user-settings-compat'
 
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')
   const state = req.nextUrl.searchParams.get('state')
+  const flow = req.nextUrl.searchParams.get('flow')
 
   if (!code || !state) {
     return NextResponse.redirect(new URL('/onboarding/connect?error=missing_params', req.url))
@@ -24,7 +27,6 @@ export async function GET(req: NextRequest) {
       redirectUri,
     })
 
-    // tenantId is embedded in the signed OAuth state
     const userId = result.tenantId
     let liveState = { gmailConnected: false, calendarConnected: false }
 
@@ -33,7 +35,6 @@ export async function GET(req: NextRequest) {
       await ensureSafeUserSettings(userId)
 
       if (result.plugin === 'gmail') {
-        // Start the initial mailbox sync without blocking the redirect.
         void syncInboxIfEmpty(userId).catch((err) =>
           console.error('[OAuth] Initial inbox sync failed:', err)
         )
@@ -43,9 +44,40 @@ export async function GET(req: NextRequest) {
         console.error('[OAuth] Failed to reconcile connection state:', err)
         return { gmailConnected: false, calendarConnected: false }
       })
+
+      await saveSafeUserSettings(userId, {
+        gmailConnected: liveState.gmailConnected,
+        calendarConnected: liveState.calendarConnected,
+      })
+
+      await Promise.all([
+        invalidateSettingsCache(redis, userId),
+        invalidateConnectionCache(redis, userId),
+      ]).catch(() => null)
     }
 
     const settings = userId ? await getSafeUserSettings(userId).catch(() => null) : null
+
+    if (flow === 'workspace' && userId) {
+      if (result.plugin === 'gmail' && !liveState.calendarConnected) {
+        const nextUrl = new URL('/api/corsair/connect', req.url)
+        nextUrl.searchParams.set('provider', 'googlecalendar')
+        nextUrl.searchParams.set('flow', 'workspace')
+        return NextResponse.redirect(nextUrl)
+      }
+
+      if (liveState.gmailConnected && liveState.calendarConnected) {
+        if (!settings?.privacyConfigured) {
+          return NextResponse.redirect(new URL('/onboarding/privacy', req.url))
+        }
+
+        return NextResponse.redirect(new URL('/dashboard', req.url))
+      }
+
+      if (liveState.gmailConnected || liveState.calendarConnected) {
+        return NextResponse.redirect(new URL(`/onboarding/connect?connected=true&plugin=${encodeURIComponent(result.plugin)}&flow=workspace`, req.url))
+      }
+    }
 
     if (liveState.gmailConnected && liveState.calendarConnected) {
       if (!settings?.privacyConfigured) {
@@ -63,9 +95,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(new URL(`/calendar?connected=true&plugin=${encodeURIComponent(result.plugin)}`, req.url))
     }
 
-    return NextResponse.redirect(new URL(`/onboarding/connect?error=connection_not_confirmed&plugin=${encodeURIComponent(result.plugin)}`, req.url))
+    return NextResponse.redirect(new URL(`/onboarding/connect?error=connection_not_confirmed&plugin=${encodeURIComponent(result.plugin)}${flow ? `&flow=${encodeURIComponent(flow)}` : ''}`, req.url))
   } catch (error: any) {
-    console.error('OAuth Callback Error')
+    console.error('OAuth Callback Error', error)
     return NextResponse.redirect(new URL('/onboarding/connect?error=callback_failed', req.url))
   }
 }
