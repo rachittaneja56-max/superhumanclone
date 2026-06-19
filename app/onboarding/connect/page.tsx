@@ -53,11 +53,7 @@ export default async function ConnectPage({
       {resolvedSearchParams.connected === "true" && (
         <div className="mx-auto mt-4 w-full max-w-2xl rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-center text-sm text-emerald-700">
           {resolvedSearchParams.flow === "workspace"
-            ? resolvedSearchParams.plugin === "gmail"
-              ? "Gmail connected. Finishing Google Workspace setup."
-              : resolvedSearchParams.plugin === "googlecalendar"
-                ? "Calendar connected. Finishing Google Workspace setup."
-                : "Google Workspace connected successfully."
+            ? "Google Workspace connected successfully."
             : resolvedSearchParams.plugin === "gmail"
               ? "Gmail connected successfully. Finalizing your workspace."
               : resolvedSearchParams.plugin === "googlecalendar"

@@ -59,18 +59,67 @@ export async function GET(req: NextRequest) {
     const settings = userId ? await getSafeUserSettings(userId).catch(() => null) : null
 
     if (flow === 'workspace' && userId) {
-      if (result.plugin === 'gmail' && !liveState.calendarConnected) {
-        const nextUrl = new URL('/api/corsair/connect', req.url)
-        nextUrl.searchParams.set('provider', 'googlecalendar')
-        nextUrl.searchParams.set('flow', 'workspace')
-        return NextResponse.redirect(nextUrl)
-      }
+      if (result.plugin === 'gmail') {
+        // The unified token with both scopes was just saved to the `gmail` plugin.
+        // We now securely clone that exact row to the `googlecalendar` plugin.
+        const { db } = await import('@/server/db')
+        const { corsairAccounts, corsairIntegrations } = await import('@/server/db/schema')
+        const { eq, and, inArray } = await import('drizzle-orm')
+        
+        const integrations = await db.query.corsairIntegrations.findMany({
+          where: inArray(corsairIntegrations.name, ['gmail', 'googlecalendar'])
+        })
+        const gmailInt = integrations.find(i => i.name === 'gmail')
+        const calInt = integrations.find(i => i.name === 'googlecalendar')
 
-      if (liveState.gmailConnected && liveState.calendarConnected) {
+        if (gmailInt && calInt) {
+          const gmailAccount = await db.query.corsairAccounts.findFirst({
+            where: and(
+              eq(corsairAccounts.tenantId, userId),
+              eq(corsairAccounts.integrationId, gmailInt.id)
+            )
+          })
+
+          if (gmailAccount) {
+            // Remove any existing calendar account to prevent duplication errors
+            await db.delete(corsairAccounts).where(
+              and(
+                eq(corsairAccounts.tenantId, userId),
+                eq(corsairAccounts.integrationId, calInt.id)
+              )
+            )
+            // Insert exact copy for Calendar
+            await db.insert(corsairAccounts).values({
+              id: crypto.randomUUID(),
+              tenantId: userId,
+              integrationId: calInt.id,
+              config: gmailAccount.config,
+              dek: gmailAccount.dek,
+            })
+          }
+        }
+        
+        // Both are now securely connected
+        await saveSafeUserSettings(userId, {
+          gmailConnected: true,
+          calendarConnected: true,
+        })
+        
+        await Promise.all([
+          invalidateSettingsCache(redis, userId),
+          invalidateConnectionCache(redis, userId),
+        ]).catch(() => null)
+        
         if (!settings?.privacyConfigured) {
           return NextResponse.redirect(new URL('/onboarding/privacy', req.url))
         }
+        return NextResponse.redirect(new URL('/dashboard', req.url))
+      }
 
+      if (result.plugin === 'googlecalendar') {
+        if (!settings?.privacyConfigured) {
+          return NextResponse.redirect(new URL('/onboarding/privacy', req.url))
+        }
         return NextResponse.redirect(new URL('/dashboard', req.url))
       }
 
