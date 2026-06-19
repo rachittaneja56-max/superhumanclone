@@ -9,10 +9,19 @@ import { invalidateConnectionCache, invalidateSettingsCache } from '@/server/cac
 import { redis } from '@/server/redis'
 import { ensureSafeUserSettings, getSafeUserSettings, saveSafeUserSettings } from '@/server/db/user-settings-compat'
 
+import { cookies } from 'next/headers'
+
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')
   const state = req.nextUrl.searchParams.get('state')
-  const flow = req.nextUrl.searchParams.get('flow')
+  
+  const cookieStore = await cookies()
+  const flow = req.nextUrl.searchParams.get('flow') || cookieStore.get('oauth_flow')?.value
+  
+  // Clear the cookie if it exists
+  if (cookieStore.has('oauth_flow')) {
+    cookieStore.delete('oauth_flow')
+  }
 
   if (!code || !state) {
     return NextResponse.redirect(new URL('/onboarding/connect?error=missing_params', req.url))

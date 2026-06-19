@@ -43,7 +43,7 @@ export function ConnectWorkspace({
   const canContinue = allConnected;
 
   const statusText = useMemo(() => {
-    if (allConnected) return "Gmail and Calendar are connected. You can continue to the dashboard.";
+    if (allConnected) return "Gmail and Calendar are connected. You can continue to privacy setup.";
     if (state.gmailConnected || state.calendarConnected) return "One connection is ready. Finish the second one to continue.";
     return "Connect Google Workspace to finish setup.";
   }, [allConnected, state.calendarConnected, state.gmailConnected]);
@@ -65,14 +65,19 @@ export function ConnectWorkspace({
     }));
 
     try {
+      let result;
       if (integration === "gmail") {
-        await disconnectGmail();
+        result = await disconnectGmail();
       } else {
-        await disconnectCalendar();
+        result = await disconnectCalendar();
       }
 
       toast.success(`${integration === "gmail" ? "Gmail" : "Calendar"} disconnected.`);
-      router.refresh();
+      if (result?.redirectTo) {
+        router.push(result.redirectTo);
+      } else {
+        router.refresh();
+      }
     } catch {
       setState(snapshot);
       toast.error(`Could not disconnect ${integration === "gmail" ? "Gmail" : "Calendar"}.`);
@@ -89,9 +94,13 @@ export function ConnectWorkspace({
     setState({ gmailConnected: false, calendarConnected: false });
 
     try {
-      await disconnectAll();
+      const result = await disconnectAll();
       toast.success("Google Workspace disconnected.");
-      router.refresh();
+      if (result?.redirectTo) {
+        router.push(result.redirectTo);
+      } else {
+        router.refresh();
+      }
     } catch {
       setState(snapshot);
       toast.error("Could not disconnect Google Workspace.");
@@ -221,7 +230,7 @@ function ContinueButton({ disabled }: { disabled: boolean }) {
       style={{ backgroundColor: "var(--accent)" }}
     >
       {formPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-      {formPending ? "Continuing..." : "Continue to Dashboard"}
+      {formPending ? "Continuing..." : "Continue to Privacy Setup"}
     </button>
   );
 }

@@ -19,6 +19,7 @@ export function PrivacyGateForm({
   const saveRules = trpc.settings.updatePrivacyRules.useMutation({
     onSuccess: () => {
       toast.success(isEditMode ? 'Privacy settings saved' : 'All set!')
+      router.refresh()
       if (isEditMode) {
         router.push('/settings')
       } else {

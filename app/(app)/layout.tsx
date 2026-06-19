@@ -48,11 +48,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (
     !settings.hasRecord ||
-    !settings.onboardingCompleted ||
     !settings.gmailConnected ||
     !settings.calendarConnected
   ) {
     redirect('/onboarding/connect')
+  }
+
+  if (!settings.privacyConfigured || !settings.onboardingCompleted) {
+    redirect('/onboarding/privacy')
   }
 
   const email = localUser.email ?? ''

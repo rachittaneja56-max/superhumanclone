@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import { getSession } from '@/lib/auth'
 import { getGmailAuthUrl, getCalendarAuthUrl } from '@/server/corsair/client'
 import { getCorsairCallbackUrl } from '@/server/corsair/url'
@@ -27,6 +28,9 @@ export async function GET(req: NextRequest) {
     } else if (provider === 'googlecalendar') {
       authUrl = await getCalendarAuthUrl(userId, callbackUrl.toString())
     } else if (provider === 'workspace') {
+      const cookieStore = await cookies()
+      cookieStore.set('oauth_flow', 'workspace', { maxAge: 600, path: '/' })
+      
       // 1. Generate the base Gmail OAuth URL
       const baseAuthUrl = await getGmailAuthUrl(userId, callbackUrl.toString())
       

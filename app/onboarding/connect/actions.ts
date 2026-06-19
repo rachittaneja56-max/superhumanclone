@@ -36,7 +36,7 @@ export async function continueToDashboard() {
   revalidatePath('/onboarding/connect')
   revalidatePath('/dashboard')
 
-  redirect('/dashboard')
+  redirect('/onboarding/privacy')
 }
 
 async function disconnectAndRefresh(integration: 'gmail' | 'googlecalendar', redirectTo: string) {
