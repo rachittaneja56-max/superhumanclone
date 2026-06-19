@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { router, protectedProcedure } from '../trpc';
+import { router, protectedProcedure, protectedQueryProcedure } from '../trpc';
 import { db } from '../../db';
 import { contactIntelligence, emails, calendarEvents, aiConsentRules } from '../../db/schema';
 import { eq, and, desc, or, ilike, gt } from 'drizzle-orm';
@@ -9,7 +9,7 @@ import { isDomainBlocked } from '@/lib/domain-matcher';
 import { getContactIntelSchema } from '@/lib/schemas';
 
 export const contactsRouter = router({
-  getContactIntel: protectedProcedure
+  getContactIntel: protectedQueryProcedure
     .input(getContactIntelSchema)
     .query(async ({ ctx, input }) => {
       const contactEmail = input.contactEmail.trim().toLowerCase();

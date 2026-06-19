@@ -4,7 +4,7 @@ import { getSession } from '@/lib/auth'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { disconnectIntegration } from '@/server/corsair/client'
-import { invalidateMailCache, invalidateSettingsCache } from '@/server/cache'
+import { invalidateMailCache, invalidateSettingsCache, invalidateConnectionCache } from '@/server/cache'
 import { redis } from '@/server/redis'
 import { saveSafeUserSettings } from '@/server/db/user-settings-compat'
 import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
@@ -29,7 +29,10 @@ export async function continueToDashboard() {
     calendarConnected: true,
   })
 
-  await invalidateSettingsCache(redis, userId).catch(() => null)
+  await Promise.all([
+    invalidateSettingsCache(redis, userId),
+    invalidateConnectionCache(redis, userId),
+  ]).catch(() => null)
   revalidatePath('/onboarding/connect')
   revalidatePath('/dashboard')
 
@@ -50,8 +53,11 @@ async function disconnectAndRefresh(integration: 'gmail' | 'googlecalendar', red
     ...(integration === 'googlecalendar' ? { calendarConnected: false } : {}),
   })
 
-  await invalidateSettingsCache(redis, userId).catch(() => null)
-  await invalidateMailCache(redis, userId).catch(() => null)
+  await Promise.all([
+    invalidateSettingsCache(redis, userId),
+    invalidateMailCache(redis, userId),
+    invalidateConnectionCache(redis, userId),
+  ]).catch(() => null)
   await revalidatePath('/onboarding/connect')
   await revalidatePath('/dashboard')
   await revalidatePath('/inbox')
@@ -90,8 +96,11 @@ export async function disconnectAll() {
     calendarConnected: false
   })
 
-  await invalidateSettingsCache(redis, userId).catch(() => null)
-  await invalidateMailCache(redis, userId).catch(() => null)
+  await Promise.all([
+    invalidateSettingsCache(redis, userId),
+    invalidateMailCache(redis, userId),
+    invalidateConnectionCache(redis, userId),
+  ]).catch(() => null)
   revalidatePath('/onboarding/connect')
   revalidatePath('/dashboard')
   revalidatePath('/inbox')

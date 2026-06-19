@@ -1,12 +1,13 @@
 import 'server-only';
 import type { Redis } from '@upstash/redis';
 
-const SETTINGS_TTL = 60;
-const MAILBOX_TTL = 30;
-const UNREAD_TTL = 30;
-const THREAD_TTL = 300;
-const CALENDAR_TTL = 60;
+const SETTINGS_TTL = 300;      // was 60 — settings rarely change
+const MAILBOX_TTL = 120;        // was 30 — version-based, stale impossible
+const UNREAD_TTL = 120;         // was 30 — version-based, stale impossible
+const THREAD_TTL = 600;         // was 300 — thread content is stable
+const CALENDAR_TTL = 300;       // was 60 — events don't change every minute
 const VERSION_TTL = 60 * 60 * 24 * 7;
+
 
 export function settingsVersionKey(userId: string) {
   return `user:${userId}:settings:v1:version`;
@@ -62,10 +63,31 @@ export async function invalidateCalendarCache(redis: Redis, userId: string) {
   await bumpVersion(redis, `user:${userId}:calendar:v1:version`);
 }
 
+// ── Connection-state cache (90s TTL per plugin) ──────────────────
+const CONN_STATE_TTL = 90;
+
+export function connStateCacheKey(userId: string, plugin: 'gmail' | 'googlecalendar') {
+  return `user:${userId}:conn:${plugin}:v1`;
+}
+
+export function reconcileCacheKey(userId: string) {
+  return `user:${userId}:reconcile:v1`;
+}
+
+export async function invalidateConnectionCache(redis: Redis, userId: string) {
+  await Promise.all([
+    redis.del(connStateCacheKey(userId, 'gmail')),
+    redis.del(connStateCacheKey(userId, 'googlecalendar')),
+    redis.del(reconcileCacheKey(userId)),
+  ]).catch(() => null);
+}
+
 export const cacheTtls = {
   settings: SETTINGS_TTL,
   mailbox: MAILBOX_TTL,
   unread: UNREAD_TTL,
   thread: THREAD_TTL,
   calendar: CALENDAR_TTL,
+  connState: CONN_STATE_TTL,
 };
+

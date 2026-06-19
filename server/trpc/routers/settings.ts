@@ -1,4 +1,4 @@
-import { router, protectedProcedure } from '../trpc';
+import { router, protectedProcedure, protectedQueryProcedure } from '../trpc';
 import { auditLogs, aiConsentRules } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
@@ -8,7 +8,7 @@ import { getSafeUserSettings, saveSafeUserSettings } from '@/server/db/user-sett
 import { sanitisePayload } from '@/lib/sanitise-payload';
 
 export const settingsRouter = router({
-  getUserSettings: protectedProcedure
+  getUserSettings: protectedQueryProcedure
     .input(getUserSettingsSchema)
     .query(async ({ ctx }) => {
       const version = Number((await ctx.redis.get<string>(settingsVersionKey(ctx.userId!))) ?? '0');

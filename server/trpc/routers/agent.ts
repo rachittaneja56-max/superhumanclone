@@ -1,4 +1,4 @@
-import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
+import { router, protectedProcedure, createRateLimitMiddleware, protectedQueryProcedure } from '../trpc';
 import { hitlActions, auditLogs, agentSessions } from '../../db/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
@@ -19,7 +19,7 @@ import {
 } from '@/lib/schemas';
 
 export const agentRouter = router({
-  getPendingHITL: protectedProcedure
+  getPendingHITL: protectedQueryProcedure
     .input(getPendingHITLSchema)
     .query(async ({ ctx }) => {
       const pendingAction = await ctx.db.query.hitlActions.findFirst({

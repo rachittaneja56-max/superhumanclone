@@ -99,11 +99,24 @@ function buildMimeMessage(payload: {
 }
 
 // ── Connection check ─────────────────────────────────────────────
+import { redis } from '@/server/redis'
+import { connStateCacheKey, cacheTtls } from '@/server/cache'
 
 export async function isUserConnected(
   userId: string,
   plugin: 'gmail' | 'googlecalendar'
 ): Promise<boolean> {
+  // Check Redis cache first — avoids a live Google API call on every request
+  const cacheKey = connStateCacheKey(userId, plugin)
+  try {
+    const cached = await redis.get<string>(cacheKey)
+    if (cached !== null && cached !== undefined) {
+      return cached === 'true'
+    }
+  } catch {
+    // Redis unavailable — fall through to live probe
+  }
+
   try {
     const account = await db
       .select({ id: corsairAccounts.id })
@@ -113,6 +126,7 @@ export async function isUserConnected(
       .limit(1)
 
     if (!account.length) {
+      await redis.set(cacheKey, 'false', { ex: cacheTtls.connState }).catch(() => null)
       return false
     }
 
@@ -123,13 +137,16 @@ export async function isUserConnected(
       } else {
         await tenant.googlecalendar.api.events.getMany({ calendarId: 'primary', maxResults: 1 })
       }
+      await redis.set(cacheKey, 'true', { ex: cacheTtls.connState }).catch(() => null)
       return true
     } catch (err: any) {
       if (isAuthError(err)) {
+        await redis.set(cacheKey, 'false', { ex: cacheTtls.connState }).catch(() => null)
         return false
       }
 
       console.warn(`[isUserConnected] Live probe failed for ${plugin}, falling back to stored state:`, err)
+      // Don't cache the fallback — next request should re-probe
       return true
     }
   } catch (err: any) {
@@ -137,6 +154,8 @@ export async function isUserConnected(
     return false
   }
 }
+
+
 
 import { generateOAuthUrl } from 'corsair/oauth'
 

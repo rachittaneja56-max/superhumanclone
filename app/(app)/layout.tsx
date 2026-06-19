@@ -9,6 +9,22 @@ import { users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { getSession } from '@/lib/auth'
 import { getSafeUserSettings } from '@/server/db/user-settings-compat'
+import { redis } from '@/server/redis'
+import { settingsCacheKey, settingsVersionKey } from '@/server/cache'
+
+async function getCachedUserSettings(userId: string) {
+  try {
+    const version = Number((await redis.get<string>(settingsVersionKey(userId))) ?? '0')
+    const cacheKey = settingsCacheKey(userId, version)
+    const cached = await redis.get<string>(cacheKey)
+    if (cached) {
+      return JSON.parse(cached)
+    }
+  } catch {
+    // Redis unavailable — fall through to DB
+  }
+  return getSafeUserSettings(userId)
+}
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
@@ -16,24 +32,24 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (!userId) redirect('/login')
 
-  const localUser = await db.query.users.findFirst({
-    where: eq(users.id, userId),
-    columns: {
-      email: true,
-      name: true,
-    },
-  })
+  // Run all independent data fetches in parallel — eliminates sequential waterfall
+  const [localUser, settings, adminState] = await Promise.all([
+    db.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { email: true, name: true },
+    }),
+    getCachedUserSettings(userId),
+    getUserAdminState(userId),
+  ])
 
   if (!localUser) {
     redirect('/login')
   }
 
-  const settings = await getSafeUserSettings(userId)
-
   if (
-    !settings.hasRecord || 
-    !settings.onboardingCompleted || 
-    !settings.gmailConnected || 
+    !settings.hasRecord ||
+    !settings.onboardingCompleted ||
+    !settings.gmailConnected ||
     !settings.calendarConnected
   ) {
     redirect('/onboarding/connect')
@@ -42,7 +58,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const email = localUser.email ?? ''
   const name = localUser.name ?? 'User'
   const firstName = name.split(' ')[0] || 'User'
-  const { isAdmin } = await getUserAdminState(userId)
+  const { isAdmin } = adminState
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

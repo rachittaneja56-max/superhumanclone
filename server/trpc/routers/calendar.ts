@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, lte, or, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
-import { router, protectedProcedure } from '../trpc';
+import { router, protectedProcedure, protectedQueryProcedure } from '../trpc';
 import { emails, calendarEvents, users } from '../../db/schema';
 import { generateMeetingPrepBrief, smartFillFromThread } from '../../ai/provider';
 import {
@@ -346,7 +346,7 @@ export const calendarRouter = router({
       }
     }),
 
-  getTimeline: protectedProcedure
+  getTimeline: protectedQueryProcedure
     .input(getTimelineSchema)
     .query(async ({ ctx, input }) => {
       const version = Number((await ctx.redis.get<string>(calendarVersionKey(ctx.userId!))) ?? '0');
@@ -411,7 +411,7 @@ export const calendarRouter = router({
       return timeline;
     }),
 
-  getEvents: protectedProcedure
+  getEvents: protectedQueryProcedure
     .input(getEventsSchema)
     .query(async ({ ctx, input }) => {
       const version = Number((await ctx.redis.get<string>(calendarVersionKey(ctx.userId!))) ?? '0');

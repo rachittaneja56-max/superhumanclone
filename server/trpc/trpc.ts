@@ -39,7 +39,13 @@ export const setRLSContext = t.middleware(async ({ ctx, next }) => {
   return next({ ctx });
 });
 
+// Full procedure with RLS context — use for mutations only
 export const protectedProcedure = t.procedure.use(enforceAuth).use(setRLSContext);
+
+// Lightweight procedure without setRLSContext — use for read-only queries.
+// Skips the `SET LOCAL app.current_user_id` round-trip that adds latency on every call.
+export const protectedQueryProcedure = t.procedure.use(enforceAuth);
+
 
 export const createRateLimitMiddleware = (key: string, limit: number, windowSeconds: number) => {
   return t.middleware(async ({ ctx, next }) => {

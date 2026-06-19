@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { router, protectedProcedure } from '../trpc';
+import { router, protectedProcedure, protectedQueryProcedure } from '../trpc';
 import { auditLogs } from '../../db/schema';
 import { eq, desc } from 'drizzle-orm';
 
 import { getAuditLogSchema } from '@/lib/schemas';
 export const auditRouter = router({
-  getAuditLog: protectedProcedure
+  getAuditLog: protectedQueryProcedure
     .input(getAuditLogSchema)
     .query(async ({ ctx, input }) => {
       const { limit } = input;

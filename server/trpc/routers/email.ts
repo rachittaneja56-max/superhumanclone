@@ -1,4 +1,4 @@
-import { router, protectedProcedure, createRateLimitMiddleware } from '../trpc';
+import { router, protectedProcedure, createRateLimitMiddleware, protectedQueryProcedure } from '../trpc';
 import { emails, auditLogs, calendarEvents, autoReplyDrafts, aiConsentRules, users } from '@/server/db/schema';
 import { eq, and, desc, gt, between, inArray, asc, or, ilike, sql, lt } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
@@ -260,7 +260,7 @@ async function resolveEmailActionTarget(
 }
 
 export const emailRouter = router({
-  getMailboxThreads: protectedProcedure
+  getMailboxThreads: protectedQueryProcedure
     .use(createRateLimitMiddleware('getMailboxThreads', 240, 60))
     .input(getMailboxThreadsSchema)
     .query(async ({ ctx, input }) => {
@@ -516,7 +516,7 @@ export const emailRouter = router({
       return result;
     }),
 
-  getThreads: protectedProcedure
+  getThreads: protectedQueryProcedure
     .use(createRateLimitMiddleware('getThreads', 200, 60))
     .input(getThreadsSchema)
     .query(async ({ ctx, input }) => {
@@ -592,7 +592,7 @@ export const emailRouter = router({
       return mapped;
     }),
 
-  getUnreadCounts: protectedProcedure
+  getUnreadCounts: protectedQueryProcedure
     .input(getUnreadCountsSchema)
     .query(async ({ ctx }) => {
       const version = Number((await ctx.redis.get<string>(mailVersionKey(ctx.userId!))) ?? '0');
@@ -660,7 +660,7 @@ export const emailRouter = router({
       return result;
     }),
 
-  getThread: protectedProcedure
+  getThread: protectedQueryProcedure
     .input(getThreadSchema)
     .query(async ({ ctx, input }) => {
       const version = Number((await ctx.redis.get<string>(mailVersionKey(ctx.userId!))) ?? '0');
@@ -1077,7 +1077,7 @@ export const emailRouter = router({
       return { success: true, count: trashed.length };
     }),
 
-  getMorningDigest: protectedProcedure
+  getMorningDigest: protectedQueryProcedure
     .use(createRateLimitMiddleware('getMorningDigest', 10, 3600))
     .input(getMorningDigestSchema)
     .query(async ({ ctx }) => {
@@ -1276,7 +1276,7 @@ export const emailRouter = router({
       return { cancelled: true };
     }),
 
-  getAutoReplies: protectedProcedure
+  getAutoReplies: protectedQueryProcedure
     .input(getAutoRepliesSchema)
     .query(async ({ ctx, input }) => {
       const settings = await getSafeUserSettings(ctx.userId!);
