@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc/client";
 import { toast } from "sonner";
 import { Mail, MessageSquareText, Sparkles, Users } from "lucide-react";
+import { decodeHtmlEntities } from "@/lib/email-client";
 
 export function MeetingPrepBriefDialog({
   open,
@@ -35,7 +36,7 @@ export function MeetingPrepBriefDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-accent" />
@@ -49,8 +50,9 @@ export function MeetingPrepBriefDialog({
             Building a safe brief from allowed email context…
           </div>
         ) : brief ? (
-          <div className="grid gap-4">
-            <section className="rounded-xl border border-border bg-surface p-4">
+          <div className="flex-1 overflow-y-auto pr-2">
+            <div className="grid gap-4 pb-4">
+              <section className="rounded-xl border border-border bg-surface p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-foreground-subtle">Summary</div>
               <p className="mt-2 text-sm leading-6 text-foreground">{brief.summary}</p>
             </section>
@@ -78,8 +80,8 @@ export function MeetingPrepBriefDialog({
                         <span className="font-medium text-foreground">{email.sender}</span>
                         <span>{new Date(email.receivedAt).toLocaleString()}</span>
                       </div>
-                      <div className="mt-1 text-sm font-medium text-foreground">{email.subject}</div>
-                      <p className="mt-1 line-clamp-2 text-sm leading-6 text-foreground-muted">{email.snippet}</p>
+                      <div className="mt-1 text-sm font-medium text-foreground">{decodeHtmlEntities(email.subject)}</div>
+                      <p className="mt-1 line-clamp-2 text-sm leading-6 text-foreground-muted">{decodeHtmlEntities(email.snippet)}</p>
                     </div>
                   ))
                 ) : (
@@ -105,9 +107,10 @@ export function MeetingPrepBriefDialog({
                 </ul>
               </div>
             </section>
+            </div>
           </div>
         ) : (
-          <div className="py-12 text-center text-sm text-foreground-muted">Open a meeting brief to review the context.</div>
+          <div className="flex-1 overflow-y-auto py-12 text-center text-sm text-foreground-muted">Open a meeting brief to review the context.</div>
         )}
 
         <DialogFooter>
