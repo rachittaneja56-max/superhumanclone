@@ -127,17 +127,21 @@ export function AdminDashboardClient({ initialDashboard }: { initialDashboard: a
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => changePlan.mutate({ userId: user.id, plan: user.plan === "free" ? "pro" : "free" })}>
-                    {user.plan === "free" ? "Upgrade" : "Set Free"}
+                  <Button size="sm" variant="outline" disabled={changePlan.isPending} onClick={() => changePlan.mutate({ userId: user.id, plan: user.plan === "free" ? "pro" : "free" })}>
+                    {changePlan.isPending ? "..." : (user.plan === "free" ? "Upgrade" : "Set Free")}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => flagUser.mutate({ userId: user.id, flagged: !user.isFlagged })}>
-                    {user.isFlagged ? "Unflag" : "Flag"}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setAiAccess.mutate({ userId: user.id, enabled: user.aiDisabled })}>
-                    {user.aiDisabled ? "Enable AI" : "Disable AI"}
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => resetUsage.mutate({ userId: user.id, kind: "ai" })}>
-                    Reset AI usage
+                  {isSuperadmin && (
+                    <Button size="sm" variant="outline" disabled={flagUser.isPending} onClick={() => flagUser.mutate({ userId: user.id, flagged: !user.isFlagged })}>
+                      {flagUser.isPending ? "..." : (user.isFlagged ? "Unflag" : "Flag")}
+                    </Button>
+                  )}
+                  {isSuperadmin && (
+                    <Button size="sm" variant="outline" disabled={setAiAccess.isPending} onClick={() => setAiAccess.mutate({ userId: user.id, enabled: user.aiDisabled })}>
+                      {setAiAccess.isPending ? "..." : (user.aiDisabled ? "Enable AI" : "Disable AI")}
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" disabled={resetUsage.isPending} onClick={() => resetUsage.mutate({ userId: user.id, kind: "ai" })}>
+                    {resetUsage.isPending ? "..." : "Reset AI usage"}
                   </Button>
                 </div>
               </div>
@@ -166,6 +170,71 @@ export function AdminDashboardClient({ initialDashboard }: { initialDashboard: a
           </section>
         </div>
       </div>
+
+      {dashboard.promptLogs && dashboard.promptLogs.length > 0 && (
+        <section className="mb-6 rounded-2xl border border-border bg-surface p-0 overflow-hidden">
+          <div className="px-5 py-4 border-b border-border">
+            <h2 className="text-lg font-semibold text-foreground">Prompt tracking</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs uppercase text-foreground-subtle border-b border-border">
+                <tr>
+                  <th className="px-5 py-3 font-medium">User</th>
+                  <th className="px-5 py-3 font-medium">Plan</th>
+                  <th className="px-5 py-3 font-medium">Prompt</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium">Tokens</th>
+                  <th className="px-5 py-3 font-medium">Cost</th>
+                  <th className="px-5 py-3 font-medium">Duration</th>
+                  <th className="px-5 py-3 font-medium">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {dashboard.promptLogs.map((log: any) => {
+                  const user = dashboard.users.find((u: any) => u.id === log.userId) || { name: "Unknown", email: "Unknown", plan: "free" };
+                  const isInjection = log.status === "blocked_input";
+                  return (
+                    <tr key={log.id} className="hover:bg-background/50 transition-colors">
+                      <td className="px-5 py-3 align-top">
+                        <div className="font-medium text-foreground whitespace-nowrap">{user.name}</div>
+                        <div className="text-xs text-foreground-muted whitespace-nowrap">{user.email}</div>
+                      </td>
+                      <td className="px-5 py-3 align-top">
+                        <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs">
+                          {user.plan}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 align-top min-w-[200px] max-w-[400px]">
+                        <div className="truncate text-foreground" title={log.prompt}>{log.prompt}</div>
+                        {isInjection && (
+                          <div className="mt-1 flex items-center text-xs text-destructive">
+                            <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            injection
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 align-top">
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${isInjection ? 'border-destructive/30 text-destructive bg-destructive/10' : 'border-border text-foreground'}`}>
+                          {log.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 align-top text-foreground-muted">{log.tokens}</td>
+                      <td className="px-5 py-3 align-top text-foreground-muted">${log.cost.toFixed(5)}</td>
+                      <td className="px-5 py-3 align-top text-foreground-muted">{(log.duration_ms / 1000).toFixed(1)}s</td>
+                      <td className="px-5 py-3 align-top text-xs text-foreground-muted whitespace-nowrap">
+                        {new Date(log.created_at).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {isSuperadmin && dashboard.auditLogs.length > 0 ? (
         <section className="rounded-2xl border border-border bg-surface p-5">

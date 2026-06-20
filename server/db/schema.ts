@@ -266,6 +266,23 @@ export const auditLogs = pgTable(
   (table) => [index('audit_user_idx').on(table.userId)]
 );
 
+export const promptLogs = pgTable(
+  'prompt_logs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: text('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    prompt: text('prompt').notNull(),
+    status: text('status').notNull(),
+    tokens: integer('tokens').default(0).notNull(),
+    cost: real('cost').default(0).notNull(),
+    duration_ms: integer('duration_ms').default(0).notNull(),
+    created_at: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull()
+  },
+  (table) => [index('prompt_logs_user_idx').on(table.userId)]
+);
+
 export const waitlistEmails = pgTable('waitlist_emails', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: text('email').unique().notNull(),
@@ -287,7 +304,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   hitlActions: many(hitlActions),
   agentSessions: many(agentSessions),
   contactIntelligence: many(contactIntelligence),
-  auditLogs: many(auditLogs)
+  auditLogs: many(auditLogs),
+  promptLogs: many(promptLogs)
 }));
 
 export const userSettingsRelations = relations(userSettings, ({ one }) => ({
@@ -359,6 +377,13 @@ export const contactIntelligenceRelations = relations(contactIntelligence, ({ on
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   user: one(users, {
     fields: [auditLogs.userId],
+    references: [users.id]
+  })
+}));
+
+export const promptLogsRelations = relations(promptLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [promptLogs.userId],
     references: [users.id]
   })
 }));

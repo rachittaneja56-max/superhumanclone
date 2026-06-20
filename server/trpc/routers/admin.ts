@@ -9,7 +9,7 @@ import { getUsage, resetUsage } from "@/server/billing/usage";
 import { prompts } from "@/server/ai/prompts";
 import { sanitisePayload } from "@/lib/sanitise-payload";
 import { getSession, setAdminUnlocked } from "@/lib/auth";
-import { auditLogs, agentSessions, hitlActions, users } from "@/server/db/schema";
+import { auditLogs, agentSessions, hitlActions, users, promptLogs } from "@/server/db/schema";
 import { getUsersColumnPresence } from "@/server/db/users-compat";
 import {
   changeUserPlanSchema,
@@ -165,6 +165,11 @@ export const adminRouter = router({
             limit: 25,
           })
         : [];
+      
+      const promptLogRows = await ctx.db.query.promptLogs.findMany({
+        orderBy: [desc(promptLogs.created_at)],
+        limit: 25,
+      });
       const allHitlRows: Array<{ userId: string; status: "pending" | "approved" | "rejected" | "expired"; created_at: Date }> =
         await ctx.db.query.hitlActions.findMany({
           columns: { userId: true, status: true, created_at: true },
@@ -255,6 +260,16 @@ export const adminRouter = router({
           createdAt: row.created_at,
           details: sanitisePayload(row.details),
         })),
+        promptLogs: promptLogRows.map((row) => ({
+          id: row.id,
+          userId: row.userId,
+          prompt: row.prompt,
+          status: row.status,
+          tokens: row.tokens,
+          cost: row.cost,
+          duration_ms: row.duration_ms,
+          created_at: row.created_at,
+        })),
       };
     }),
 
@@ -274,7 +289,7 @@ export const adminRouter = router({
   flagUser: protectedProcedure
     .input(flagUserSchema)
     .mutation(async ({ ctx, input }) => {
-      await requireAdmin(ctx.userId!);
+      await requireSuperadmin(ctx.userId!);
       await requireAdminUnlock();
       const columns = await getUsersColumnPresence();
       if (!columns.hasIsFlagged) {
@@ -287,7 +302,7 @@ export const adminRouter = router({
   setUserAiAccess: protectedProcedure
     .input(setUserAiAccessSchema)
     .mutation(async ({ ctx, input }) => {
-      await requireAdmin(ctx.userId!);
+      await requireSuperadmin(ctx.userId!);
       await requireAdminUnlock();
       const columns = await getUsersColumnPresence();
       if (!columns.hasAiDisabled) {

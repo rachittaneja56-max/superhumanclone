@@ -1,5 +1,8 @@
 import "server-only";
 
+import { db } from "../../../server/db";
+import { promptLogs } from "../../../server/db/schema";
+
 import { runActionAgent } from "./action-agent";
 import { runDigestAgent } from "./digest-agent";
 import { runMeetingPrepAgent } from "./meeting-prep-agent";
@@ -48,8 +51,20 @@ export async function runRoutedAgentResponse(
   messages: { role: "user" | "assistant"; content: string }[],
   hitlInterceptor: (action: unknown) => Promise<unknown>,
 ) {
+  const startTime = Date.now();
   const scopeLimitMessage = getScopeLimitMessage(context.userMessage);
+  
   if (scopeLimitMessage) {
+    const durationMs = Date.now() - startTime;
+    await db.insert(promptLogs).values({
+      userId: context.userId,
+      prompt: context.userMessage,
+      status: "blocked_input",
+      tokens: 0,
+      cost: 0,
+      duration_ms: durationMs,
+    }).catch(e => console.error("Failed to log prompt", e));
+    
     return {
       textStream: createSingleChunkStream(scopeLimitMessage),
     };
@@ -62,6 +77,16 @@ export async function runRoutedAgentResponse(
   }, hitlInterceptor as (action: { actionType: string; payload: Record<string, unknown>; humanReadable: string }) => Promise<unknown>);
 
   if (specialist) {
+    const durationMs = Date.now() - startTime;
+    await db.insert(promptLogs).values({
+      userId: context.userId,
+      prompt: context.userMessage,
+      status: "specialist_handled",
+      tokens: 0,
+      cost: 0,
+      duration_ms: durationMs,
+    }).catch(e => console.error("Failed to log prompt", e));
+
     return {
       textStream: createSingleChunkStream(specialist.text),
     };
@@ -72,5 +97,16 @@ export async function runRoutedAgentResponse(
     : sanitiseAgentInput(context.userMessage);
 
   const normalizedMessages = [...messages.slice(0, -1), { role: "user" as const, content: contextualMessage }];
+  
+  const durationMs = Date.now() - startTime;
+  await db.insert(promptLogs).values({
+    userId: context.userId,
+    prompt: context.userMessage,
+    status: "streamed",
+    tokens: 0,
+    cost: 0,
+    duration_ms: durationMs,
+  }).catch(e => console.error("Failed to log prompt", e));
+
   return streamAgentResponse(context.userId, context.sessionId, normalizedMessages, hitlInterceptor);
 }
