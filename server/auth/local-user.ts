@@ -144,7 +144,7 @@ export async function ensureLocalUserForClerk(clerkUserId: string) {
   }
 
   if (columns.hasIsAdmin) {
-    upsertColumns.push({ column: "isAdmin", value: profile.isAdmin })
+    upsertColumns.push({ column: "is_admin", value: profile.isAdmin })
   }
 
   const updateAssignments = upsertColumns
