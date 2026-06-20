@@ -180,19 +180,23 @@ export function HITLCard({ className }: { className?: string }) {
               </div>
 
               {activeHITLAction.actionType === "send_email" && activeHITLAction.payload ? (
-                <EmailComposeCard
-                  payload={activeHITLAction.payload}
-                  onApprove={(editedPayload) => handleDecision("approved", editedPayload)}
-                  onReject={() => handleDecision("rejected")}
-                  isSubmitting={isSubmitting}
-                />
+                <div className="px-4 pb-4">
+                  <EmailComposeCard
+                    payload={activeHITLAction.payload}
+                    onApprove={(editedPayload) => handleDecision("approved", editedPayload)}
+                    onReject={() => handleDecision("rejected")}
+                    isSubmitting={isSubmitting}
+                  />
+                </div>
               ) : activeHITLAction.actionType === "create_event" && activeHITLAction.payload ? (
-                <CalendarEventCard
-                  payload={activeHITLAction.payload}
-                  onApprove={(editedPayload) => handleDecision("approved", editedPayload)}
-                  onReject={() => handleDecision("rejected")}
-                  isSubmitting={isSubmitting}
-                />
+                <div className="px-4 pb-4">
+                  <CalendarEventCard
+                    payload={activeHITLAction.payload}
+                    onApprove={(editedPayload) => handleDecision("approved", editedPayload)}
+                    onReject={() => handleDecision("rejected")}
+                    isSubmitting={isSubmitting}
+                  />
+                </div>
               ) : (
                 <div className="p-4 pt-0">
                   {activeHITLAction.payload && (

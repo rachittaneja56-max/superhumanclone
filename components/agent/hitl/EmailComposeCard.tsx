@@ -45,7 +45,7 @@ export function EmailComposeCard({
   };
 
   return (
-    <div className="flex w-full flex-col bg-surface font-sans text-sm">
+    <div className="flex w-full flex-col bg-surface font-sans text-sm border border-border rounded-lg overflow-hidden shadow-sm">
       <div className="flex items-center space-x-2 border-b border-border px-4 py-2">
         <span className="w-12 text-foreground-muted">To</span>
         <input

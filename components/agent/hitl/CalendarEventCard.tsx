@@ -54,7 +54,7 @@ export function CalendarEventCard({
   };
 
   return (
-    <div className="flex w-full flex-col bg-surface font-sans text-sm">
+    <div className="flex w-full flex-col bg-surface font-sans text-sm border border-border rounded-lg overflow-hidden shadow-sm">
       <div className="border-b border-border px-4 py-3">
         <input
           value={title}
