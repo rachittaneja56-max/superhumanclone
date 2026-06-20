@@ -42,7 +42,7 @@ function isPendingCalendarClarification(history?: AgentContext["history"]) {
 export function detectIntent(message: string, threadContext?: string, history?: AgentContext["history"]): AgentIntent {
   const lower = message.toLowerCase().trim();
   const hasThreadContext = !!threadContext?.trim();
-  const hasCalendarVerb = /\b(schedule|book|set up|set-up|plan|arrange|create|add|invite)\b/.test(lower);
+  const hasCalendarVerb = /\b(schedule|book|set|set up|set-up|plan|arrange|create|add|invite)\b/.test(lower);
   const hasCalendarObject = /\b(meeting|calendar|event|meet|invite)\b/.test(lower);
   const hasCalendarTiming = /\b(today|tomorrow|next|monday|tuesday|wednesday|thursday|friday|saturday|sunday|at\s+\d|\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon|midnight)\b/.test(lower);
 

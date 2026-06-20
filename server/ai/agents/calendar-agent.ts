@@ -174,7 +174,7 @@ function deriveCalendarDraft(source: string, aiResult: Awaited<ReturnType<typeof
 
 function looksLikeSchedulingRequest(source: string) {
   const lower = source.toLowerCase();
-  const createVerb = /\b(schedule|book|set up|set-up|plan|arrange|create|add|invite)\b/.test(lower);
+  const createVerb = /\b(schedule|book|set|set up|set-up|plan|arrange|create|add|invite)\b/.test(lower);
   const timeSignal = hasExplicitDateSignal(source) || hasExplicitTimeSignal(source);
   const meetingSignal = /\b(call|meeting|event|meet|calendar|invite)\b/.test(lower);
   const prepSignal = /\b(prep|prepare|brief)\b/.test(lower);
