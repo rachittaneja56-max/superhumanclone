@@ -35,12 +35,14 @@ function normalizeCalendarText(input: string) {
 }
 
 function parseDurationMinutes(input: string) {
-  const hoursMatch = input.match(/\b(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/i);
+  const hoursMatches = [...input.matchAll(/\b(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b/gi)];
+  const hoursMatch = hoursMatches.length > 0 ? hoursMatches[hoursMatches.length - 1] : null;
   if (hoursMatch) {
     return Math.max(15, Math.round(Number.parseFloat(hoursMatch[1]) * 60));
   }
 
-  const minutesMatch = input.match(/\b(\d+)\s*(?:m|min|mins|minute|minutes)\b/i);
+  const minutesMatches = [...input.matchAll(/\b(\d+)\s*(?:m|min|mins|minute|minutes)\b/gi)];
+  const minutesMatch = minutesMatches.length > 0 ? minutesMatches[minutesMatches.length - 1] : null;
   if (minutesMatch) {
     return Math.max(15, Number.parseInt(minutesMatch[1], 10));
   }
@@ -49,7 +51,7 @@ function parseDurationMinutes(input: string) {
 }
 
 function hasExplicitTimeSignal(input: string) {
-  return /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.test(input) || /\b\d{1,2}:\d{2}\b/.test(input) || /\b(noon|midnight)\b/i.test(input);
+  return /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.test(input) || /\b\d{3,4}\s*(am|pm)\b/i.test(input) || /\b\d{1,2}:\d{2}\b/.test(input) || /\b(noon|midnight)\b/i.test(input);
 }
 
 function hasExplicitDateSignal(input: string) {
@@ -96,7 +98,11 @@ function parseRelativeDateTime(input: string, preferredIso?: string) {
     return null;
   }
 
-  const timeMatch = input.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  const timeMatches1 = [...input.matchAll(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/gi)];
+  const timeMatches2 = [...input.matchAll(/\b(\d{1,2})(\d{2})\s*(am|pm)\b/gi)];
+  const allMatches = [...timeMatches1, ...timeMatches2].sort((a, b) => (a.index || 0) - (b.index || 0));
+  const timeMatch = allMatches.length > 0 ? allMatches[allMatches.length - 1] : null;
+  
   if (timeMatch) {
     let hour = Number.parseInt(timeMatch[1], 10);
     const minute = Number.parseInt(timeMatch[2] || "0", 10);
@@ -206,9 +212,21 @@ export async function runCalendarAgent(
   hitlInterceptor: (action: { actionType: string; payload: Record<string, unknown>; humanReadable: string }) => Promise<unknown>,
 ): Promise<AgentResult> {
   const recentUserMessages = context.history
-    ?.filter(m => m.role === "user")
-    .map(m => m.content)
-    .slice(-2) || [];
+    ?.map((m, i, arr) => {
+      if (m.role === "user") {
+        const prev = arr[i - 1];
+        if (prev?.role === "assistant" && /what should i call the event/i.test(prev.content)) {
+          return `title: ${m.content}`;
+        }
+        if (prev?.role === "assistant" && /what title and time should i use/i.test(prev.content)) {
+          return `title: ${m.content}`;
+        }
+        return m.content;
+      }
+      return null;
+    })
+    .filter((m): m is string => m !== null)
+    .slice(-5) || [];
   
   const lastAssistantMessage = context.history
     ?.filter(m => m.role === "assistant")
