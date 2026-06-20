@@ -48,6 +48,11 @@ export default async function ConnectPage({
     redirect("/onboarding/privacy");
   }
 
+  // If both are connected and privacy is configured, go straight to dashboard
+  if (gmailConnected && calendarConnected && settings.privacyConfigured) {
+    redirect("/dashboard");
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       {resolvedSearchParams.connected === "true" && (
