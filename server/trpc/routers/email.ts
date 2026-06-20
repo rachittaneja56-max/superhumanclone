@@ -361,7 +361,7 @@ export const emailRouter = router({
             is_read: true,
             created_at: true,
           },
-          orderBy: [desc(emails.created_at)],
+          orderBy: [desc(emails.created_at), desc(emails.id)],
           limit: input.limit + 1,
           offset: cursor ? 0 : input.offset,
         });
@@ -395,7 +395,7 @@ export const emailRouter = router({
                 is_read: true,
                 created_at: true,
               },
-              orderBy: [desc(emails.created_at)],
+              orderBy: [desc(emails.created_at), desc(emails.id)],
               limit: input.limit + 1,
               offset: cursor ? 0 : input.offset,
             });
@@ -415,7 +415,7 @@ export const emailRouter = router({
           })
         );
         const items = mapped.slice(0, input.limit);
-        const nextPageToken = mapped.length > input.limit ? encodePageToken(items[items.length - 1]) : null;
+        const nextPageToken = rows.length > input.limit ? encodePageToken(rows[input.limit - 1]) : null;
         const result = { items, nextPageToken };
         await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: cacheTtls.mailbox });
         return result;
@@ -463,7 +463,7 @@ export const emailRouter = router({
           is_archived: true,
           is_deleted: true,
         },
-        orderBy: [desc(emails.created_at)],
+        orderBy: [desc(emails.created_at), desc(emails.id)],
         limit: input.limit + 1,
         offset: cursor ? 0 : input.offset,
       });
@@ -509,7 +509,7 @@ export const emailRouter = router({
               is_archived: true,
               is_deleted: true,
             },
-            orderBy: [desc(emails.created_at)],
+            orderBy: [desc(emails.created_at), desc(emails.id)],
             limit: input.limit + 1,
             offset: cursor ? 0 : input.offset,
             });
@@ -521,7 +521,7 @@ export const emailRouter = router({
 
       const mapped = rows.map((r) => mapEmailForListClient({ ...r, mailbox: input.folder }));
       const items = mapped.slice(0, input.limit);
-      const nextPageToken = mapped.length > input.limit ? encodePageToken(items[items.length - 1]) : null;
+      const nextPageToken = rows.length > input.limit ? encodePageToken(rows[input.limit - 1]) : null;
       const result = { items, nextPageToken };
 
       await ctx.redis.set(cacheKey, JSON.stringify(result), { ex: cacheTtls.mailbox });
@@ -560,7 +560,7 @@ export const emailRouter = router({
           priority: true,
           created_at: true,
         },
-        orderBy: [desc(emails.created_at)],
+        orderBy: [desc(emails.created_at), desc(emails.id)],
         limit: input.limit
       });
 
@@ -588,7 +588,7 @@ export const emailRouter = router({
               priority: true,
               created_at: true,
             },
-            orderBy: [desc(emails.created_at)],
+            orderBy: [desc(emails.created_at), desc(emails.id)],
             limit: input.limit
           });
         } catch (err) {
