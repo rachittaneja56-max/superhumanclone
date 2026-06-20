@@ -159,7 +159,7 @@ export async function executeApprovedHitlAction(
 
   const rawPrivatePayload = await redis.get<string>(getPrivatePayloadKey(actionId));
   const privatePayload = rawPrivatePayload
-    ? (JSON.parse(rawPrivatePayload) as Record<string, unknown>)
+    ? (typeof rawPrivatePayload === 'string' ? JSON.parse(rawPrivatePayload) : rawPrivatePayload) as Record<string, unknown>
     : (row.payload && typeof row.payload === "object" ? (row.payload as Record<string, unknown>) : null);
 
   if (!privatePayload) {

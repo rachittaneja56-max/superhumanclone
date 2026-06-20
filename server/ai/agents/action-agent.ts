@@ -380,10 +380,13 @@ export async function runActionAgent(
       intent: "action",
       indicator: "Drafting email...",
       text: [
-        "Draft ready.",
-        `To: ${parsed.data.to.join(", ")}`,
-        `Subject: ${draft.summary.subject}`,
-        `Body: ${draft.summary.body}`,
+        "**Draft ready.**",
+        "",
+        `**To:** ${parsed.data.to.join(", ")}`,
+        `**Subject:** ${draft.summary.subject}`,
+        "",
+        "**Body:**",
+        `> ${draft.summary.body.replace(/\n/g, '\n> ')}`
       ].join("\n"),
     };
   }
@@ -424,9 +427,10 @@ export async function runActionAgent(
       intent: "action",
       indicator: "Preparing approval card...",
       text: [
-        "Ready for approval.",
-        `Create calendar event: ${sanitiseAgentOutput(parsed.data.title, 120)}`,
-        `When: ${parsed.data.startTime}`,
+        "**Ready for approval.**",
+        "",
+        `**Create calendar event:** ${sanitiseAgentOutput(parsed.data.title, 120)}`,
+        `**When:** ${parsed.data.startTime}`,
       ].join("\n"),
     };
   }
