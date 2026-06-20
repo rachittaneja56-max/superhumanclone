@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { reconcileGoogleConnectionState } from "@/server/auth/helpers";
 import { ConnectWorkspace } from "@/components/onboarding/ConnectWorkspace";
 import { ensureSafeUserSettings, getSafeUserSettings } from "@/server/db/user-settings-compat";
 
@@ -17,23 +18,20 @@ export default async function ConnectPage({
   if (!userId) redirect("/login");
 
   const localUser = await db.query.users.findFirst({
-    where: eq(users.id, userId!),
+    where: eq(users.id, userId),
     columns: { name: true },
   });
 
   const firstName = localUser?.name?.split(" ")[0] || "User";
 
-  await ensureSafeUserSettings(userId!);
+  await ensureSafeUserSettings(userId);
+  const settings = await getSafeUserSettings(userId);
+  const connectionState = await reconcileGoogleConnectionState(userId).catch(() => ({
+    gmailConnected: false,
+    calendarConnected: false,
+  }));
 
-  // Trust the DB settings — we write gmailConnected/calendarConnected there
-  // immediately after OAuth completes. Do NOT run a live Google API probe here
-  // because it adds latency and can flip the state back to false on first load.
-  const settings = await getSafeUserSettings(userId!);
-  const gmailConnected = settings.gmailConnected;
-  const calendarConnected = settings.calendarConnected;
-
-  // Both connected → advance to next onboarding step
-  if (gmailConnected && calendarConnected) {
+  if (connectionState.gmailConnected && connectionState.calendarConnected) {
     if (!settings.privacyConfigured || !settings.onboardingCompleted) {
       redirect("/onboarding/privacy");
     }
@@ -44,13 +42,11 @@ export default async function ConnectPage({
     <div className="flex min-h-screen flex-col">
       {resolvedSearchParams.connected === "true" && (
         <div className="mx-auto mt-4 w-full max-w-2xl rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4 text-center text-sm text-emerald-700">
-          {resolvedSearchParams.flow === "workspace"
-            ? "Google Workspace connected successfully."
-            : resolvedSearchParams.plugin === "gmail"
-              ? "Gmail connected successfully. Now connect Calendar to continue."
-              : resolvedSearchParams.plugin === "googlecalendar"
-                ? "Calendar connected successfully. Now connect Gmail to continue."
-                : "Connection completed successfully."}
+          {resolvedSearchParams.plugin === "gmail"
+            ? "Gmail connected. Google Calendar opens next if it still needs access."
+            : resolvedSearchParams.plugin === "googlecalendar"
+              ? "Google Calendar connected successfully."
+              : "Connection completed successfully."}
         </div>
       )}
       {(resolvedSearchParams.error || resolvedSearchParams.connected === "false") && (
@@ -75,8 +71,8 @@ export default async function ConnectPage({
       <ConnectWorkspace
         firstName={firstName}
         workspaceConnectUrl="/api/corsair/connect?provider=workspace"
-        initialGmailConnected={gmailConnected}
-        initialCalendarConnected={calendarConnected}
+        initialGmailConnected={connectionState.gmailConnected}
+        initialCalendarConnected={connectionState.calendarConnected}
       />
     </div>
   );

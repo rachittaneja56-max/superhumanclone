@@ -351,8 +351,8 @@ export async function DashboardData({
 
         <PanelCard title="Trust / privacy" icon={<ShieldCheck className="h-4 w-4" />} description="Connection and privacy posture at a glance." className="xl:col-span-1">
           <div className="space-y-2">
-            <StatusRow label="Gmail" value={settings?.gmailConnected ? "Connected" : "Disconnected"} tone={settings?.gmailConnected ? "good" : "warn"} />
-            <StatusRow label="Calendar" value={settings?.calendarConnected ? "Connected" : "Disconnected"} tone={settings?.calendarConnected ? "good" : "warn"} />
+            <StatusRow label="Gmail" value={connectionState.gmailConnected ? "Connected" : "Disconnected"} tone={connectionState.gmailConnected ? "good" : "warn"} />
+            <StatusRow label="Calendar" value={connectionState.calendarConnected ? "Connected" : "Disconnected"} tone={connectionState.calendarConnected ? "good" : "warn"} />
             <StatusRow label="Privacy Gate" value={settings?.privacyConfigured ? "Configured" : "Needs setup"} tone={settings?.privacyConfigured ? "good" : "warn"} />
             <StatusRow label="AI" value={settings?.aiEnabled ? "Enabled" : "Disabled"} tone={settings?.aiEnabled ? "good" : "warn"} />
           </div>
@@ -688,3 +688,4 @@ function formatActionDetails(details: Record<string, unknown> | unknown) {
   if (typeof record.type === "string") parts.push(record.type);
   return parts.length > 0 ? parts.join(" · ") : "Activity recorded.";
 }
+

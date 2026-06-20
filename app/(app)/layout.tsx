@@ -1,4 +1,6 @@
 import { redirect } from 'next/navigation'
+
+import { getSession } from '@/lib/auth'
 import { AppClientShell } from '@/components/app-client-shell'
 import { AgentContextEntry } from '@/components/agent/AgentContextEntry'
 import { UnifiedSidebar } from '@/components/app/UnifiedSidebar'
@@ -7,8 +9,8 @@ import { getUserAdminState } from '@/server/admin/access'
 import { db } from '@/server/db'
 import { users } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
-import { getSession } from '@/lib/auth'
 import { getSafeUserSettings } from '@/server/db/user-settings-compat'
+import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
 import { redis } from '@/server/redis'
 import { settingsCacheKey, settingsVersionKey } from '@/server/cache'
 
@@ -21,7 +23,7 @@ async function getCachedUserSettings(userId: string) {
       return JSON.parse(cached)
     }
   } catch {
-    // Redis unavailable — fall through to DB
+    // Redis unavailable - fall through to DB
   }
   return getSafeUserSettings(userId)
 }
@@ -32,25 +34,24 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (!userId) redirect('/login')
 
-  // Run all independent data fetches in parallel — eliminates sequential waterfall
-  const [localUser, settings, adminState] = await Promise.all([
+  const [localUser, settings, adminState, connectionState] = await Promise.all([
     db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: { email: true, name: true },
     }),
     getCachedUserSettings(userId),
     getUserAdminState(userId),
+    reconcileGoogleConnectionState(userId).catch(() => ({
+      gmailConnected: false,
+      calendarConnected: false,
+    })),
   ])
 
   if (!localUser) {
     redirect('/login')
   }
 
-  if (
-    !settings.hasRecord ||
-    !settings.gmailConnected ||
-    !settings.calendarConnected
-  ) {
+  if (!settings.hasRecord || !connectionState.gmailConnected || !connectionState.calendarConnected) {
     redirect('/onboarding/connect')
   }
 

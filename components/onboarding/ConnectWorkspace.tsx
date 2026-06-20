@@ -44,8 +44,9 @@ export function ConnectWorkspace({
 
   const statusText = useMemo(() => {
     if (allConnected) return "Gmail and Calendar are connected. You can continue to privacy setup.";
-    if (state.gmailConnected || state.calendarConnected) return "One connection is ready. Finish the second one to continue.";
-    return "Connect Google Workspace to finish setup.";
+    if (state.gmailConnected && !state.calendarConnected) return "Gmail is connected. Google Calendar permission is still pending.";
+    if (!state.gmailConnected && state.calendarConnected) return "Google Calendar is connected. Gmail permission is still pending.";
+    return "Connect Google Workspace. Gmail opens first, then Calendar opens automatically.";
   }, [allConnected, state.calendarConnected, state.gmailConnected]);
 
   const handleConnect = (url: string, integration: "workspace" | "gmail" | "calendar") => {
@@ -65,13 +66,7 @@ export function ConnectWorkspace({
     }));
 
     try {
-      let result;
-      if (integration === "gmail") {
-        result = await disconnectGmail();
-      } else {
-        result = await disconnectCalendar();
-      }
-
+      const result = integration === "gmail" ? await disconnectGmail() : await disconnectCalendar();
       toast.success(`${integration === "gmail" ? "Gmail" : "Calendar"} disconnected.`);
       if (result?.redirectTo) {
         router.push(result.redirectTo);
@@ -139,15 +134,17 @@ export function ConnectWorkspace({
             className={
               allConnected
                 ? "rounded-full bg-tag-green/10 px-2.5 py-1 text-xs font-medium text-tag-green"
-                : "rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400"
+                : state.gmailConnected || state.calendarConnected
+                  ? "rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-500"
+                  : "rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400"
             }
           >
-            {allConnected ? "Connected" : "Setup required"}
+            {allConnected ? "Connected" : state.gmailConnected || state.calendarConnected ? "Partially connected" : "Setup required"}
           </span>
         </div>
 
         <p className="mb-6 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          One button connects Gmail and Calendar together. Gmail powers inbox sync, and Calendar unlocks scheduling and meeting links.
+          One button starts Gmail first and then opens Google Calendar automatically. Both permissions are required before the workspace is fully connected.
         </p>
 
         <div className="rounded-2xl border border-border bg-background p-4">
@@ -159,14 +156,16 @@ export function ConnectWorkspace({
                   className={
                     allConnected
                       ? "rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400"
-                      : "rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400"
+                      : state.gmailConnected || state.calendarConnected
+                        ? "rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-500"
+                        : "rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400"
                   }
                 >
-                  {allConnected ? "Connected" : "Not connected"}
+                  {allConnected ? "Connected" : state.gmailConnected || state.calendarConnected ? "In progress" : "Not connected"}
                 </span>
               </div>
               <p className="mt-2 text-sm leading-6 text-foreground-muted">
-                Connect Gmail and Google Calendar in one guided flow.
+                Connect Gmail and Google Calendar in one guided flow, with a real OAuth step for each service.
               </p>
             </div>
           </div>
@@ -179,18 +178,20 @@ export function ConnectWorkspace({
               className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {pending === "workspace" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {allConnected ? "Reconnect Google Workspace" : "Connect Google Workspace"}
+              {allConnected ? "Reconnect Google Workspace" : state.gmailConnected || state.calendarConnected ? "Finish Google Workspace Setup" : "Connect Google Workspace"}
             </button>
 
-            {allConnected ? (
+            {(state.gmailConnected || state.calendarConnected) ? (
               <button
                 type="button"
-                onClick={handleDisconnectAll}
+                onClick={allConnected ? handleDisconnectAll : () => void handleDisconnect(state.gmailConnected ? "gmail" : "calendar")}
                 disabled={pending !== null}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-background px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {pending === "workspace" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                Disconnect Workspace
+                {pending === "workspace" || pending === "gmail" || pending === "calendar"
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <RefreshCw className="h-4 w-4" />}
+                {allConnected ? "Disconnect Workspace" : state.gmailConnected ? "Disconnect Gmail" : "Disconnect Calendar"}
               </button>
             ) : null}
           </div>

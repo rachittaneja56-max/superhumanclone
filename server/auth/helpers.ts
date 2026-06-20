@@ -1,10 +1,18 @@
-// server/auth/helpers.ts
 import 'server-only'
+
+import { and, eq, inArray } from 'drizzle-orm'
+
 import { db } from '@/server/db'
-import { invalidateSettingsCache, invalidateConnectionCache, reconcileCacheKey, cacheTtls } from '@/server/cache'
+import { corsairAccounts, corsairIntegrations } from '@/server/db/schema'
+import { invalidateSettingsCache, reconcileCacheKey, cacheTtls } from '@/server/cache'
 import { redis } from '@/server/redis'
 import { ensureSafeUserSettings, saveSafeUserSettings } from '@/server/db/user-settings-compat'
 import { isAdminUser } from '@/server/admin/access-utils'
+
+export type GoogleConnectionState = {
+  gmailConnected: boolean
+  calendarConnected: boolean
+}
 
 export async function ensureUserSettings(userId: string): Promise<void> {
   await ensureSafeUserSettings(userId)
@@ -23,43 +31,64 @@ export async function expireUserHITLActions(userId: string): Promise<void> {
     )
 }
 
-export async function reconcileGoogleConnectionState(userId: string) {
-  // Check Redis cache first — skip the two live Google API probes on repeated navigations
+export async function getPersistedGoogleConnectionState(userId: string): Promise<GoogleConnectionState> {
+  const rows = await db
+    .select({
+      integrationName: corsairIntegrations.name,
+      accountId: corsairAccounts.id,
+    })
+    .from(corsairAccounts)
+    .innerJoin(corsairIntegrations, eq(corsairAccounts.integrationId, corsairIntegrations.id))
+    .where(
+      and(
+        eq(corsairAccounts.tenantId, userId),
+        inArray(corsairIntegrations.name, ['gmail', 'googlecalendar'])
+      )
+    )
+
+  const gmailRows = rows.filter((row) => row.integrationName === 'gmail')
+  const calendarRows = rows.filter((row) => row.integrationName === 'googlecalendar')
+
+  if (gmailRows.length > 1 || calendarRows.length > 1) {
+    console.warn('[Google Connection] Duplicate Corsair account rows detected', {
+      userId: userId.slice(0, 8),
+      gmailRows: gmailRows.length,
+      calendarRows: calendarRows.length,
+    })
+  }
+
+  return {
+    gmailConnected: gmailRows.length > 0,
+    calendarConnected: calendarRows.length > 0,
+  }
+}
+
+export async function reconcileGoogleConnectionState(userId: string): Promise<GoogleConnectionState> {
   const cacheKey = reconcileCacheKey(userId)
   try {
     const cached = await redis.get<string>(cacheKey)
     if (cached) {
-      const parsed = JSON.parse(cached) as { gmailConnected: boolean; calendarConnected: boolean }
-      if (typeof parsed?.gmailConnected === 'boolean') {
+      const parsed = JSON.parse(cached) as GoogleConnectionState
+      if (typeof parsed?.gmailConnected === 'boolean' && typeof parsed?.calendarConnected === 'boolean') {
         return parsed
       }
     }
   } catch {
-    // Redis unavailable or bad data — fall through to live probe
+    // Redis unavailable or bad data - fall through to DB truth.
   }
 
   await ensureUserSettings(userId)
 
-  const { isUserConnected } = await import('@/server/corsair/client')
+  const persisted = await getPersistedGoogleConnectionState(userId)
 
-  const [gmailConnected, calendarConnected] = await Promise.all([
-    isUserConnected(userId, 'gmail'),
-    isUserConnected(userId, 'googlecalendar'),
-  ])
-
-  await saveSafeUserSettings(userId, {
-    gmailConnected,
-    calendarConnected,
-  })
-
+  await saveSafeUserSettings(userId, persisted)
   await invalidateSettingsCache(redis, userId).catch(() => null)
 
-  // Cache the reconciled result for 90 seconds
-  await redis.set(cacheKey, JSON.stringify({ gmailConnected, calendarConnected }), {
+  await redis.set(cacheKey, JSON.stringify(persisted), {
     ex: cacheTtls.connState,
   }).catch(() => null)
 
-  return { gmailConnected, calendarConnected }
+  return persisted
 }
 
 export { isAdminUser }
