@@ -1,8 +1,7 @@
 import "server-only";
 
 export type UserRole = "user" | "admin" | "superadmin";
-
-export const FIXED_SUPERADMIN_EMAIL = "rachiitaneja56@gmail.com";
+export const FIXED_SUPERADMIN_EMAIL = "rachittaneja56@gmail.com";
 
 export function normalizeEmail(email: string | null | undefined) {
   return email?.trim().toLowerCase() ?? "";
