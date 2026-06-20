@@ -53,13 +53,13 @@ export function AutoReplyPanel({ emailId, onSelect }: { emailId: string; onSelec
           </div>
         </div>
 
-        <div className="grid gap-2.5 md:grid-cols-3">
+        <div className="flex flex-col gap-2.5">
           {replies.slice(0, 3).map((reply, index) => (
             <button
               key={reply.id}
               type="button"
               onClick={() => onSelect(reply.reply_text)}
-              className="group flex min-h-[7.5rem] flex-col rounded-2xl border border-border bg-background p-3 text-left transition-colors hover:border-accent/30 hover:bg-accent/5"
+              className="group flex min-h-[4rem] flex-col rounded-2xl border border-border bg-background p-3 text-left transition-colors hover:border-accent/30 hover:bg-accent/5"
             >
               <div className="flex items-center gap-2">
                 <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/10 text-accent">
@@ -75,7 +75,7 @@ export function AutoReplyPanel({ emailId, onSelect }: { emailId: string; onSelec
     );
   }, [allowSuggestions, onSelect, replies]);
 
-  return <div className="border-t border-border bg-background/80 px-4 py-3 sm:px-6">{content}</div>;
+  return <section className="rounded-[1.5rem] border border-border bg-background/80 p-4 shadow-sm dark:bg-surface/70">{content}</section>;
 }
 
 function UnavailableState({ title, body, pulse = false }: { title: string; body: string; pulse?: boolean }) {

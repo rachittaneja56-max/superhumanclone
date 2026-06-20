@@ -125,10 +125,10 @@ export function ThreadView({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background font-sans">
-      <div className="shrink-0 border-b border-border bg-[rgba(255,255,255,0.86)] px-4 py-4 backdrop-blur dark:bg-surface/95 sm:px-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="shrink-0 border-b border-border bg-[rgba(255,255,255,0.86)] px-4 py-3 backdrop-blur dark:bg-surface/95 sm:px-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <h2 className="max-w-[42rem] truncate font-display text-xl font-semibold tracking-tight text-foreground sm:text-[1.75rem]">
+            <h2 className="max-w-[42rem] truncate font-display text-lg font-semibold tracking-tight text-foreground sm:text-xl">
               {subject}
             </h2>
             <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground-muted">
