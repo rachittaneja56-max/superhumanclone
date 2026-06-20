@@ -35,7 +35,6 @@ export default async function ConnectPage({
     if (!settings.privacyConfigured || !settings.onboardingCompleted) {
       redirect("/onboarding/privacy");
     }
-    redirect("/dashboard");
   }
 
   return (
@@ -73,6 +72,7 @@ export default async function ConnectPage({
         workspaceConnectUrl="/api/corsair/connect?provider=workspace"
         initialGmailConnected={connectionState.gmailConnected}
         initialCalendarConnected={connectionState.calendarConnected}
+        isManaging={settings.onboardingCompleted}
       />
     </div>
   );

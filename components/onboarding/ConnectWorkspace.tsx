@@ -23,6 +23,7 @@ export function ConnectWorkspace({
   workspaceConnectUrl: string;
   initialGmailConnected: boolean;
   initialCalendarConnected: boolean;
+  isManaging?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<IntegrationState>({
@@ -209,11 +210,22 @@ export function ConnectWorkspace({
 
         <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm text-foreground-muted">
-            {canContinue ? "Everything is ready." : "Both services are required before you can continue."}
+            {isManaging ? "Manage your connected Google Workspace." : canContinue ? "Everything is ready." : "Both services are required before you can continue."}
           </p>
-          <form action={continueToDashboard} className="w-full sm:w-auto">
-            <ContinueButton disabled={!canContinue} />
-          </form>
+          {isManaging ? (
+            <button
+              type="button"
+              onClick={() => router.push("/settings")}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-medium text-accent-foreground transition-colors hover:opacity-90 sm:w-auto"
+              style={{ backgroundColor: "var(--accent)" }}
+            >
+              Return to Settings
+            </button>
+          ) : (
+            <form action={continueToDashboard} className="w-full sm:w-auto">
+              <ContinueButton disabled={!canContinue} />
+            </form>
+          )}
         </div>
       </div>
     </div>
