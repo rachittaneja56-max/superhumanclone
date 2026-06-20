@@ -129,6 +129,8 @@ export const promptCatalog = {
       "List only attendees explicitly present in the input.",
       "Keep openQuestions and talkingPoints concrete and capped at 3 items each.",
       "Do not infer blockers, risks, owners, or decisions unless the input clearly shows them.",
+      "CRITICAL: Do NOT invent, guess, or hallucinate any emails. You must ONLY include emails that are explicitly provided in the input context verbatim.",
+      "If no relevant emails are provided in the context, return an empty array for recentEmails.",
       "Do not mention blocked or unavailable content.",
     ].join(" "),
   },
