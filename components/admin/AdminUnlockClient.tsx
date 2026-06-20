@@ -24,6 +24,15 @@ export function AdminUnlockClient() {
       router.refresh();
     },
     onError: (error) => {
+      try {
+        const parsed = JSON.parse(error.message);
+        if (Array.isArray(parsed) && parsed[0]?.message) {
+          toast.error(parsed[0].message);
+          return;
+        }
+      } catch {
+        // Fallback to normal error message if not JSON
+      }
       toast.error(error.message || "Invalid admin credentials");
     },
   });

@@ -29,8 +29,8 @@ export const resetUsageCounterSchema = adminUserMutationSchema.extend({
 });
 
 export const unlockAdminDashboardSchema = z.object({
-  accessId: z.string().min(1).max(80),
-  password: z.string().min(8).max(120),
+  accessId: z.string().min(1, "Access ID is required").max(80),
+  password: z.string().min(8, "Password must be at least 8 characters").max(120),
 });
 
 export const promoteUserToAdminByEmailSchema = adminEmailMutationSchema;
