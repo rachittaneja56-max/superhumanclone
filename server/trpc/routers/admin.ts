@@ -159,10 +159,12 @@ export const adminRouter = router({
 
       const now = new Date();
       const providerDate = now.toISOString().slice(0, 10);
-      const auditRows = await ctx.db.query.auditLogs.findMany({
-        orderBy: [desc(auditLogs.created_at)],
-        limit: 25,
-      });
+      const auditRows = adminState.isSuperadmin
+        ? await ctx.db.query.auditLogs.findMany({
+            orderBy: [desc(auditLogs.created_at)],
+            limit: 25,
+          })
+        : [];
       const allHitlRows: Array<{ userId: string; status: "pending" | "approved" | "rejected" | "expired"; created_at: Date }> =
         await ctx.db.query.hitlActions.findMany({
           columns: { userId: true, status: true, created_at: true },

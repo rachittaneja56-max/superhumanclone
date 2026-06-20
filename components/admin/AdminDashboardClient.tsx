@@ -167,22 +167,24 @@ export function AdminDashboardClient({ initialDashboard }: { initialDashboard: a
         </div>
       </div>
 
-      <section className="rounded-2xl border border-border bg-surface p-5">
-        <h2 className="mb-3 text-lg font-semibold text-foreground">Sanitized audit log</h2>
-        <div className="space-y-3 text-sm">
-          {dashboard.auditLogs.map((log: any) => (
-            <div key={log.id} className="rounded-xl border border-border bg-background/40 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-medium text-foreground">{log.action}</div>
-                <div className="text-xs text-foreground-muted">{new Date(log.createdAt).toLocaleString()}</div>
+      {isSuperadmin && dashboard.auditLogs.length > 0 ? (
+        <section className="rounded-2xl border border-border bg-surface p-5">
+          <h2 className="mb-3 text-lg font-semibold text-foreground">Sanitized audit log</h2>
+          <div className="space-y-3 text-sm">
+            {dashboard.auditLogs.map((log: any) => (
+              <div key={log.id} className="rounded-xl border border-border bg-background/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-medium text-foreground">{log.action}</div>
+                  <div className="text-xs text-foreground-muted">{new Date(log.createdAt).toLocaleString()}</div>
+                </div>
+                <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-foreground-muted">
+                  {JSON.stringify(log.details, null, 2)}
+                </pre>
               </div>
-              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-foreground-muted">
-                {JSON.stringify(log.details, null, 2)}
-              </pre>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
