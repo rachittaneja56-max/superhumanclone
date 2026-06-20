@@ -38,6 +38,12 @@ const DESTRUCTIVE_ACTION_PATTERNS = [
   /\bcancel\b.*\b(event|meeting|calendar)\b/i,
 ];
 
+const PROMPT_LEAK_PATTERNS = [
+  /\b(repeat|summarize|show|give|print|output|what|tell|explain|reveal|dump)\b.*\b(instructions|system prompt|prompt|rules|told to do|directives|guidelines)\b/i,
+  /\b(ignore|disregard|forget|bypass)\b.*\b(previous|all)\b.*\b(instructions|prompt|rules|directives|guidelines)\b/i,
+  /\b(output|print|show|repeat|dump|reveal)\b.*\b(everything|all text|all|what was)\b.*\b(above|before|said)\b/i,
+];
+
 const ALLOWED_TOOL_REGISTRY = new Set([
   "searchEmails",
   "proposeSendEmail",
@@ -108,6 +114,10 @@ export function isOutsideAethraScope(input: string) {
 export function getScopeLimitMessage(input: string) {
   if (isCodeGenerationRequest(input)) {
     return "Aethra AI only helps with the Aethra product experience. It can summarize mail, help draft replies, prepare calendar suggestions, and propose approval cards, but it will not generate application code.";
+  }
+
+  if (PROMPT_LEAK_PATTERNS.some((pattern) => pattern.test(input))) {
+    return "I am a scoped assistant for Aethra. I cannot reveal or discuss my internal system instructions.";
   }
 
   if (DESTRUCTIVE_ACTION_PATTERNS.some((pattern) => pattern.test(input))) {
