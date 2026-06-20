@@ -8,6 +8,10 @@ import { ShieldAlert, Check, Pencil, X, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SmartSchedulerModal, type SchedulerProposal } from "@/components/calendar/SmartSchedulerModal";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { EmailComposeCard } from "./hitl/EmailComposeCard";
+import { CalendarEventCard } from "./hitl/CalendarEventCard";
+import type { SafeHitlPayload } from "@/server/ai/agents/action-agent";
 
 
 export function HITLCard({ className }: { className?: string }) {
@@ -40,13 +44,14 @@ export function HITLCard({ className }: { className?: string }) {
     };
   }, [activeHITLAction, isCalendarCreate]);
 
-  const handleDecision = async (decision: "approved" | "rejected") => {
+  const handleDecision = async (decision: "approved" | "rejected", editedPayload?: SafeHitlPayload) => {
     setIsSubmitting(true);
     try {
       if (!activeHITLAction) return;
       await resolveMutation.mutateAsync({
         actionId: activeHITLAction.actionId,
         decision,
+        editedPayload,
       });
       await utils.agent.getPendingHITL.invalidate();
       setActiveHITLAction(null);
@@ -164,31 +169,34 @@ export function HITLCard({ className }: { className?: string }) {
               </div>
             </div>
 
-            <div className="space-y-4 p-4">
-              <p className="text-sm leading-relaxed text-foreground">{activeHITLAction.humanReadable}</p>
-              {activeHITLAction.riskLevel && (
-                <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-amber-500">
-                  {activeHITLAction.riskLevel} risk
-                </div>
-              )}
+            <div className="flex flex-col">
+              <div className="p-4 space-y-4">
+                <p className="text-sm leading-relaxed text-foreground">{activeHITLAction.humanReadable}</p>
+                {activeHITLAction.riskLevel && (
+                  <div className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-amber-500">
+                    {activeHITLAction.riskLevel} risk
+                  </div>
+                )}
+              </div>
 
-              {activeHITLAction.payload && (
-                <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
-                  {isCalendarCreate && calendarProposal ? (
-                    <>
-                      <DetailRow label="Title" value={calendarProposal.title || "Untitled event"} />
-                      <DetailRow label="When" value={formatStart(calendarProposal.startTime)} />
-                      {durationLabel && <DetailRow label="Duration" value={durationLabel} />}
-                      <DetailRow
-                        label="Attendees"
-                        value={typeof activeHITLAction.payload.attendeesSummary === "string" ? activeHITLAction.payload.attendeesSummary : "No attendees"}
-                      />
-                      <DetailRow label="Meet" value={calendarProposal.addMeetLink ? "Google Meet enabled" : "Meet link off"} />
-                      {calendarProposal.location && <DetailRow label="Location" value={calendarProposal.location} />}
-                      {calendarProposal.description && <DetailRow label="Description" value={calendarProposal.description} clamp />}
-                    </>
-                  ) : (
-                    <>
+              {activeHITLAction.actionType === "send_email" && activeHITLAction.payload ? (
+                <EmailComposeCard
+                  payload={activeHITLAction.payload}
+                  onApprove={(editedPayload) => handleDecision("approved", editedPayload)}
+                  onReject={() => handleDecision("rejected")}
+                  isSubmitting={isSubmitting}
+                />
+              ) : activeHITLAction.actionType === "create_event" && activeHITLAction.payload ? (
+                <CalendarEventCard
+                  payload={activeHITLAction.payload}
+                  onApprove={(editedPayload) => handleDecision("approved", editedPayload)}
+                  onReject={() => handleDecision("rejected")}
+                  isSubmitting={isSubmitting}
+                />
+              ) : (
+                <div className="p-4 pt-0">
+                  {activeHITLAction.payload && (
+                    <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3 mb-4">
                       {activeHITLAction.payload.recipientSummary && (
                         <DetailRow
                           label="To"
@@ -204,46 +212,10 @@ export function HITLCard({ className }: { className?: string }) {
                           <span>Payload details hidden for privacy.</span>
                         </div>
                       )}
-                    </>
+                    </div>
                   )}
-                </div>
-              )}
 
-              <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-                {isCalendarCreate ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleEdit}
-                      disabled={isSubmitting}
-                      className="w-full sm:w-24"
-                    >
-                      <Pencil className="mr-1 h-4 w-4" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDecision("rejected")}
-                      disabled={isSubmitting}
-                      className="w-full sm:w-24"
-                    >
-                      <X className="mr-1 h-4 w-4" />
-                      Cancel
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => handleDecision("approved")}
-                      disabled={isSubmitting}
-                      className="w-full bg-amber-500 text-white hover:bg-amber-600 sm:w-28"
-                    >
-                      <Check className="mr-1 h-4 w-4" />
-                      Create event
-                    </Button>
-                  </>
-                ) : (
-                  <>
+                  <div className="flex flex-col gap-2 pt-2 sm:flex-row">
                     <Button
                       variant="destructive"
                       size="sm"
@@ -263,9 +235,9 @@ export function HITLCard({ className }: { className?: string }) {
                       <Check className="mr-1 h-4 w-4" />
                       Approve
                     </Button>
-                  </>
-                )}
-              </div>
+                  </div>
+                </div>
+              )}
             </div>
         </div>
       </div>

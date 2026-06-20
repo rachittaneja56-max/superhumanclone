@@ -5,6 +5,7 @@ export const getPendingHITLSchema = z.object({});
 export const resolveHITLSchema = z.object({
   actionId: z.string().uuid(),
   decision: z.enum(['approved', 'rejected']),
+  editedPayload: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const agentHistoryMessageSchema = z.object({

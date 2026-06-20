@@ -15,6 +15,9 @@ export type SafeHitlPayload = {
   location?: string;
   description?: string;
   addMeetLink?: boolean;
+  to?: string[];
+  body?: string;
+  attendees?: string[];
 };
 
 export type SafeHitlAction = {
@@ -55,6 +58,8 @@ export function mapHitlPayloadForClient(actionType: string, payload: Record<stri
     return {
       subject: typeof payload.subject === "string" ? sanitiseAgentOutput(payload.subject, 180) : undefined,
       recipientSummary: summarizeList(to, "more"),
+      to,
+      body: typeof payload.body === "string" ? payload.body : undefined,
     };
   }
 
@@ -75,6 +80,7 @@ export function mapHitlPayloadForClient(actionType: string, payload: Record<stri
       location: typeof payload.location === "string" ? sanitiseAgentOutput(payload.location, 140) : undefined,
       description: typeof payload.description === "string" ? sanitiseAgentOutput(payload.description, 240) : undefined,
       addMeetLink: typeof payload.addMeetLink === "boolean" ? payload.addMeetLink : true,
+      attendees,
     };
   }
 

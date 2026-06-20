@@ -66,6 +66,10 @@ export const agentRouter = router({
       }
 
       if (input.decision === 'approved') {
+        if (input.editedPayload) {
+          await ctx.redis.set(`hitl:private:${input.actionId}`, JSON.stringify(input.editedPayload), { ex: 3600 });
+          await ctx.db.update(hitlActions).set({ payload: input.editedPayload }).where(eq(hitlActions.id, input.actionId));
+        }
         await executeApprovedHitlAction(ctx.userId!, input.actionId, { db: ctx.db, redis: ctx.redis });
       }
 
