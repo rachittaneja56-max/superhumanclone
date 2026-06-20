@@ -8,7 +8,7 @@ import { ShieldAlert, Check, Pencil, X, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { SmartSchedulerModal, type SchedulerProposal } from "@/components/calendar/SmartSchedulerModal";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+
 
 export function HITLCard({ className }: { className?: string }) {
   const { activeHITLAction, setActiveHITLAction } = useUIStore();
@@ -129,15 +129,8 @@ export function HITLCard({ className }: { className?: string }) {
 
   return (
     <>
-      <Dialog open>
-        <DialogContent
-          className={cn(
-            "w-[min(42rem,calc(100vw-2rem))] max-w-none border border-border bg-surface p-0 shadow-2xl",
-            className,
-          )}
-          showCloseButton={false}
-        >
-          <div className="overflow-hidden rounded-xl border border-border border-l-4 border-l-amber-500 bg-surface font-sans">
+      <div className={cn("w-full shadow-md rounded-xl font-sans", className)}>
+        <div className="overflow-hidden rounded-xl border border-border border-l-4 border-l-amber-500 bg-surface">
             <div className="flex items-center justify-between border-b border-border bg-amber-500/5 p-4">
               <div className="flex items-center space-x-2 text-amber-600">
                 <ShieldAlert className="h-5 w-5" />
@@ -274,9 +267,8 @@ export function HITLCard({ className }: { className?: string }) {
                 )}
               </div>
             </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </div>
 
       <SmartSchedulerModal
         isOpen={editOpen}
