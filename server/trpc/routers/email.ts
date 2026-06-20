@@ -260,6 +260,17 @@ async function resolveEmailActionTarget(
 }
 
 export const emailRouter = router({
+  syncMailbox: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      const result = await seedMailboxFromCorsair(ctx, { limit: 50, maxPages: 2 });
+      if (result.needsConnect) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'gmail_not_connected' });
+      }
+      await invalidateMailCaches(ctx);
+      await publishMailboxEvent(ctx.userId!, 'mailbox:refresh', {});
+      return { success: true, inserted: result.inserted };
+    }),
+
   getMailboxThreads: protectedQueryProcedure
     .use(createRateLimitMiddleware('getMailboxThreads', 240, 60))
     .input(getMailboxThreadsSchema)

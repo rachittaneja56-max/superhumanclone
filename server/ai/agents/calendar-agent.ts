@@ -235,12 +235,13 @@ export async function runCalendarAgent(
     intent: "calendar",
     indicator: "Drafting calendar event...",
     text: [
-      "Ready for approval.",
-      `Create calendar event: ${draft.title}`,
-      `When: ${format(parseISO(draft.startTime), "EEE, MMM d 'at' h:mm a")}`,
-      `Duration: ${draft.durationMinutes} min`,
-      `Meet: ${draft.addMeetLink ? "enabled" : "disabled"}`,
-      draft.attendeesSummary ? `Attendees: ${draft.attendeesSummary}` : "Attendees: none detected",
+      "**Ready for approval.**",
+      "",
+      `**Create calendar event:** ${draft.title}`,
+      `**When:** ${format(parseISO(draft.startTime), "EEE, MMM d 'at' h:mm a")}`,
+      `**Duration:** ${draft.durationMinutes} min`,
+      `**Meet:** ${draft.addMeetLink ? "enabled" : "disabled"}`,
+      draft.attendeesSummary ? `**Attendees:** ${draft.attendeesSummary}` : "**Attendees:** none detected",
     ].join("\n"),
   };
 }

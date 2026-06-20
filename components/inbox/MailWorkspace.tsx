@@ -44,7 +44,8 @@ const MAILBOX_ITEMS: Array<{ folder: Folder; label: string; icon: ComponentType<
   { folder: "trash", label: "Trash", icon: Trash2 },
 ];
 
-const PAGE_SIZE = 10;
+const INITIAL_PAGE_SIZE = 10;
+const FETCH_MORE_SIZE = 50;
 type MailboxPage = {
   items: EmailListClientItem[];
   nextPageToken: string | null;
@@ -100,7 +101,7 @@ export function MailWorkspace({
   }, [query]);
 
   const mailboxQuery = trpc.email.getMailboxThreads.useQuery(
-    { folder, limit: PAGE_SIZE, offset: 0, query: "" },
+    { folder, limit: INITIAL_PAGE_SIZE, offset: 0, query: "" },
     {
       enabled: debouncedQuery.length < 2,
       initialData: folder === initialFolder ? initialMailboxPage : undefined,
@@ -142,7 +143,8 @@ export function MailWorkspace({
     return { items: [], nextPageToken: null };
   }, [folder, initialFolder, initialMailboxPage, isSearchMode, mailboxQuery.data, searchThreads]);
   const hasMore = !isSearchMode && Boolean(nextPageToken);
-  const isRefreshing = mailboxQuery.isFetching || searchQuery.isFetching;
+  const syncMailboxMutation = trpc.email.syncMailbox.useMutation();
+  const isRefreshing = mailboxQuery.isFetching || searchQuery.isFetching || syncMailboxMutation.isPending;
   const isFolderTransitioning = Boolean(optimisticFolder && optimisticFolder !== folder);
   const isInitialListLoading = isSearchMode ? searchQuery.isLoading : mailboxQuery.isLoading || isFolderTransitioning;
   const visibleThreads = useMemo(
@@ -272,14 +274,21 @@ export function MailWorkspace({
     replaceSearch(params);
   }, [replaceSearch, searchParams]);
 
-  const refreshMailbox = useCallback(() => {
+  const refreshMailbox = useCallback(async () => {
     if (isSearchMode) {
       void searchQuery.refetch();
       return;
     }
 
-    void mailboxQuery.refetch();
-  }, [isSearchMode, mailboxQuery, searchQuery]);
+    try {
+      await syncMailboxMutation.mutateAsync();
+    } catch {
+      // Ignore if disconnected
+    } finally {
+      void mailboxQuery.refetch();
+      void utils.email.getUnreadCounts.invalidate();
+    }
+  }, [isSearchMode, mailboxQuery, searchQuery, syncMailboxMutation, utils.email.getUnreadCounts]);
 
   useEffect(() => {
     const openCompose = () => setComposeOpen(true);
@@ -340,7 +349,7 @@ export function MailWorkspace({
     try {
       const nextPage = await utils.email.getMailboxThreads.fetch({
         folder,
-        limit: PAGE_SIZE,
+        limit: FETCH_MORE_SIZE,
         offset: threads.length,
         pageToken: nextPageToken,
         query: "",
