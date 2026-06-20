@@ -124,10 +124,11 @@ async function invalidateMailCaches(ctx: any, threadId?: string | null) {
   }
 }
 
-function encodePageToken(row?: { createdAt?: string | Date | null; id?: string | null }) {
-  if (!row?.createdAt || !row.id) return null;
+function encodePageToken(row?: { createdAt?: string | Date | null; created_at?: string | Date | null; receivedAt?: string | Date | null; id?: string | null }) {
+  const time = row?.created_at || row?.createdAt || row?.receivedAt;
+  if (!time || !row?.id) return null;
   const payload = JSON.stringify({
-    createdAt: new Date(row.createdAt).toISOString(),
+    createdAt: new Date(time).toISOString(),
     id: row.id,
   });
   return Buffer.from(payload, 'utf8').toString('base64url');
