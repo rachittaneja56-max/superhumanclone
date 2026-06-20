@@ -197,8 +197,9 @@ export function SmartSchedulerModal({
             <div className="text-sm text-muted-foreground animate-pulse">Analyzing thread context…</div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-            <div className="grid gap-4">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem] overflow-y-auto max-h-[60vh] pr-2 pb-2">
+              <div className="grid gap-4">
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted-foreground">Title</label>
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} required />
@@ -283,8 +284,9 @@ export function SmartSchedulerModal({
                 </div>
               </div>
             </div>
+            </div>
 
-            <DialogFooter className="lg:col-span-2 gap-2 sm:justify-between">
+            <DialogFooter className="gap-2 sm:justify-between shrink-0 pt-2">
               <div>
                 <Button type="button" variant="outline" onClick={onClose} disabled={createEventMutation.isPending}>
                   Cancel

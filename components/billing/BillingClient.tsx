@@ -41,7 +41,7 @@ export function BillingClient({ initialOverview }: { initialOverview: BillingOve
       </div>
 
       {overview.upgradeMessage ? (
-        <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
           {overview.upgradeMessage}
         </div>
       ) : null}
@@ -63,7 +63,7 @@ export function BillingClient({ initialOverview }: { initialOverview: BillingOve
                   <p className="mt-1 text-sm text-foreground-muted">{plan.description}</p>
                 </div>
                 {active ? (
-                  <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-medium text-amber-300">
+                  <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:text-amber-300">
                     Current
                   </span>
                 ) : null}

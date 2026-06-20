@@ -85,8 +85,10 @@ async function safe<T>(promise: Promise<T>, fallback: T): Promise<T> {
 
 export async function DashboardShell({
   settings,
+  isAdmin = false,
 }: {
   settings: DashboardSettings;
+  isAdmin?: boolean;
 }) {
   const trpc = await serverTrpc();
   const digestEnabled = Boolean(settings?.morningDigestEnabled && settings?.aiEnabled && settings?.privacyConfigured);
@@ -174,6 +176,15 @@ export async function DashboardShell({
               Ask agent
               <ArrowRight className="h-4 w-4" />
             </Link>
+            {isAdmin ? (
+              <Link
+                href="/admin"
+                className="inline-flex h-9 items-center justify-between rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-all hover:bg-muted"
+              >
+                Admin panel
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            ) : null}
           </div>
         </div>
       </div>
