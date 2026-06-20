@@ -108,10 +108,11 @@ function renderAssistantMarkdown(content: string) {
   let currentParagraph: string[] = [];
   let currentList: { type: "ul" | "ol"; items: string[] } | null = null;
   let currentCodeBlock: { language: string; lines: string[] } | null = null;
+  let currentBlockquote: string[] = [];
 
   const flushParagraph = () => {
     if (currentParagraph.length === 0) return;
-    const text = currentParagraph.join(" ").trim();
+    const text = currentParagraph.join("\n").trim();
     if (text) {
       blocks.push(
         <p key={`p-${blocks.length}`} className="mt-2 whitespace-pre-wrap first:mt-0">
@@ -120,6 +121,19 @@ function renderAssistantMarkdown(content: string) {
       );
     }
     currentParagraph = [];
+  };
+
+  const flushBlockquote = () => {
+    if (currentBlockquote.length === 0) return;
+    const text = currentBlockquote.join("\n").trim();
+    if (text) {
+      blocks.push(
+        <blockquote key={`bq-${blocks.length}`} className="mt-2 border-l-2 border-border pl-4 italic text-foreground-muted first:mt-0 whitespace-pre-wrap">
+          {renderInlineMarkdown(text)}
+        </blockquote>
+      );
+    }
+    currentBlockquote = [];
   };
 
   const flushList = () => {
@@ -134,7 +148,7 @@ function renderAssistantMarkdown(content: string) {
         )}
       >
         {currentList.items.map((item, index) => (
-          <li key={`li-${index}`}>{renderInlineMarkdown(item)}</li>
+          <li key={`li-${index}`} className="whitespace-pre-wrap">{renderInlineMarkdown(item)}</li>
         ))}
       </ListTag>,
     );
@@ -173,6 +187,7 @@ function renderAssistantMarkdown(content: string) {
 
     if (trimmed.startsWith("```")) {
       flushParagraph();
+      flushBlockquote();
       flushList();
       currentCodeBlock = {
         language: trimmed.slice(3).trim(),
@@ -184,6 +199,7 @@ function renderAssistantMarkdown(content: string) {
     const headerMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
     if (headerMatch) {
       flushParagraph();
+      flushBlockquote();
       flushList();
       const level = headerMatch[1].length;
       const text = headerMatch[2];
@@ -204,6 +220,7 @@ function renderAssistantMarkdown(content: string) {
 
     if (trimmed === "---" || trimmed === "***") {
       flushParagraph();
+      flushBlockquote();
       flushList();
       blocks.push(<hr key={`hr-${blocks.length}`} className="my-4 border-border" />);
       continue;
@@ -212,6 +229,7 @@ function renderAssistantMarkdown(content: string) {
     const ulMatch = trimmed.match(/^[-*]\s+(.+)$/);
     if (ulMatch) {
       flushParagraph();
+      flushBlockquote();
       if (currentList?.type !== "ul") flushList();
       if (!currentList) currentList = { type: "ul", items: [] };
       currentList.items.push(ulMatch[1].trim());
@@ -221,23 +239,35 @@ function renderAssistantMarkdown(content: string) {
     const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
     if (olMatch) {
       flushParagraph();
+      flushBlockquote();
       if (currentList?.type !== "ol") flushList();
       if (!currentList) currentList = { type: "ol", items: [] };
       currentList.items.push(olMatch[1].trim());
       continue;
     }
 
+    const bqMatch = trimmed.match(/^>\s*(.*)$/);
+    if (bqMatch) {
+      flushParagraph();
+      flushList();
+      currentBlockquote.push(bqMatch[1].trim());
+      continue;
+    }
+
     if (!trimmed) {
       flushParagraph();
+      flushBlockquote();
       flushList();
       continue;
     }
 
     flushList();
+    flushBlockquote();
     currentParagraph.push(trimmed);
   }
 
   flushParagraph();
+  flushBlockquote();
   flushList();
   flushCodeBlock();
 
