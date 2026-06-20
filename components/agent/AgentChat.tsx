@@ -22,6 +22,7 @@ const SUGGESTED_PROMPTS = [
 type MarkdownSegment =
   | { type: "text"; value: string }
   | { type: "strong"; value: string }
+  | { type: "em"; value: string }
   | { type: "code"; value: string }
   | { type: "link"; label: string; href: string };
 
@@ -30,7 +31,7 @@ function parseInlineMarkdown(text: string): MarkdownSegment[] {
   let remaining = text;
 
   while (remaining.length > 0) {
-    const match = remaining.match(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/);
+    const match = remaining.match(/(\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/);
     if (!match || match.index === undefined) {
       segments.push({ type: "text", value: remaining });
       break;
@@ -43,6 +44,8 @@ function parseInlineMarkdown(text: string): MarkdownSegment[] {
     const token = match[0];
     if (token.startsWith("**") && token.endsWith("**")) {
       segments.push({ type: "strong", value: token.slice(2, -2) });
+    } else if ((token.startsWith("*") && token.endsWith("*")) || (token.startsWith("_") && token.endsWith("_"))) {
+      segments.push({ type: "em", value: token.slice(1, -1) });
     } else if (token.startsWith("`") && token.endsWith("`")) {
       segments.push({ type: "code", value: token.slice(1, -1) });
     } else {
@@ -64,6 +67,10 @@ function renderInlineMarkdown(text: string) {
   return parseInlineMarkdown(text).map((segment, index) => {
     if (segment.type === "strong") {
       return <strong key={`${segment.type}-${index}`} className="font-semibold text-foreground">{segment.value}</strong>;
+    }
+
+    if (segment.type === "em") {
+      return <em key={`${segment.type}-${index}`} className="italic">{segment.value}</em>;
     }
 
     if (segment.type === "code") {
@@ -99,14 +106,15 @@ function renderAssistantMarkdown(content: string) {
   const lines = content.split("\n");
   const blocks: React.ReactNode[] = [];
   let currentParagraph: string[] = [];
-  let currentList: string[] = [];
+  let currentList: { type: "ul" | "ol"; items: string[] } | null = null;
+  let currentCodeBlock: { language: string; lines: string[] } | null = null;
 
   const flushParagraph = () => {
     if (currentParagraph.length === 0) return;
     const text = currentParagraph.join(" ").trim();
     if (text) {
       blocks.push(
-        <p key={`p-${blocks.length}`} className="whitespace-pre-wrap">
+        <p key={`p-${blocks.length}`} className="mt-2 whitespace-pre-wrap first:mt-0">
           {renderInlineMarkdown(text)}
         </p>,
       );
@@ -115,33 +123,113 @@ function renderAssistantMarkdown(content: string) {
   };
 
   const flushList = () => {
-    if (currentList.length === 0) return;
+    if (!currentList) return;
+    const ListTag = currentList.type;
     blocks.push(
-      <ul key={`ul-${blocks.length}`} className="space-y-1.5 pl-5">
-        {currentList.map((item, index) => (
-          <li key={`li-${index}`} className="list-disc marker:text-accent">
-            {renderInlineMarkdown(item)}
-          </li>
+      <ListTag
+        key={`list-${blocks.length}`}
+        className={cn(
+          "mt-2 space-y-1.5 pl-5",
+          currentList.type === "ul" ? "list-disc marker:text-accent" : "list-decimal marker:text-foreground-muted",
+        )}
+      >
+        {currentList.items.map((item, index) => (
+          <li key={`li-${index}`}>{renderInlineMarkdown(item)}</li>
         ))}
-      </ul>,
+      </ListTag>,
     );
-    currentList = [];
+    currentList = null;
   };
 
-  for (const rawLine of lines) {
-    const line = rawLine.trimEnd();
-    const trimmed = line.trim();
+  const flushCodeBlock = () => {
+    if (!currentCodeBlock) return;
+    blocks.push(
+      <div key={`code-${blocks.length}`} className="mt-3 overflow-hidden rounded-xl border border-border bg-surface-raised shadow-sm">
+        {currentCodeBlock.language && (
+          <div className="border-b border-border bg-background/50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-foreground-subtle">
+            {currentCodeBlock.language}
+          </div>
+        )}
+        <pre className="overflow-x-auto p-4 text-sm text-foreground">
+          <code>{currentCodeBlock.lines.join("\n")}</code>
+        </pre>
+      </div>,
+    );
+    currentCodeBlock = null;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    if (currentCodeBlock) {
+      if (trimmed === "```") {
+        flushCodeBlock();
+      } else {
+        currentCodeBlock.lines.push(rawLine);
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith("```")) {
+      flushParagraph();
+      flushList();
+      currentCodeBlock = {
+        language: trimmed.slice(3).trim(),
+        lines: [],
+      };
+      continue;
+    }
+
+    const headerMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headerMatch) {
+      flushParagraph();
+      flushList();
+      const level = headerMatch[1].length;
+      const text = headerMatch[2];
+      const HeaderTag = `h${level}` as any;
+      blocks.push(
+        <HeaderTag
+          key={`h-${blocks.length}`}
+          className={cn(
+            "mb-2 mt-4 font-display font-semibold text-foreground",
+            level === 1 ? "text-2xl" : level === 2 ? "text-xl" : level === 3 ? "text-lg" : "text-base",
+          )}
+        >
+          {renderInlineMarkdown(text)}
+        </HeaderTag>,
+      );
+      continue;
+    }
+
+    if (trimmed === "---" || trimmed === "***") {
+      flushParagraph();
+      flushList();
+      blocks.push(<hr key={`hr-${blocks.length}`} className="my-4 border-border" />);
+      continue;
+    }
+
+    const ulMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (ulMatch) {
+      flushParagraph();
+      if (currentList?.type !== "ul") flushList();
+      if (!currentList) currentList = { type: "ul", items: [] };
+      currentList.items.push(ulMatch[1].trim());
+      continue;
+    }
+
+    const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+    if (olMatch) {
+      flushParagraph();
+      if (currentList?.type !== "ol") flushList();
+      if (!currentList) currentList = { type: "ol", items: [] };
+      currentList.items.push(olMatch[1].trim());
+      continue;
+    }
 
     if (!trimmed) {
       flushParagraph();
       flushList();
-      continue;
-    }
-
-    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
-    if (bulletMatch) {
-      flushParagraph();
-      currentList.push(bulletMatch[1].trim());
       continue;
     }
 
@@ -151,8 +239,9 @@ function renderAssistantMarkdown(content: string) {
 
   flushParagraph();
   flushList();
+  flushCodeBlock();
 
-  return blocks.length > 0 ? blocks : <span className="whitespace-pre-wrap">{content}</span>;
+  return blocks.length > 0 ? <div className="space-y-0.5">{blocks}</div> : <span className="whitespace-pre-wrap">{content}</span>;
 }
 
 function predictToolIndicator(input: string, threadContext?: string | null) {
@@ -454,17 +543,18 @@ export function AgentChat({
           <div className="flex items-center gap-2 p-2">
               <button
                 type="button"
-              onPointerDown={(event) => {
+              onClick={(event) => {
                 event.preventDefault();
-                void voice.startListening();
+                if (voice.listening) {
+                  voice.stopListening();
+                } else {
+                  void voice.startListening();
+                }
               }}
-              onPointerUp={voice.stopListening}
-              onPointerLeave={voice.stopListening}
-              onPointerCancel={voice.stopListening}
               disabled={!voice.supported || isStreaming || !!activeHITLAction}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
-              title={voice.supported ? (voice.listening ? "Release to stop" : "Hold to speak") : "Voice input unavailable"}
+              title={voice.supported ? (voice.listening ? "Click to stop" : "Click to speak") : "Voice input unavailable"}
             >
               {voice.supported ? (
                 voice.listening ? <Square className="h-4 w-4 fill-current" aria-hidden="true" /> : <Mic className="h-4 w-4" aria-hidden="true" />

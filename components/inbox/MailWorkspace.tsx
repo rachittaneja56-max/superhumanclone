@@ -1107,17 +1107,18 @@ export function ComposeModal({
             <span>Type `/` for rewrite commands.</span>
             <button
               type="button"
-              onPointerDown={(event) => {
+              onClick={(event) => {
                 event.preventDefault();
-                void voice.startListening();
+                if (voice.listening) {
+                  voice.stopListening();
+                } else {
+                  void voice.startListening();
+                }
               }}
-              onPointerUp={voice.stopListening}
-              onPointerLeave={voice.stopListening}
-              onPointerCancel={voice.stopListening}
               disabled={!voice.supported || rewriteState !== "idle" || isSending}
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
-              title={voice.supported ? (voice.listening ? "Release to stop" : "Hold to speak") : "Voice input unavailable"}
+              title={voice.supported ? (voice.listening ? "Click to stop" : "Click to speak") : "Voice input unavailable"}
             >
               {voice.supported ? (
                 voice.listening ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-3.5 w-3.5" />
