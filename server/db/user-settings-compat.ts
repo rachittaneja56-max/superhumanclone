@@ -108,7 +108,7 @@ function normalizeUserSettings(row: RawUserSettingsRow | undefined, userId: stri
     calendarConnected: toBoolean(readValue(row, 'calendar_connected', 'calendarConnected'), DEFAULT_SETTINGS.calendarConnected),
     privacyConfigured: toBoolean(readValue(row, 'privacy_configured', 'privacyConfigured'), DEFAULT_SETTINGS.privacyConfigured),
     aiEnabled: toBoolean(readValue(row, 'ai_enabled', 'aiEnabled'), DEFAULT_SETTINGS.aiEnabled),
-    morningDigestEnabled: true,
+    morningDigestEnabled: toBoolean(readValue(row, 'morning_digest_enabled', 'morningDigestEnabled'), DEFAULT_SETTINGS.morningDigestEnabled),
     draftSuggestionsEnabled: toBoolean(readValue(row, 'draft_suggestions_enabled', 'draftSuggestionsEnabled'), DEFAULT_SETTINGS.draftSuggestionsEnabled),
     autoTagEnabled: toBoolean(readValue(row, 'auto_tag_enabled', 'autoTagEnabled'), DEFAULT_SETTINGS.autoTagEnabled),
     theme: toStringValue(readValue(row, 'theme'), DEFAULT_SETTINGS.theme),
