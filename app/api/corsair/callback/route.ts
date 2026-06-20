@@ -4,7 +4,6 @@ import { NextResponse, NextRequest } from 'next/server'
 import { ensureTenantProvisioned } from '@/server/corsair/provision'
 import { syncInboxIfEmpty } from '@/server/corsair/sync'
 import { getCorsairCallbackUrl } from '@/server/corsair/url'
-import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
 import { invalidateConnectionCache, invalidateSettingsCache } from '@/server/cache'
 import { redis } from '@/server/redis'
 import { db } from '@/server/db'
@@ -106,6 +105,7 @@ export async function GET(req: NextRequest) {
       await saveSafeUserSettings(userId, {
         gmailConnected: true,
         calendarConnected: true,
+        onboardingCompleted: true,
       })
 
       await Promise.all([
@@ -114,57 +114,69 @@ export async function GET(req: NextRequest) {
       ]).catch(() => null)
 
       const settings = await getSafeUserSettings(userId).catch(() => null)
+      // Go straight to privacy setup (or dashboard if already configured)
       const target = settings?.privacyConfigured
         ? new URL('/dashboard', req.url)
-        : new URL('/onboarding/connect?connected=true&flow=workspace', req.url)
+        : new URL('/onboarding/privacy', req.url)
 
       return clearAuthCookies(NextResponse.redirect(target))
     }
 
     // ── Standard single-plugin flow ───────────────────────────────────────────
+    // Trust the DB account row that processOAuthCallback just created.
+    // Do NOT run a live Google API probe immediately — the token may take a moment
+    // to propagate and a failed probe would cache `false`, breaking the session.
     if (result.plugin === 'gmail') {
       void syncInboxIfEmpty(userId).catch((err) =>
         console.error('[OAuth] Initial inbox sync failed:', err)
       )
-    }
 
-    const liveState = await reconcileGoogleConnectionState(userId).catch((err) => {
-      console.error('[OAuth] Failed to reconcile connection state:', err)
-      return { gmailConnected: false, calendarConnected: false }
-    })
+      await saveSafeUserSettings(userId, { gmailConnected: true })
+      await Promise.all([
+        invalidateSettingsCache(redis, userId),
+        invalidateConnectionCache(redis, userId),
+      ]).catch(() => null)
 
-    await saveSafeUserSettings(userId, {
-      gmailConnected: liveState.gmailConnected,
-      calendarConnected: liveState.calendarConnected,
-    })
-
-    await Promise.all([
-      invalidateSettingsCache(redis, userId),
-      invalidateConnectionCache(redis, userId),
-    ]).catch(() => null)
-
-    const settings = await getSafeUserSettings(userId).catch(() => null)
-
-    if (liveState.gmailConnected && liveState.calendarConnected) {
-      const target = settings?.privacyConfigured
-        ? new URL('/dashboard', req.url)
-        : new URL('/onboarding/privacy', req.url)
-      return clearAuthCookies(NextResponse.redirect(target))
-    }
-
-    if (liveState.gmailConnected || liveState.calendarConnected) {
-      const target = new URL(
-        `/onboarding/connect?connected=true&plugin=${encodeURIComponent(result.plugin)}`,
-        req.url
+      const settings = await getSafeUserSettings(userId).catch(() => null)
+      if (settings?.calendarConnected) {
+        const target = settings.privacyConfigured
+          ? new URL('/dashboard', req.url)
+          : new URL('/onboarding/privacy', req.url)
+        return clearAuthCookies(NextResponse.redirect(target))
+      }
+      return clearAuthCookies(
+        NextResponse.redirect(
+          new URL(`/onboarding/connect?connected=true&plugin=gmail`, req.url)
+        )
       )
-      return clearAuthCookies(NextResponse.redirect(target))
     }
 
-    const target = new URL(
-      `/onboarding/connect?error=connection_not_confirmed&plugin=${encodeURIComponent(result.plugin)}`,
-      req.url
+    if (result.plugin === 'googlecalendar') {
+      await saveSafeUserSettings(userId, { calendarConnected: true })
+      await Promise.all([
+        invalidateSettingsCache(redis, userId),
+        invalidateConnectionCache(redis, userId),
+      ]).catch(() => null)
+
+      const settings = await getSafeUserSettings(userId).catch(() => null)
+      if (settings?.gmailConnected) {
+        const target = settings.privacyConfigured
+          ? new URL('/dashboard', req.url)
+          : new URL('/onboarding/privacy', req.url)
+        return clearAuthCookies(NextResponse.redirect(target))
+      }
+      return clearAuthCookies(
+        NextResponse.redirect(
+          new URL(`/onboarding/connect?connected=true&plugin=googlecalendar`, req.url)
+        )
+      )
+    }
+
+    return clearAuthCookies(
+      NextResponse.redirect(
+        new URL(`/onboarding/connect?error=connection_not_confirmed`, req.url)
+      )
     )
-    return clearAuthCookies(NextResponse.redirect(target))
   } catch (error: any) {
     console.error('[OAuth Callback] Error:', error?.message ?? error)
     const res = NextResponse.redirect(new URL('/onboarding/connect?error=callback_failed', req.url))

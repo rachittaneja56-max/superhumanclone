@@ -3,9 +3,8 @@ import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
-import { reconcileGoogleConnectionState } from "@/server/auth/helpers";
 import { ConnectWorkspace } from "@/components/onboarding/ConnectWorkspace";
-import { ensureSafeUserSettings, getSafeUserSettings, saveSafeUserSettings } from "@/server/db/user-settings-compat";
+import { ensureSafeUserSettings, getSafeUserSettings } from "@/server/db/user-settings-compat";
 
 export default async function ConnectPage({
   searchParams,
@@ -18,38 +17,26 @@ export default async function ConnectPage({
   if (!userId) redirect("/login");
 
   const localUser = await db.query.users.findFirst({
-    where: eq(users.id, userId),
+    where: eq(users.id, userId!),
     columns: { name: true },
   });
 
   const firstName = localUser?.name?.split(" ")[0] || "User";
 
-  await ensureSafeUserSettings(userId);
-  const settings = await getSafeUserSettings(userId);
+  await ensureSafeUserSettings(userId!);
 
-  const liveConnections = await reconcileGoogleConnectionState(userId).catch(() => ({
-    gmailConnected: false,
-    calendarConnected: false,
-  }));
-  const gmailConnected = liveConnections.gmailConnected;
-  const calendarConnected = liveConnections.calendarConnected;
+  // Trust the DB settings — we write gmailConnected/calendarConnected there
+  // immediately after OAuth completes. Do NOT run a live Google API probe here
+  // because it adds latency and can flip the state back to false on first load.
+  const settings = await getSafeUserSettings(userId!);
+  const gmailConnected = settings.gmailConnected;
+  const calendarConnected = settings.calendarConnected;
 
-  if (
-    settings.gmailConnected !== gmailConnected ||
-    settings.calendarConnected !== calendarConnected
-  ) {
-    await saveSafeUserSettings(userId, {
-      gmailConnected,
-      calendarConnected,
-    });
-  }
-
-  if (gmailConnected && calendarConnected && !settings.privacyConfigured) {
-    redirect("/onboarding/privacy");
-  }
-
-  // If both are connected and privacy is configured, go straight to dashboard
-  if (gmailConnected && calendarConnected && settings.privacyConfigured) {
+  // Both connected → advance to next onboarding step
+  if (gmailConnected && calendarConnected) {
+    if (!settings.privacyConfigured || !settings.onboardingCompleted) {
+      redirect("/onboarding/privacy");
+    }
     redirect("/dashboard");
   }
 
@@ -60,9 +47,9 @@ export default async function ConnectPage({
           {resolvedSearchParams.flow === "workspace"
             ? "Google Workspace connected successfully."
             : resolvedSearchParams.plugin === "gmail"
-              ? "Gmail connected successfully. Finalizing your workspace."
+              ? "Gmail connected successfully. Now connect Calendar to continue."
               : resolvedSearchParams.plugin === "googlecalendar"
-                ? "Calendar connected successfully. Finalizing your workspace."
+                ? "Calendar connected successfully. Now connect Gmail to continue."
                 : "Connection completed successfully."}
         </div>
       )}
@@ -78,10 +65,10 @@ export default async function ConnectPage({
       {resolvedSearchParams.disconnected && (
         <div className="mx-auto mt-4 w-full max-w-2xl rounded-lg border border-amber-500/20 bg-amber-500/10 p-4 text-center text-sm text-amber-700">
           {resolvedSearchParams.disconnected === "gmail"
-            ? "Gmail disconnected locally. Reconnect Gmail to continue mail features."
+            ? "Gmail disconnected. Reconnect to continue mail features."
             : resolvedSearchParams.disconnected === "calendar"
-              ? "Calendar disconnected locally. Reconnect Calendar to restore calendar features."
-              : "All integrations disconnected locally."}
+              ? "Calendar disconnected. Reconnect to restore calendar features."
+              : "All integrations disconnected."}
         </div>
       )}
 
