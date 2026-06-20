@@ -6,7 +6,6 @@ import { Calendar, Forward, MailOpen, Reply, ReplyAll, RotateCcw } from "lucide-
 import { toast } from "sonner";
 import type { EmailThreadClientItem } from "@/lib/email-client";
 import { SmartSchedulerModal } from "@/components/calendar/SmartSchedulerModal";
-import { AutoReplyPanel } from "@/components/inbox/AutoReplyPanel";
 
 const EMPTY_THREAD: EmailThreadClientItem[] = [];
 
@@ -53,7 +52,6 @@ export function ThreadView({
 
 
   const subject = typedThread[0]?.subject || "(No Subject)";
-  const showTldr = typedThread[0]?.tldr && !typedThread[0]?.aiTriageSkipped;
   const primaryEmailId = typedThread[0]?.threadId || typedThread[0]?.id || "";
   const latest = typedThread[typedThread.length - 1];
   const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
@@ -141,14 +139,6 @@ export function ThreadView({
               <span className="truncate">
                 From {typedThread[0]?.senderName || typedThread[0]?.senderAddress || "Unknown sender"}
               </span>
-              {showTldr ? (
-                <>
-                  <span aria-hidden="true">•</span>
-                  <span className="truncate">
-                    Updated {latest?.createdAt ? formatDateLabel(latest.createdAt) : "just now"}
-                  </span>
-                </>
-              ) : null}
             </div>
           </div>
 
@@ -166,17 +156,6 @@ export function ThreadView({
             ) : null}
           </div>
         </div>
-
-        {showTldr && (
-          <div className="mt-4 flex items-start gap-3 rounded-2xl border border-border bg-background/80 px-4 py-3 text-sm leading-6 text-foreground-muted shadow-sm dark:bg-surface/70">
-            <span className="inline-flex shrink-0 items-center rounded-full border border-accent/20 bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
-              TL;DR
-            </span>
-            <p className="min-w-0">
-              {typedThread[0]?.tldr}
-            </p>
-          </div>
-        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6">
@@ -186,25 +165,6 @@ export function ThreadView({
           ))}
         </div>
       </div>
-
-      {mailbox === "inbox" && firstEmailId ? (
-        <AutoReplyPanel
-          emailId={firstEmailId}
-          onSelect={(text) => {
-            if (!onReplyCompose) {
-              toast.error("Compose is unavailable right now.");
-              return;
-            }
-
-            onReplyCompose({
-              to: latest?.senderAddress || "",
-              subject: replySubject,
-              body: text,
-              threadId,
-            });
-          }}
-        />
-      ) : null}
 
       <SmartSchedulerModal
         isOpen={scheduleOpen}
@@ -315,7 +275,20 @@ function EmailMessageCard({
       {email.bodyHtml ? (
         <div className="overflow-hidden rounded-2xl border border-border bg-white">
           <iframe
-            srcDoc={email.bodyHtml}
+            srcDoc={`<style>
+              body {
+                font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                padding: 1.5rem;
+                line-height: 1.5;
+                color: #1a1a1a;
+                margin: 0;
+                overflow-x: hidden;
+                word-wrap: break-word;
+              }
+              a { color: #0066cc; }
+              img { max-width: 100%; height: auto; }
+              table { max-width: 100%; }
+            </style>${email.bodyHtml}`}
             sandbox=""
             referrerPolicy="no-referrer"
             title={`Email from ${email.senderName}`}

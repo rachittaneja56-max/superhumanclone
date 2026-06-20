@@ -15,6 +15,8 @@ import { ThreadView } from "./ThreadView";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { REWRITE_COMMANDS, filterRewriteCommands, type RewriteCommandId } from "@/lib/ai-rewrite-commands";
 import { RewriteCommandMenu } from "./RewriteCommandMenu";
+import { InboxRightRail } from "@/components/app/InboxRightRail";
+import { MorningDigestBanner } from "./MorningDigestBanner";
 
 type Folder = "inbox" | "drafts" | "sent" | "spam" | "trash";
 export type ComposeDraft = {
@@ -51,10 +53,14 @@ export function MailWorkspace({
   initialMailboxPage,
   initialFolder,
   initialComposeOpen,
+  calendarConnected,
+  agendaEvents,
 }: {
   initialMailboxPage: MailboxPage;
   initialFolder: Folder;
   initialComposeOpen: boolean;
+  calendarConnected?: boolean;
+  agendaEvents?: any[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -403,8 +409,10 @@ export function MailWorkspace({
   };
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 bg-background text-foreground">
-      <main className="flex min-w-0 flex-1 flex-col">
+    <div className="grid h-full min-h-0 min-w-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background text-foreground">
+        {displayFolder === "inbox" ? <MorningDigestBanner /> : null}
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {!selected && (
           <div className="flex shrink-0 flex-col gap-3 border-b border-border bg-surface px-4 py-3 sm:px-5">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
@@ -651,15 +659,22 @@ export function MailWorkspace({
             </section>
           </div>
         )}
-      </main>
+        </main>
+        {composeOpen && (
+          <ComposeModal
+            onClose={closeCompose}
+            onSend={handleSend}
+            initialDraft={composeDraft ?? undefined}
+          />
+        )}
+      </div>
 
-      {composeOpen && (
-        <ComposeModal
-          onClose={closeCompose}
-          onSend={handleSend}
-          initialDraft={composeDraft ?? undefined}
-        />
-      )}
+      <InboxRightRail
+        calendarConnected={!!calendarConnected}
+        events={agendaEvents ?? []}
+        activeThreadId={activeThreadId}
+        onReplyCompose={openReplyComposer}
+      />
     </div>
   );
 }

@@ -1,6 +1,11 @@
+"use client";
+
 import Link from "next/link";
 import { CalendarDays, Clock3, Sparkles } from "lucide-react";
 import { format } from "date-fns";
+import { trpc } from "@/lib/trpc/client";
+import type { EmailThreadClientItem } from "@/lib/email-client";
+import { AutoReplyPanel } from "@/components/inbox/AutoReplyPanel";
 
 type RailEvent = {
   id: string;
@@ -16,17 +21,67 @@ type RailEvent = {
 export function InboxRightRail({
   calendarConnected,
   events,
+  activeThreadId,
+  onReplyCompose,
 }: {
   calendarConnected: boolean;
   events: RailEvent[];
+  activeThreadId?: string | null;
+  onReplyCompose?: (draft: {
+    to?: string;
+    cc?: string;
+    bcc?: string;
+    subject?: string;
+    body?: string;
+    threadId?: string;
+  }) => void;
 }) {
   const nextEvents = [...events]
     .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())
     .slice(0, 4);
-  const nextEvent = nextEvents[0] ?? null;
+
+  const { data: thread } = trpc.email.getThread.useQuery(
+    { threadId: activeThreadId! },
+    { enabled: !!activeThreadId, staleTime: 30_000 }
+  );
+
+  const typedThread = (thread as EmailThreadClientItem[] | undefined) ?? [];
+  const firstEmailId = typedThread[0]?.id;
+  const showTldr = typedThread[0]?.tldr && !typedThread[0]?.aiTriageSkipped;
+  const subject = typedThread[0]?.subject || "";
+  const latest = typedThread[typedThread.length - 1];
+  const replySubject = subject.toLowerCase().startsWith("re:") ? subject : `Re: ${subject}`;
 
   return (
-    <aside className="hidden xl:flex xl:min-h-0 xl:flex-col xl:gap-4">
+    <aside className="hidden xl:flex xl:min-h-0 xl:flex-col xl:gap-4 overflow-y-auto pr-1">
+      {activeThreadId && showTldr && (
+        <section className="rounded-[1.5rem] border border-border bg-background/80 p-4 shadow-sm dark:bg-surface/70">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="inline-flex shrink-0 items-center rounded-full border border-accent/20 bg-accent/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent">
+              TL;DR
+            </span>
+          </div>
+          <p className="text-sm leading-6 text-foreground-muted min-w-0">
+            {typedThread[0]?.tldr}
+          </p>
+        </section>
+      )}
+
+      {activeThreadId && firstEmailId && (
+        <AutoReplyPanel
+          emailId={firstEmailId}
+          onSelect={(text) => {
+            if (!onReplyCompose) return;
+            onReplyCompose({
+              to: latest?.senderAddress || "",
+              subject: replySubject,
+              body: text,
+              threadId: activeThreadId,
+            });
+          }}
+        />
+      )}
+
       <section className="rounded-[1.5rem] border border-border bg-surface p-4 shadow-[0_14px_36px_rgba(28,20,12,0.06)]">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -89,7 +144,7 @@ export function InboxRightRail({
         </div>
       </section>
 
-      <section className="rounded-[1.5rem] border border-border bg-surface p-4 shadow-[0_14px_36px_rgba(28,20,12,0.06)]">
+      <section className="rounded-[1.5rem] border border-border bg-surface p-4 shadow-[0_14px_36px_rgba(28,20,12,0.06)] shrink-0">
         <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <Sparkles className="h-4 w-4 text-accent" />
           Support
