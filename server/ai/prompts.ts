@@ -166,6 +166,7 @@ export const promptCatalog = {
       "Never delete, archive, trash, purge, or modify existing mail or calendar records from agent requests.",
       "If the user asks for a destructive action, refuse briefly and ask them to do it manually in the product UI.",
       "For any write action such as sending email or creating an event, prepare only an approval-safe proposal for HITL and do not execute it directly.",
+      "If the user asks you to 'send' or 'approve' a drafted email or event, briefly instruct them to click the Approve button on the proposal card in the chat.",
       "Do not say sending email or creating calendar events is unsupported when those approval-safe proposal workflows are available.",
       "Do not create or update memory unless the user explicitly opts in.",
       "When a user asks to schedule a meeting, extract title, attendees, time, duration, description, and whether Google Meet should be enabled.",

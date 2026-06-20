@@ -20,6 +20,25 @@ function isPendingEmailClarification(history?: AgentContext["history"]) {
   );
 }
 
+function isPendingCalendarClarification(history?: AgentContext["history"]) {
+  if (!history?.length) return false;
+
+  const recentAssistant = [...history]
+    .reverse()
+    .find((message) => message.role === "assistant" && message.content.trim());
+
+  if (!recentAssistant) return false;
+
+  const lower = recentAssistant.content.toLowerCase();
+  return (
+    /what title and time should i use/i.test(lower) ||
+    /what should i call the event/i.test(lower) ||
+    /what time should i use for/i.test(lower) ||
+    /share one clearer event detail/i.test(lower) ||
+    /drafting calendar event/i.test(lower)
+  );
+}
+
 export function detectIntent(message: string, threadContext?: string, history?: AgentContext["history"]): AgentIntent {
   const lower = message.toLowerCase().trim();
   const hasThreadContext = !!threadContext?.trim();
@@ -51,6 +70,9 @@ export function detectIntent(message: string, threadContext?: string, history?: 
   }
   if (isPendingEmailClarification(history) && message.trim().length > 0 && message.trim().length <= 200) {
     return "action";
+  }
+  if (isPendingCalendarClarification(history) && message.trim().length > 0 && message.trim().length <= 200) {
+    return "calendar";
   }
   return "general";
 }

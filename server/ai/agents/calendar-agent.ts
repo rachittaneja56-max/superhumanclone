@@ -205,7 +205,16 @@ export async function runCalendarAgent(
   context: AgentContext,
   hitlInterceptor: (action: { actionType: string; payload: Record<string, unknown>; humanReadable: string }) => Promise<unknown>,
 ): Promise<AgentResult> {
-  const source = sanitiseAgentInput(context.threadContext || context.userMessage);
+  const recentUserMessages = context.history
+    ?.filter(m => m.role === "user")
+    .map(m => m.content)
+    .slice(-2) || [];
+  
+  const combinedContext = context.threadContext 
+    ? `${context.threadContext}\n\n${recentUserMessages.join("\n")}\n\n${context.userMessage}`
+    : `${recentUserMessages.join("\n")}\n\n${context.userMessage}`;
+
+  const source = sanitiseAgentInput(combinedContext);
   const result = await smartFillFromThread(source, { userId: context.userId });
   if (!looksLikeSchedulingRequest(source)) {
     return {
