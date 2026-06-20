@@ -134,14 +134,20 @@ export function HITLCard({ className }: { className?: string }) {
 
   return (
     <>
-      <div className={cn("w-full shadow-md rounded-xl font-sans", className)}>
-        <div className="overflow-hidden rounded-xl border border-border border-l-4 border-l-amber-500 bg-surface">
-            <div className="flex items-center justify-between border-b border-border bg-amber-500/5 p-4">
-              <div className="flex items-center space-x-2 text-amber-600">
-                <ShieldAlert className="h-5 w-5" />
-                <h3 className="text-sm font-semibold">
-                  {isCalendarCreate ? "Calendar approval required" : "Agent approval required"}
-                </h3>
+      <Dialog open={!!activeHITLAction} onOpenChange={(open) => {
+        if (!open && !isSubmitting) {
+          handleDecision("rejected");
+        }
+      }}>
+        <DialogContent className="max-w-2xl p-0 border-none bg-transparent shadow-none" showCloseButton={false}>
+          <div className={cn("w-full shadow-2xl rounded-xl font-sans", className)}>
+            <div className="overflow-hidden rounded-xl border border-border border-l-4 border-l-amber-500 bg-surface">
+              <div className="flex items-center justify-between border-b border-border bg-amber-500/5 p-4">
+                <div className="flex items-center space-x-2 text-amber-600">
+                  <ShieldAlert className="h-5 w-5" />
+                  <h3 className="text-sm font-semibold">
+                    {isCalendarCreate ? "Calendar approval required" : "Agent approval required"}
+                  </h3>
               </div>
 
               <div className="relative flex h-8 w-8 items-center justify-center">
@@ -243,8 +249,10 @@ export function HITLCard({ className }: { className?: string }) {
                 </div>
               )}
             </div>
+          </div>
         </div>
-      </div>
+      </DialogContent>
+    </Dialog>
 
       <SmartSchedulerModal
         isOpen={editOpen}
