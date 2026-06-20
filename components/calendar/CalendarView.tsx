@@ -920,9 +920,7 @@ function EventDetailDialog({
                 Prep brief
               </Button>
             )}
-            <Button type="button" variant="destructive" onClick={() => onDelete(event)}>
-              Delete
-            </Button>
+
           </div>
           <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={onClose}>

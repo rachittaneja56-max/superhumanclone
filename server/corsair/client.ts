@@ -2,6 +2,7 @@ import 'server-only'
 import { db } from '@/server/db'
 import { corsairAccounts, corsairEntities, corsairEvents, corsairIntegrations, users } from '@/server/db/schema'
 import { eq, and } from 'drizzle-orm'
+import crypto from 'crypto'
 
 // Type helper — plugins are dynamically attached, need 'as any'
 type CorsairTenant = {

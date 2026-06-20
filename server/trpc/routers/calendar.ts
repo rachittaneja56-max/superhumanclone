@@ -212,10 +212,13 @@ export const calendarRouter = router({
   generatePrepBrief: protectedProcedure
     .input(generatePrepBriefSchema)
     .mutation(async ({ ctx, input }) => {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.eventId);
       const localEvent = await ctx.db.query.calendarEvents.findFirst({
         where: and(
           eq(calendarEvents.userId, ctx.userId!),
-          or(eq(calendarEvents.id, input.eventId), eq(calendarEvents.corsair_event_id, input.eventId)),
+          isUuid 
+            ? or(eq(calendarEvents.id, input.eventId), eq(calendarEvents.corsair_event_id, input.eventId))
+            : eq(calendarEvents.corsair_event_id, input.eventId),
         ),
       }).catch(async () => {
         return findCalendarEventCompat(ctx.db, ctx.userId!, input.eventId);

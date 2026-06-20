@@ -128,11 +128,16 @@ export async function findCalendarEventCompat(
     `"updated_at"`,
   ].join(', ')
 
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(eventId);
+  const whereClause = isUuid 
+    ? sql`("id" = ${eventId} or "corsair_event_id" = ${eventId})`
+    : sql`("corsair_event_id" = ${eventId})`;
+
   const result = await executor.execute(sql`
     select ${sql.raw(selectColumns)}
     from "calendar_events"
     where "user_id" = ${userId}
-      and ("id" = ${eventId} or "corsair_event_id" = ${eventId})
+      and ${whereClause}
     order by "start_time" asc
     limit 1
   `)
