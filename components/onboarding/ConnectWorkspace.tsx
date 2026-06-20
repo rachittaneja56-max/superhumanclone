@@ -46,9 +46,9 @@ export function ConnectWorkspace({
 
   const statusText = useMemo(() => {
     if (allConnected) return "Gmail and Calendar are connected. You can continue to privacy setup.";
-    if (state.gmailConnected && !state.calendarConnected) return "Gmail is connected. Google Calendar permission is still pending.";
-    if (!state.gmailConnected && state.calendarConnected) return "Google Calendar is connected. Gmail permission is still pending.";
-    return "Connect Google Workspace. Gmail opens first, then Calendar opens automatically.";
+    if (state.gmailConnected && !state.calendarConnected) return "Gmail is connected. Please connect Google Calendar.";
+    if (!state.gmailConnected && state.calendarConnected) return "Google Calendar is connected. Please connect Gmail.";
+    return "Connect both Gmail and Google Calendar to continue.";
   }, [allConnected, state.calendarConnected, state.gmailConnected]);
 
   const handleConnect = (url: string, integration: "workspace" | "gmail" | "calendar") => {
@@ -146,56 +146,76 @@ export function ConnectWorkspace({
         </div>
 
         <p className="mb-6 max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          One button starts Gmail first and then opens Google Calendar automatically. Both permissions are required before the workspace is fully connected.
+          Both Gmail and Google Calendar permissions are required before the workspace is fully connected.
         </p>
 
-        <div className="rounded-2xl border border-border bg-background p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-foreground">Google Workspace</span>
-                <span
-                  className={
-                    allConnected
-                      ? "rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400"
-                      : state.gmailConnected || state.calendarConnected
-                        ? "rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-500"
-                        : "rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400"
-                  }
-                >
-                  {allConnected ? "Connected" : state.gmailConnected || state.calendarConnected ? "In progress" : "Not connected"}
+        <div className="flex flex-col gap-4">
+          <div className="rounded-2xl border border-border bg-background p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex items-center gap-2">
+                <span className="text-sm font-semibold text-foreground">Gmail</span>
+                <span className={state.gmailConnected ? "rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" : "rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400"}>
+                  {state.gmailConnected ? "Connected" : "Not connected"}
                 </span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-foreground-muted">
-                Connect Gmail and Google Calendar in one guided flow, with a real OAuth step for each service.
-              </p>
+              <div className="flex shrink-0">
+                {!state.gmailConnected ? (
+                  <button
+                    type="button"
+                    onClick={() => handleConnect("/api/corsair/connect?provider=gmail", "gmail")}
+                    disabled={pending !== null}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {pending === "gmail" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Connect Gmail
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleDisconnect("gmail")}
+                    disabled={pending !== null}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-background px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {pending === "gmail" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    Disconnect
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <button
-              type="button"
-              onClick={() => handleConnect(workspaceConnectUrl, "workspace")}
-              disabled={pending !== null}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {pending === "workspace" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {allConnected ? "Reconnect Google Workspace" : state.gmailConnected || state.calendarConnected ? "Finish Google Workspace Setup" : "Connect Google Workspace"}
-            </button>
-
-            {(state.gmailConnected || state.calendarConnected) ? (
-              <button
-                type="button"
-                onClick={allConnected ? handleDisconnectAll : () => void handleDisconnect(state.gmailConnected ? "gmail" : "calendar")}
-                disabled={pending !== null}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-background px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {pending === "workspace" || pending === "gmail" || pending === "calendar"
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : <RefreshCw className="h-4 w-4" />}
-                {allConnected ? "Disconnect Workspace" : state.gmailConnected ? "Disconnect Gmail" : "Disconnect Calendar"}
-              </button>
-            ) : null}
+          <div className="rounded-2xl border border-border bg-background p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex items-center gap-2">
+                <span className="text-sm font-semibold text-foreground">Google Calendar</span>
+                <span className={state.calendarConnected ? "rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" : "rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400"}>
+                  {state.calendarConnected ? "Connected" : "Not connected"}
+                </span>
+              </div>
+              <div className="flex shrink-0">
+                {!state.calendarConnected ? (
+                  <button
+                    type="button"
+                    onClick={() => handleConnect("/api/corsair/connect?provider=googlecalendar", "calendar")}
+                    disabled={pending !== null}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {pending === "calendar" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Connect Calendar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleDisconnect("calendar")}
+                    disabled={pending !== null}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-background px-4 py-2 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {pending === "calendar" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    Disconnect
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 

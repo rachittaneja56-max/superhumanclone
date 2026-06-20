@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { LockKeyhole, Shield, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc/client";
 
@@ -36,22 +35,20 @@ export function AdminUnlockClient() {
       toast.error(error.message || "Invalid admin credentials");
     },
   });
-
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-8">
-      <Dialog open>
-        <DialogContent className="border-border bg-surface text-foreground shadow-2xl sm:max-w-md">
-          <DialogHeader className="space-y-2 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-accent/30 bg-accent/10 text-accent">
-              <Shield className="h-5 w-5" />
-            </div>
-            <DialogTitle className="text-xl">Admin unlock</DialogTitle>
-            <DialogDescription className="text-foreground-muted">
-              Enter the admin access ID and password to open the dashboard.
-            </DialogDescription>
-          </DialogHeader>
+    <div className="flex h-full w-full items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-8 shadow-sm">
+        <div className="space-y-2 text-center">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-accent/30 bg-accent/10 text-accent">
+            <Shield className="h-5 w-5" />
+          </div>
+          <h2 className="text-xl font-semibold text-foreground tracking-tight">Admin unlock</h2>
+          <p className="text-sm text-foreground-muted">
+            Enter the admin access ID and password to open the dashboard.
+          </p>
+        </div>
 
-          <form
+        <form
             className="mt-4 space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
@@ -99,8 +96,7 @@ export function AdminUnlockClient() {
               Keep this shared only with trusted admins.
             </div>
           </form>
-        </DialogContent>
-      </Dialog>
+      </div>
     </div>
   );
 }
