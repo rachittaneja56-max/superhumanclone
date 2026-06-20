@@ -4,6 +4,7 @@ import { db } from '@/server/db'
 import { aiConsentRules } from '@/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { PrivacyGateForm } from '@/components/onboarding/PrivacyGateForm'
+import { reconcileGoogleConnectionState } from '@/server/auth/helpers'
 
 const DEFAULT_BLOCKED_GROUPS = [
   {
@@ -40,6 +41,17 @@ export default async function PrivacyPage({
   const existingRules = await db.query.aiConsentRules.findMany({
     where: eq(aiConsentRules.userId, userId),
   })
+
+  if (!isEditMode) {
+    const connectionState = await reconcileGoogleConnectionState(userId).catch(() => ({
+      gmailConnected: false,
+      calendarConnected: false,
+    }))
+
+    if (!connectionState.gmailConnected || !connectionState.calendarConnected) {
+      redirect('/onboarding/connect')
+    }
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
