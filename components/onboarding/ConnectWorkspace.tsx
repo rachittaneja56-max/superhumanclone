@@ -18,6 +18,7 @@ export function ConnectWorkspace({
   workspaceConnectUrl,
   initialGmailConnected,
   initialCalendarConnected,
+  isManaging,
 }: {
   firstName: string;
   workspaceConnectUrl: string;
