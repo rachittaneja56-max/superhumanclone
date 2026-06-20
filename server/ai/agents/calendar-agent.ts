@@ -210,9 +210,23 @@ export async function runCalendarAgent(
     .map(m => m.content)
     .slice(-2) || [];
   
+  const lastAssistantMessage = context.history
+    ?.filter(m => m.role === "assistant")
+    .map(m => m.content)
+    .pop() || "";
+
+  let userMsgToAppend = context.userMessage;
+  if (/what should i call the event/i.test(lastAssistantMessage)) {
+    userMsgToAppend = `title: ${context.userMessage}`;
+  } else if (/what title and time should i use/i.test(lastAssistantMessage)) {
+    // If they provided both, we can just say title: <everything> to ensure it gets picked up. 
+    // The time parser will still find the time signals in it.
+    userMsgToAppend = `title: ${context.userMessage}`;
+  }
+
   const combinedContext = context.threadContext 
-    ? `${context.threadContext}\n\n${recentUserMessages.join("\n")}\n\n${context.userMessage}`
-    : `${recentUserMessages.join("\n")}\n\n${context.userMessage}`;
+    ? `${context.threadContext}\n\n${recentUserMessages.join("\n")}\n\n${userMsgToAppend}`
+    : `${recentUserMessages.join("\n")}\n\n${userMsgToAppend}`;
 
   const source = sanitiseAgentInput(combinedContext);
   const result = await smartFillFromThread(source, { userId: context.userId });
