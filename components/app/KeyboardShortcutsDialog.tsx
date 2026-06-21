@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Keyboard, X } from "lucide-react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -135,6 +136,11 @@ export function KeyboardShortcutsDialog() {
 }
 
 function ShortcutKeys({ keys, delimiter = "plus" }: { keys: string[]; delimiter?: "plus" | "then" | "slash" }) {
+  const [isMac, setIsMac] = useState(true);
+  useEffect(() => {
+    setIsMac(typeof navigator !== "undefined" && navigator.platform.toUpperCase().indexOf("MAC") >= 0);
+  }, []);
+
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5">
       {keys.map((key, index) => (
@@ -145,7 +151,7 @@ function ShortcutKeys({ keys, delimiter = "plus" }: { keys: string[]; delimiter?
             </span>
           )}
           <kbd className="min-w-8 rounded-lg border border-border bg-surface px-2 py-1 text-center font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground shadow-sm">
-            {key}
+            {key === "Cmd/Ctrl" ? (isMac ? "⌘" : "Ctrl") : key}
           </kbd>
         </span>
       ))}
